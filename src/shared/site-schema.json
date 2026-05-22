@@ -1,0 +1,316 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "site": {
+      "$ref": "#/definitions/SiteConfig",
+      "description": "Site-wide settings (brand, locales, landing page)."
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RepoConfig"
+      },
+      "description": "Documentation sources rendered by this Vellum deployment."
+    },
+    "nav": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NavItem"
+      },
+      "description": "Site-level top navigation. Each repo can also declare its own nav (vellum.json `nav` or VitePress themeConfig.nav) which takes precedence inside that repo."
+    }
+  },
+  "required": ["site", "repos"],
+  "additionalProperties": false,
+  "definitions": {
+    "SiteConfig": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Brand name shown in the NavBar and as the SSR <title> suffix."
+        },
+        "tagline": {
+          "type": "string",
+          "description": "Short subtitle shown on the landing page hero."
+        },
+        "logo": {
+          "type": "string",
+          "description": "URL of the site logo (SVG recommended).",
+          "format": "uri-reference"
+        },
+        "favicon": {
+          "type": "string",
+          "description": "URL of the favicon.",
+          "format": "uri-reference"
+        },
+        "themeColor": {
+          "type": "string",
+          "description": "<meta name=\"theme-color\"> value, e.g. \"#0078d4\".",
+          "pattern": "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        },
+        "footer": {
+          "type": "string",
+          "description": "Footer text rendered below every page."
+        },
+        "homepageRepo": {
+          "type": "string",
+          "description": "Slug of the repo whose root acts as the site's landing page. `/` redirects here, and the NavBar brand link points here with the current locale preserved."
+        },
+        "defaultLocale": {
+          "type": "string",
+          "description": "Locale code used when the URL has no locale prefix."
+        },
+        "locales": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LocaleConfig"
+          },
+          "description": "All supported locales. Order is preserved in the language picker."
+        },
+        "socialLinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SocialLink"
+          },
+          "description": "Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: \"<svg ...>\" }`."
+        }
+      },
+      "required": ["title", "homepageRepo", "defaultLocale", "locales"],
+      "additionalProperties": false
+    },
+    "LocaleConfig": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Locale code (e.g. \"en\", \"zh\", \"ja\"). Used in cache keys and i18n lookup."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable name shown in the language picker."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "URL segment for this locale (e.g. \"zh\" → /repo/zh/...). Empty string means the locale lives at the root of each repo."
+        }
+      },
+      "required": ["code", "label", "prefix"],
+      "additionalProperties": false
+    },
+    "SocialLink": {
+      "type": "object",
+      "properties": {
+        "icon": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SocialIconName"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "svg": {
+                  "type": "string"
+                }
+              },
+              "required": ["svg"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "link": {
+          "type": "string"
+        },
+        "ariaLabel": {
+          "type": "string"
+        }
+      },
+      "required": ["icon", "link"],
+      "additionalProperties": false
+    },
+    "SocialIconName": {
+      "type": "string",
+      "enum": [
+        "github",
+        "gitlab",
+        "x",
+        "twitter",
+        "discord",
+        "slack",
+        "mastodon",
+        "bluesky",
+        "youtube",
+        "linkedin",
+        "instagram",
+        "facebook",
+        "npm",
+        "rss",
+        "stackoverflow",
+        "reddit",
+        "twitch",
+        "telegram"
+      ]
+    },
+    "RepoConfig": {
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "URL segment for the repo (e.g. \"prism\" → /prism/...). Must be unique within `repos[]`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["github", "local"],
+          "description": "Where the markdown lives. \"github\" (default) reads from raw.githubusercontent.com; \"local\" reads from local-docs/{slug}/ bundled into the worker's ASSETS at build time.",
+          "default": "github"
+        },
+        "owner": {
+          "type": "string",
+          "description": "GitHub owner. Required when source is \"github\"."
+        },
+        "repo": {
+          "type": "string",
+          "description": "GitHub repo name. Required when source is \"github\"."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Default branch to fetch from. Used as the cache key suffix and as the fallback when no `versions[]` is declared."
+        },
+        "docsRoot": {
+          "type": "string",
+          "description": "Path inside the repo (or local source) to the docs tree, e.g. \"docs\". Empty string means the repo root is the docs root."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Human-readable name shown in the NavBar brand crumb and 404 suggestions."
+        },
+        "description": {
+          "type": "string",
+          "description": "Short tagline shown on the repo's home page and as the SSR meta description fallback."
+        },
+        "logo": {
+          "type": "string",
+          "description": "URL of the per-repo logo (SVG recommended).",
+          "format": "uri-reference"
+        },
+        "editLinkPattern": {
+          "type": "string",
+          "description": "Template for the \"Edit this page\" link in the page footer. `:path` is substituted with the docs-root-relative path. Omit for local repos."
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RepoVersion"
+          },
+          "description": "Optional version selector. Default version is used when no version is encoded in the URL."
+        },
+        "localPath": {
+          "type": "string",
+          "description": "Override for where local-source files live. Defaults to `local-docs/{slug}`. Path is relative to the project root."
+        },
+        "hideInBrand": {
+          "type": "boolean",
+          "description": "When true, the NavBar omits this repo's displayName crumb after the site title. Useful for the homepageRepo so the brand doesn't read \"Site | Site\"."
+        },
+        "excludeFromSearch": {
+          "type": "boolean",
+          "description": "When true, the repo is omitted from search results in both the per-repo dialog scope picker and the cross-repo full-page search. Use for landing-page repos and other \"system\" content the reader shouldn't be sent to by a query."
+        },
+        "socialLinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SocialLink"
+          },
+          "description": "Per-repo override for site.socialLinks. Shown in the NavBar while the reader is inside this repo. The repo's own vellum.json#socialLinks or VitePress themeConfig.socialLinks take higher priority when present."
+        }
+      },
+      "required": ["slug", "docsRoot", "displayName"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "not": {
+                  "required": ["source"]
+                }
+              },
+              {
+                "properties": {
+                  "source": {
+                    "const": "github"
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "required": ["owner", "repo", "branch"]
+          }
+        }
+      ]
+    },
+    "RepoVersion": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Human-readable label shown in the version picker (e.g. \"v2\", \"main\", \"next\")."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git branch / ref this version corresponds to."
+        },
+        "default": {
+          "type": "boolean",
+          "description": "True for the version selected when no explicit version is encoded in the URL."
+        }
+      },
+      "required": ["label", "branch"],
+      "additionalProperties": false
+    },
+    "NavItem": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Label shown in the NavBar."
+        },
+        "link": {
+          "type": "string",
+          "description": "Destination URL or site-relative path. Omit when this item is a dropdown trigger (use `items`)."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NavItem"
+          },
+          "description": "Children — turns this nav entry into a dropdown menu."
+        },
+        "activeMatch": {
+          "type": "string",
+          "description": "Regex (against the current page's repo-relative path) that marks this entry as active. Lets a nav entry stay highlighted across a whole section.",
+          "format": "regex"
+        }
+      },
+      "required": ["text"],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": ["link"]
+        },
+        {
+          "required": ["items"]
+        }
+      ]
+    }
+  },
+  "$id": "https://siiway.org/vellum/site-schema.json",
+  "title": "Vellum site config",
+  "description": "Top-level config consumed by the Vellum worker. Generated from src/shared/types.ts by scripts/gen-site-schema.ts — edit the types or that script's OVERRIDES table, not this file."
+}

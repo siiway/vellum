@@ -1,0 +1,15 @@
+# Sample DocFX-style xrefmap. The OPS xref tests on
+# /handbook/tests/ops-xref reference these uids.
+references:
+  - uid: Vellum.Handbook
+    href: /handbook/
+    name: Vellum Handbook
+  - uid: Vellum.OPS.Tabs
+    href: /handbook/tests/ops-tabs
+    name: OPS Tabs
+  - uid: Vellum.OPS.Includes
+    href: /handbook/tests/ops-includes
+    name: OPS Includes
+  - uid: System.Console
+    href: https://learn.microsoft.com/dotnet/api/system.console
+    name: Console

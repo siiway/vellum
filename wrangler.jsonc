@@ -1,0 +1,39 @@
+{
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "vellum",
+	"main": "src/worker/index.ts",
+	"compatibility_date": "2025-02-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "./dist/client",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		// "VELLUM_GITHUB_TOKEN": "",
+		// "VELLUM_WEBHOOK_SECRET": "",
+		"VELLUM_CACHE_TTL_SECONDS": "300",
+		"VELLUM_HTML_TTL_SECONDS": "60"
+	},
+	"routes": [
+		{
+			"pattern": "docs.siiway.org",
+			"custom_domain": true
+		},
+		{
+			"pattern": "vellum.siiway.org",
+			"custom_domain": true
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "VELLUM_CACHE",
+			"id": "8999733736ff415c844f1c8fc00c3042"
+		}
+	]
+}

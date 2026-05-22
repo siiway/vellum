@@ -1,0 +1,19 @@
+# Build output / generated artifacts — formatting these is pointless and
+# would churn diffs every build.
+dist
+.wrangler
+node_modules
+bun.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Generated schema. Owned by scripts/gen-site-schema.ts — re-run that
+# instead of formatting in place.
+src/shared/site-schema.json
+
+# Local-source docs come from outside contributors and travel with their own
+# formatting conventions. Don't reformat their .md files.
+local-docs
+
+# wrangler
+wrangler.jsonc

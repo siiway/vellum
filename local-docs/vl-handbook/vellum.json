@@ -1,0 +1,110 @@
+{
+  "locales": {
+    "root": {
+      "groups": [
+        {
+          "text": "Get started",
+          "items": [
+            { "text": "Introduction", "link": "/" },
+            { "text": "Getting started", "link": "/getting-started" }
+          ]
+        },
+        {
+          "text": "Configure",
+          "items": [
+            { "text": "Configuration reference", "link": "/configuration" },
+            { "text": "Sources: GitHub & local", "link": "/sources" },
+            { "text": "Layouts", "link": "/layouts" }
+          ]
+        },
+        {
+          "text": "Author docs",
+          "items": [
+            { "text": "Markdown features", "link": "/markdown" },
+            { "text": "OPS extensions", "link": "/ops-extensions" },
+            { "text": "React in Markdown", "link": "/react-in-markdown" }
+          ]
+        },
+        {
+          "text": "Operate",
+          "items": [
+            { "text": "Search", "link": "/search" },
+            { "text": "Internationalisation", "link": "/i18n" },
+            { "text": "Caching & deployment", "link": "/caching-and-deployment" },
+            { "text": "GitHub webhooks", "link": "/webhooks" }
+          ]
+        },
+        {
+          "text": "Feature tests",
+          "items": [
+            { "text": "Test index", "link": "/tests/" },
+            { "text": "Basic markdown", "link": "/tests/basic-markdown" },
+            { "text": "Code blocks", "link": "/tests/code-blocks" },
+            { "text": "Containers & alerts", "link": "/tests/containers" },
+            { "text": "Mermaid diagrams", "link": "/tests/mermaid" },
+            { "text": "Math & emoji", "link": "/tests/math" },
+            { "text": "OPS tabs", "link": "/tests/ops-tabs" },
+            { "text": "OPS image & video", "link": "/tests/ops-image-video" },
+            { "text": "OPS row & column", "link": "/tests/ops-row-column" },
+            { "text": "OPS zone & moniker", "link": "/tests/ops-zone-moniker" },
+            { "text": "OPS includes", "link": "/tests/ops-includes" },
+            { "text": "OPS xref", "link": "/tests/ops-xref" }
+          ]
+        }
+      ]
+    },
+    "zh": {
+      "groups": [
+        {
+          "text": "快速开始",
+          "items": [
+            { "text": "简介", "link": "/" },
+            { "text": "快速开始", "link": "/getting-started" }
+          ]
+        },
+        {
+          "text": "配置",
+          "items": [
+            { "text": "配置参考", "link": "/configuration" },
+            { "text": "数据源：GitHub 与本地", "link": "/sources" },
+            { "text": "布局", "link": "/layouts" }
+          ]
+        },
+        {
+          "text": "撰写文档",
+          "items": [
+            { "text": "Markdown 特性", "link": "/markdown" },
+            { "text": "OPS 扩展", "link": "/ops-extensions" },
+            { "text": "Markdown 中的 React 组件", "link": "/react-in-markdown" }
+          ]
+        },
+        {
+          "text": "运维",
+          "items": [
+            { "text": "搜索", "link": "/search" },
+            { "text": "国际化", "link": "/i18n" },
+            { "text": "缓存与部署", "link": "/caching-and-deployment" },
+            { "text": "GitHub webhook", "link": "/webhooks" }
+          ]
+        },
+        {
+          "text": "功能测试",
+          "items": [
+            { "text": "测试索引", "link": "/tests/" },
+            { "text": "基础 markdown", "link": "/tests/basic-markdown" },
+            { "text": "代码块", "link": "/tests/code-blocks" },
+            { "text": "容器与提示", "link": "/tests/containers" },
+            { "text": "Mermaid 图表", "link": "/tests/mermaid" },
+            { "text": "数学公式与 emoji", "link": "/tests/math" },
+            { "text": "OPS tabs", "link": "/tests/ops-tabs" },
+            { "text": "OPS 图片与视频", "link": "/tests/ops-image-video" },
+            { "text": "OPS 行与列", "link": "/tests/ops-row-column" },
+            { "text": "OPS zone 与 moniker", "link": "/tests/ops-zone-moniker" },
+            { "text": "OPS includes", "link": "/tests/ops-includes" },
+            { "text": "OPS xref", "link": "/tests/ops-xref" }
+          ]
+        }
+      ]
+    }
+  }
+}

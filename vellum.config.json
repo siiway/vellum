@@ -1,0 +1,81 @@
+{
+  "$schema": "./src/shared/site-schema.json",
+  "site": {
+    "title": "SiiWay Vellum",
+    "tagline": "Multi-repo docs, powered by Cloudflare Workers.",
+    "logo": "https://icons.siiway.org/siiway/icon.svg",
+    "favicon": "https://icons.siiway.org/siiway/icon.svg",
+    "themeColor": "#0078d4",
+    "footer": "© Vellum by SiiWay Team — published from GitHub at the edge.",
+    "homepageRepo": "homepage",
+    "defaultLocale": "en",
+    "locales": [
+      { "code": "en", "label": "English", "prefix": "" },
+      { "code": "zh", "label": "中文", "prefix": "zh" }
+    ],
+    "socialLinks": [{ "icon": "github", "link": "https://github.com/siiway" }]
+  },
+  "repos": [
+    {
+      "slug": "prism",
+      "owner": "siiway",
+      "repo": "prism",
+      "branch": "main",
+      "docsRoot": "docs",
+      "displayName": "Prism",
+      "description": "Self-hosted OAuth 2.0 / OpenID Connect on Cloudflare Workers.",
+      "logo": "https://icons.siiway.org/prism/icon.svg",
+      "editLinkPattern": "https://github.com/siiway/prism/edit/main/docs/:path",
+      "versions": [{ "label": "main", "branch": "main", "default": true }]
+    },
+    {
+      "slug": "glint",
+      "owner": "siiway",
+      "repo": "glint",
+      "branch": "main",
+      "docsRoot": "docs",
+      "displayName": "Glint",
+      "description": "A team-based todo list built on Cloudflare Workers.",
+      "logo": "https://icons.siiway.org/glint/icon.svg",
+      "editLinkPattern": "https://github.com/siiway/glint/edit/main/docs/:path",
+      "versions": [{ "label": "main", "branch": "main", "default": true }]
+    },
+    {
+      "slug": "nextbridge",
+      "owner": "siiway",
+      "repo": "nb-docs",
+      "branch": "main",
+      "docsRoot": "/",
+      "displayName": "NextBridge",
+      "description": "A team-based todo list built on Cloudflare Workers.",
+      "logo": "https://icons.siiway.org/nextbridge/icon.svg",
+      "editLinkPattern": "https://github.com/siiway/nextbridge/edit/main/docs/:path",
+      "versions": [{ "label": "main", "branch": "main", "default": true }]
+    },
+    {
+      "slug": "vl-handbook",
+      "source": "local",
+      "docsRoot": "",
+      "displayName": "Vellum",
+      "logo": "https://icons.siiway.org/vellum/icon.svg",
+      "description": "Sample local-source docs bundled with the worker."
+    },
+    {
+      "slug": "homepage",
+      "source": "local",
+      "docsRoot": "",
+      "displayName": "SiiWay Documentation",
+      "logo": "https://icons.siiway.org/siiway/icon.svg",
+      "description": "The SiiWay docs landing page.",
+      "hideInBrand": true,
+      "excludeFromSearch": true
+    }
+  ],
+  "nav": [
+    { "text": "Prism", "link": "/prism/" },
+    { "text": "Glint", "link": "/glint/" },
+    { "text": "NextBridge", "link": "/nextbridge/" },
+    { "text": "Vellum", "link": "/vl-handbook/" },
+    { "text": "GitHub", "link": "https://github.com/siiway" }
+  ]
+}
