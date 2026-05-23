@@ -147,6 +147,13 @@ async function buildSitemapUrls(
           const pageKey = `${repo.slug}/${pageRel}`;
           const finalSlug = pageRel === "index" ? "" : pageRel;
 
+          // The homepageRepo's index page lives at the short canonical URL
+          // (`/` and `/{localePrefix}`) — the dedicated homepage block below
+          // emits those entries, and the slug form (`/{homepageRepo}`) is a
+          // 301 redirect. Skip here so we don't duplicate or sitemap a URL
+          // that just bounces.
+          if (repo.slug === site.site.homepageRepo && pageRel === "index") continue;
+
           // Build the absolute URL for this locale.
           const localePart = locale.prefix ? `/${locale.prefix}` : "";
           const tail = finalSlug ? `/${finalSlug}` : "";
@@ -164,12 +171,14 @@ async function buildSitemapUrls(
 
   // Always include the site root + bare locale homepages so the homepage is
   // crawlable even when it's a local-source repo with no markdown tree
-  // entry that walks into.
+  // entry that walks into. The landing URL is the short canonical form
+  // (`/` and `/{localePrefix}`) — the slug form `/{homepageRepo}` is a 301
+  // redirect and would be wasted budget for crawlers.
   const homepageKey = `__homepage__`;
   const homepageLocales = new Map<string, string>();
   for (const locale of site.site.locales) {
     const localePart = locale.prefix ? `/${locale.prefix}` : "";
-    homepageLocales.set(locale.code, `${origin}${localePart}/${site.site.homepageRepo}`);
+    homepageLocales.set(locale.code, `${origin}${localePart || "/"}`);
   }
   byPageKey.set(homepageKey, homepageLocales);
 

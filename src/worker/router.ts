@@ -70,27 +70,35 @@ export async function dispatch(
     return env.ASSETS.fetch(request);
   }
 
-  // Home page -> redirect to the configured homepage repo (default locale).
-  // Preserve query string so callers like the SPA navigator (which appends
-  // `?_data=1`) keep their mode after the redirect.
+  // `/` and bare-locale `/zh` serve the homepageRepo's index page directly —
+  // canonical URL is `/` (or `/zh`), not `/{homepageRepo}`. The slug variant
+  // (`/{homepageRepo}` and `/{locale}/{homepageRepo}`) is redirected to the
+  // short form below, so there's a single canonical URL for the landing page.
   if (path === "/" || path === "") {
-    const dest = new URL(`/${SITE.site.homepageRepo}`, url.origin);
-    url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
-    return Response.redirect(dest.toString(), 302);
+    const homepageRoute = makeHomepageIndexRoute(SITE.site.defaultLocale, "");
+    if (homepageRoute) return renderRoute(env, ctx, request, homepageRoute);
   }
 
-  // A bare locale prefix (`/zh`, `/zh/`) redirects to the homepage in that
-  // locale. Matches Microsoft Learn's behaviour where `/{lang}/` is always
-  // a homepage URL.
   const bareLocaleMatch = path.match(/^\/([a-zA-Z][a-zA-Z0-9-]*)\/?$/);
   if (bareLocaleMatch) {
     const candidate = bareLocaleMatch[1]!;
     const locale = SITE.site.locales.find((l) => l.prefix === candidate);
     if (locale) {
-      const dest = new URL(`/${locale.prefix}/${SITE.site.homepageRepo}`, url.origin);
-      url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
-      return Response.redirect(dest.toString(), 302);
+      const homepageRoute = makeHomepageIndexRoute(locale.code, locale.prefix);
+      if (homepageRoute) return renderRoute(env, ctx, request, homepageRoute);
     }
+  }
+
+  // `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}` (the slug form of
+  // the landing page) redirect to `/` and `/{localePrefix}` so the short
+  // form is the only canonical URL. Sub-pages under the homepage repo
+  // (`/{homepageRepo}/<slug>`) keep their slug-prefixed URL and resolve
+  // normally via resolveRoute below.
+  const homepageSlugRedirect = matchHomepageRepoIndex(path);
+  if (homepageSlugRedirect) {
+    const dest = new URL(homepageSlugRedirect, url.origin);
+    url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+    return Response.redirect(dest.toString(), 301);
   }
 
   // Legacy URL compatibility: the old URL shape put the locale AFTER the repo
@@ -211,6 +219,47 @@ function detectLegacyLocaleShape(pathname: string): string | null {
   return `/${locale.prefix}/${parts[0]}${suffix}`;
 }
 
+// Build a RouteContext for the landing page (`/` or `/{localePrefix}`)
+// pointing at the configured homepageRepo's index. The canonical URL is the
+// short form so the URL bar / sitemap / `<link rel=canonical>` all agree.
+// renderRoute detects this special case and feeds the link rewriter a
+// `/{homepageRepo}` base so relative links still resolve under the slug.
+function makeHomepageIndexRoute(localeCode: string, localePrefix: string): RouteContext | null {
+  const repo = SITE.repos.find((r) => r.slug === SITE.site.homepageRepo);
+  if (!repo) return null;
+  const defaultBranch = repoRef(repo);
+  const versions = repo.versions ?? [
+    { label: defaultBranch, branch: defaultBranch, default: true },
+  ];
+  const version = versions.find((v) => v.default) ?? versions[0]!;
+  const canonical = localePrefix ? `/${localePrefix}` : "/";
+  return {
+    repoSlug: repo.slug,
+    repo,
+    version,
+    localeCode,
+    pagePath: "index",
+    canonicalUrl: canonical,
+  };
+}
+
+// Matches `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}` exactly
+// (no sub-page). Returns the short canonical they should redirect to, or
+// null when the path isn't a homepage-repo index.
+function matchHomepageRepoIndex(pathname: string): string | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
+  if (!parts.length || !parts[0]) return null;
+  let localePrefix = "";
+  let rest = parts;
+  const locale = SITE.site.locales.find((l) => l.prefix && rest[0] === l.prefix);
+  if (locale) {
+    localePrefix = locale.prefix;
+    rest = rest.slice(1);
+  }
+  if (rest.length !== 1 || rest[0] !== SITE.site.homepageRepo) return null;
+  return localePrefix ? `/${localePrefix}` : "/";
+}
+
 function resolveRoute(pathname: string): RouteContext | null {
   const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
   if (!parts.length || !parts[0]) return null;
@@ -326,8 +375,18 @@ async function renderRoute(
   // resolve into the SAME locale as the current page, so a zh page linking
   // `@prism/foo` lands on `/zh/prism/foo`.
   const repoUrlBase = `${localePath ? `/${localePath}` : ""}/${route.repoSlug}`;
+  // For the landing page (canonical `/` or `/{localePrefix}` served from the
+  // homepageRepo's index), the relative-link resolver still needs to anchor
+  // at the repo slug — otherwise `./foo` becomes `/foo` instead of
+  // `/{homepageRepo}/foo`, and we'd lean on the homepage-shortcut redirect
+  // for every relative link. Use the slug-rooted URL here while keeping the
+  // short canonical URL elsewhere (SEO, URL bar, sitemap).
+  const isShortHomepageCanonical =
+    route.repoSlug === SITE.site.homepageRepo &&
+    route.pagePath === "index" &&
+    (route.canonicalUrl === "/" || route.canonicalUrl === `/${localePath}`);
   const linkContext: LinkContext = {
-    currentUrl: route.canonicalUrl,
+    currentUrl: isShortHomepageCanonical ? repoUrlBase : route.canonicalUrl,
     repoUrlBase,
     localePrefix: localePath,
     // Tells the relative-link resolver to treat currentUrl as a directory
