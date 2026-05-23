@@ -454,9 +454,11 @@ function LocalePicker() {
   }
 
   // Only show locales that have a translation for the current page.
+  // Always include the current locale so the reader can't lose their
+  // position even if translatedLocales is stale or incomplete.
   const available = data.page.meta.translatedLocales;
   const translated = available
-    ? data.config.site.locales.filter((l) => available.includes(l.code))
+    ? data.config.site.locales.filter((l) => available.includes(l.code) || l.code === currentLocale)
     : data.config.site.locales;
 
   // Sort: current locale first, then human-translated, then machine-

@@ -891,7 +891,7 @@ function htmlHeaders(env: Env): HeadersInit {
 async function resolveTranslatedLocales(
   env: Env,
   site: VellumConfig,
-  route: RouteContext,
+  route: { repoSlug: string; version: { branch: string }; pagePath: string },
 ): Promise<string[]> {
   const handCurated = site.site.locales.filter((l) => !l.machineTranslated).map((l) => l.code);
   const cached = await listTranslatedLocalesForPage(
@@ -1237,7 +1237,7 @@ async function renderLanguagesPage(
           repoSlug: targetRepo.slug,
           version: { branch: targetBranch },
           pagePath: targetPage,
-        } as RouteContext);
+        });
       }
     }
   }
