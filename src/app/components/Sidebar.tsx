@@ -16,6 +16,14 @@ const useStyles = makeStyles({
     // Subtle right divider via box-shadow so it doesn't add to grid metrics.
     boxShadow: `inset -1px 0 0 ${tokens.colorNeutralStroke3}`,
   },
+  // `mobile` variant: rendered inside a Drawer instead of as a sticky aside.
+  // Drops the height clamp, sticky positioning, divider, and the "hide on
+  // narrow viewports" media query so the same item tree works in both layouts.
+  rootMobile: {
+    paddingBlock: tokens.spacingVerticalL,
+    paddingInline: tokens.spacingHorizontalM,
+    overflowY: "auto",
+  },
   group: {
     marginBottom: tokens.spacingVerticalL,
   },
@@ -75,7 +83,16 @@ const useStyles = makeStyles({
   list: { display: "flex", flexDirection: "column", gap: "1px" },
 });
 
-export function Sidebar({ groups }: { groups: SidebarGroup[] }) {
+export function Sidebar({
+  groups,
+  variant = "desktop",
+}: {
+  groups: SidebarGroup[];
+  // `mobile` lifts the desktop-only constraints (sticky position, height
+  // clamp, hide-at-narrow media query) so the same component renders inside
+  // a Drawer on small viewports.
+  variant?: "desktop" | "mobile";
+}) {
   const styles = useStyles();
   const { data, t } = useVellum();
   const currentUrl = data.route.canonicalUrl;
@@ -95,8 +112,9 @@ export function Sidebar({ groups }: { groups: SidebarGroup[] }) {
     }
   }, [currentUrl]);
 
+  const rootClass = variant === "mobile" ? styles.rootMobile : styles.root;
   return (
-    <aside ref={containerRef} className={styles.root} aria-label={t("ui.nav.sidebar")}>
+    <aside ref={containerRef} className={rootClass} aria-label={t("ui.nav.sidebar")}>
       {groups.map((group) => (
         <section key={group.text} className={styles.group}>
           {group.text && (

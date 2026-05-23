@@ -1,4 +1,14 @@
-import { Display, Body1, tokens } from "@fluentui/react-components";
+import {
+  Body1,
+  Button,
+  Display,
+  Drawer,
+  DrawerBody,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  tokens,
+} from "@fluentui/react-components";
+import { Dismiss24Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useVellum } from "../context";
@@ -80,6 +90,14 @@ export function Layout() {
   const { data, t } = useVellum();
   const [searchOpen, setSearchOpen] = useState(false);
   const [askAiOpen, setAskAiOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close the mobile sidebar after any navigation. Without this, clicking a
+  // link inside the Drawer would route to the new page but leave the Drawer
+  // covering it — surprising on mobile where there's no other escape gesture.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [data.route.canonicalUrl]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -112,6 +130,9 @@ export function Layout() {
         // detailed questions. NavBar drops the button when this is
         // undefined.
         onOpenAskAi={isHome || isMsLearn ? undefined : () => setAskAiOpen(true)}
+        // Only the doc layout has a sidebar; hide the hamburger on
+        // home/search/ms-learn so users don't get an empty Drawer.
+        onOpenSidebar={!isHome && !isSearch && !isMsLearn ? () => setSidebarOpen(true) : undefined}
       />
       {isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state
@@ -157,6 +178,37 @@ export function Layout() {
         <Suspense fallback={null}>
           <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </Suspense>
+      )}
+      {/* Mobile sidebar Drawer. The desktop sidebar in the grid above is
+          hidden under 960px via its own media query; this overlay variant
+          takes over at the same breakpoint. Always mounted (not gated on
+          isHome/isSearch) because Drawer-with-open=false renders nothing. */}
+      {sidebar.length > 0 && (
+        <Drawer
+          type="overlay"
+          position="start"
+          open={sidebarOpen}
+          onOpenChange={(_, d) => setSidebarOpen(d.open)}
+          aria-label={t("ui.nav.sidebar")}
+        >
+          <DrawerHeader>
+            <DrawerHeaderTitle
+              action={
+                <Button
+                  appearance="subtle"
+                  aria-label={t("ui.search.close")}
+                  icon={<Dismiss24Regular />}
+                  onClick={() => setSidebarOpen(false)}
+                />
+              }
+            >
+              {t("ui.nav.sidebar")}
+            </DrawerHeaderTitle>
+          </DrawerHeader>
+          <DrawerBody>
+            <Sidebar groups={sidebar} variant="mobile" />
+          </DrawerBody>
+        </Drawer>
       )}
       <AskAI open={askAiOpen} onOpenChange={setAskAiOpen} />
       <VueIslands />

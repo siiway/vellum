@@ -19,6 +19,7 @@ import {
   WeatherSunny24Regular,
   WeatherMoon24Regular,
   ChevronDown16Regular,
+  Navigation24Regular,
 } from "@fluentui/react-icons";
 import { useVellum } from "../context";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
@@ -38,6 +39,13 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalM,
     paddingInline: tokens.spacingHorizontalXL,
     height: "60px",
+    // Tighten the inset + gap on small screens so the hamburger, brand,
+    // search button, and three action icons stop fighting each other for
+    // the last few pixels of width.
+    "@media (max-width: 720px)": {
+      gap: tokens.spacingHorizontalXS,
+      paddingInline: tokens.spacingHorizontalM,
+    },
   },
   brandGroup: {
     display: "flex",
@@ -67,6 +75,15 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralStroke2,
     flexShrink: 0,
     "@media (max-width: 540px)": { display: "none" },
+  },
+  // Hamburger button wrapper: opens the mobile Drawer sidebar. Only shown
+  // on narrow viewports; the desktop sticky sidebar handles the same role
+  // at >=960px. Wrapped in a span because FluentUI's Button enforces its
+  // own `display: inline-flex` at the same specificity our className uses,
+  // so a direct `display: none` on the Button doesn't stick.
+  menuBtn: {
+    display: "none",
+    "@media (max-width: 960px)": { display: "inline-flex" },
   },
   logo: { width: "26px", height: "26px", display: "block", flexShrink: 0 },
   logoSmall: { width: "22px", height: "22px", display: "block", flexShrink: 0 },
@@ -132,8 +149,15 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightRegular,
     backgroundColor: tokens.colorNeutralBackground2,
     borderColor: tokens.colorNeutralStroke2,
-    "@media (max-width: 720px)": { minWidth: "auto" },
     "&:hover": { backgroundColor: tokens.colorNeutralBackground2Hover },
+    // Below 540px the full search bar (label + outline + shortcut hint)
+    // duplicates the visual weight of the other action icons. Hide it and
+    // let `searchIconBtn` take over with the same look as AskAI/locale/theme.
+    "@media (max-width: 540px)": { display: "none" },
+  },
+  searchIconBtn: {
+    display: "none",
+    "@media (max-width: 540px)": { display: "inline-flex" },
   },
   searchLabel: { flex: 1, textAlign: "left", marginLeft: "4px" },
   kbd: {
@@ -153,9 +177,13 @@ const useStyles = makeStyles({
 export interface NavBarProps {
   onOpenSearch: () => void;
   onOpenAskAi?: () => void;
+  // When set, NavBar renders a hamburger button that calls this — used to
+  // open the mobile sidebar Drawer on narrow viewports. Layout passes
+  // `undefined` for layouts that don't have a sidebar (home, search).
+  onOpenSidebar?: () => void;
 }
 
-export function NavBar({ onOpenSearch, onOpenAskAi }: NavBarProps) {
+export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps) {
   const styles = useStyles();
   const { data, theme, setTheme, navigate, t } = useVellum();
   const { site } = data.config;
@@ -251,6 +279,25 @@ export function NavBar({ onOpenSearch, onOpenAskAi }: NavBarProps) {
       </nav>
       <div className={styles.spacer} />
       <div className={styles.actions}>
+        {/* Mobile hamburger: opens the sidebar Drawer. Sits next to the
+            search button so it picks up the same icon-row visual weight as
+            the other actions. The wrapper span carries the responsive
+            display rule because FluentUI's Button enforces its own
+            `display: inline-flex` at our class's specificity. */}
+        {onOpenSidebar && (
+          <span className={styles.menuBtn}>
+            <Button
+              appearance="subtle"
+              icon={<Navigation24Regular />}
+              onClick={onOpenSidebar}
+              aria-label={t("ui.nav.sidebar")}
+            />
+          </span>
+        )}
+        {/* Desktop / tablet: a full search bar with label + shortcut hint.
+            Mobile (<540px): a plain subtle icon button so it matches the
+            visual weight of the other action buttons (AskAI / locale /
+            theme) and the navbar stops feeling crowded. */}
         <Button
           appearance="outline"
           icon={<Search24Regular />}
@@ -260,6 +307,13 @@ export function NavBar({ onOpenSearch, onOpenAskAi }: NavBarProps) {
           <span style={{ flex: 1, textAlign: "left" }}>{t("ui.search")}</span>
           <span className={styles.kbd}>Ctrl K</span>
         </Button>
+        <Button
+          appearance="subtle"
+          icon={<Search24Regular />}
+          onClick={onOpenSearch}
+          aria-label={t("ui.search")}
+          className={styles.searchIconBtn}
+        />
         {onOpenAskAi && <AskAiButton onClick={onOpenAskAi} />}
         <LocalePicker />
         <SocialLinks />
