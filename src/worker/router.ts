@@ -330,6 +330,9 @@ async function renderRoute(
     currentUrl: route.canonicalUrl,
     repoUrlBase,
     localePrefix: localePath,
+    // Tells the relative-link resolver to treat currentUrl as a directory
+    // (index pages don't have a trailing slash after canonicalization).
+    pageIsIndex: route.pagePath === "index",
     resolveXref: (slug, rest) => {
       const r = SITE.repos.find((x) => x.slug === slug);
       if (!r) return null;

@@ -38,6 +38,9 @@ interface ExcerptOut {
 
 interface SearchHit {
   title: string;
+  // Title with `<mark>` wrapping matched terms — same convention as the
+  // excerpts. Falls back to escaped `title` when no terms matched.
+  titleHtml?: string;
   // The worker returns up to 3 excerpts per hit. The dialog only shows the
   // first one to keep the result row compact; the full-page SearchPage shows
   // all of them.
@@ -141,6 +144,21 @@ const useStyles = makeStyles({
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    "& mark": {
+      backgroundColor: tokens.colorPaletteYellowBackground2,
+      color: tokens.colorPaletteYellowForeground1,
+      paddingInline: "3px",
+      borderRadius: "2px",
+      fontWeight: tokens.fontWeightSemibold,
+    },
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.92em",
+      paddingInline: "4px",
+      paddingBlock: "1px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
+    },
   },
   hitExcerpt: {
     display: "block",
@@ -154,10 +172,20 @@ const useStyles = makeStyles({
     WebkitBoxOrient: "vertical",
     lineHeight: 1.4,
     "& mark": {
-      backgroundColor: tokens.colorBrandBackgroundInvertedHover,
-      color: tokens.colorBrandForeground1,
-      padding: "0 2px",
+      backgroundColor: tokens.colorPaletteYellowBackground2,
+      color: tokens.colorPaletteYellowForeground1,
+      paddingInline: "3px",
       borderRadius: "2px",
+      fontWeight: tokens.fontWeightSemibold,
+    },
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.92em",
+      paddingInline: "4px",
+      paddingBlock: "1px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
     },
   },
   hitMeta: {
@@ -477,10 +505,18 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                         >
                           <Document24Regular className={styles.hitIcon} />
                           <div className={styles.hitText}>
-                            <Text className={styles.hitTitle}>{h.title}</Text>
-                            <Text
+                            {/* Plain `span` — FluentUI's `Text` filters out
+                                `dangerouslySetInnerHTML` (not in its allowed
+                                native-props list), so the highlighted HTML
+                                never reaches the DOM through it. */}
+                            <span
+                              className={styles.hitTitle}
+                              dangerouslySetInnerHTML={{
+                                __html: h.titleHtml ?? escapeHtml(h.title),
+                              }}
+                            />
+                            <span
                               className={styles.hitExcerpt}
-                              as="span"
                               dangerouslySetInnerHTML={{
                                 __html: h.excerpts[0]?.html ?? "",
                               }}
@@ -527,4 +563,11 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       </DialogSurface>
     </Dialog>
   );
+}
+
+// Defensive: older `/api/search` responses (cached before this client
+// shipped) don't include titleHtml, so we fall back to plain text and
+// escape it like the worker does for excerpts.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

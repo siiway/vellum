@@ -15,6 +15,12 @@ export interface LinkContext {
   // normalizeInternal to detect and dedupe author-written `/zh/...` paths on a
   // page whose repoUrlBase already ends with `/zh`.
   localePrefix: string;
+  // True when the current page renders an index file (its URL is a
+  // directory in URL space — e.g. "/vl-handbook" maps to
+  // vl-handbook/index.md). Relative links from an index resolve INSIDE
+  // that directory; without this flag, the trailing-slash-less canonical
+  // URL would make `./foo` resolve to `/foo` instead of `/repo/foo`.
+  pageIsIndex: boolean;
   // resolve a cross-repo xref `@otherRepo/page` to a site URL, or null if unknown.
   resolveXref: (slug: string, rest: string) => string | null;
 }
@@ -82,10 +88,23 @@ function normalizeInternal(href: string, c: LinkContext): string {
     return `${path}${suffix}`;
   }
 
-  // Resolve relative to currentUrl's directory.
-  const base = c.currentUrl.endsWith("/")
-    ? c.currentUrl
-    : c.currentUrl.slice(0, c.currentUrl.lastIndexOf("/") + 1);
+  // Resolve relative to the current page's directory. The router strips
+  // trailing slashes from canonical URLs, so we have to figure out
+  // ourselves whether the URL points at a file or a directory:
+  //   - Index page (URL like `/vl-handbook`)  → URL IS the directory.
+  //   - Sub-page  (URL like `/vl-handbook/x`) → directory is the URL up
+  //     to and including the last slash.
+  // Without this index check, `./foo` from /vl-handbook would resolve to
+  // /foo (treating the slug like a file in the root) instead of the
+  // intended /vl-handbook/foo.
+  let base: string;
+  if (c.pageIsIndex) {
+    base = c.currentUrl.endsWith("/") ? c.currentUrl : `${c.currentUrl}/`;
+  } else if (c.currentUrl.endsWith("/")) {
+    base = c.currentUrl;
+  } else {
+    base = c.currentUrl.slice(0, c.currentUrl.lastIndexOf("/") + 1);
+  }
   const url = new URL(path, `https://x${base}`);
   return `${url.pathname}${suffix}`;
 }

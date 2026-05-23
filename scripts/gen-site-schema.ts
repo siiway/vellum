@@ -81,6 +81,8 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'Microsoft Learn-style "AI Summary" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file.',
       aiChat:
         '"Ask AI" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary.',
+      searchAliases:
+        "Search synonyms. Each key is a term a reader might type; the value is the list of words the docs author probably used for the same concept. A reader searching for any of these terms also matches pages containing the others (alias hits score below primary hits). Merged on top of a built-in baseline (latex/math, auth/oauth, ws/websocket, …) so config only needs to spell out product-specific vocabulary.",
     },
     propertyPatches: {
       themeColor: {
@@ -160,6 +162,8 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'When true, the repo is omitted from search results in both the per-repo dialog scope picker and the cross-repo full-page search. Use for landing-page repos and other "system" content the reader shouldn\'t be sent to by a query.',
       socialLinks:
         "Per-repo override for site.socialLinks. Shown in the NavBar while the reader is inside this repo. The repo's own vellum.json#socialLinks or VitePress themeConfig.socialLinks take higher priority when present.",
+      searchAliases:
+        "Per-repo search synonyms. Layered on top of the site-level alias map (and the built-in baseline) when searching within this repo. Use for vocabulary that only makes sense for this product — e.g. mapping a code-name to its public-facing term.",
     },
     propertyPatches: {
       slug: { pattern: "^[a-z0-9][a-z0-9-]*$" },

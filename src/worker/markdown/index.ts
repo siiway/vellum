@@ -179,10 +179,23 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     return `${repoBase}${path}${suffix}`.replace(/\/+/g, "/");
   }
 
-  // Relative path - resolve against the current page's directory.
-  const base = c.currentUrl.endsWith("/")
-    ? c.currentUrl
-    : c.currentUrl.slice(0, c.currentUrl.lastIndexOf("/") + 1);
+  // Relative path — resolve against the current page's directory. The
+  // router strips trailing slashes from canonical URLs, so we have to
+  // figure out ourselves whether the URL points at a file or a directory:
+  //   - Index page (URL like `/vl-handbook`)  → URL IS the directory.
+  //   - Sub-page  (URL like `/vl-handbook/x`) → directory is the URL up
+  //     to and including the last slash.
+  // Without the pageIsIndex branch, `./foo` from `/vl-handbook` would
+  // resolve to `/foo` (treating the slug as a file at the site root)
+  // instead of the intended `/vl-handbook/foo`.
+  let base: string;
+  if (c.pageIsIndex) {
+    base = c.currentUrl.endsWith("/") ? c.currentUrl : `${c.currentUrl}/`;
+  } else if (c.currentUrl.endsWith("/")) {
+    base = c.currentUrl;
+  } else {
+    base = c.currentUrl.slice(0, c.currentUrl.lastIndexOf("/") + 1);
+  }
   const url = new URL(path, `https://x${base}`);
   return `${url.pathname}${suffix}`;
 }

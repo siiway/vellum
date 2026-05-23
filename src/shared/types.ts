@@ -50,6 +50,11 @@ export interface RepoConfig {
   // priority overrides come from the repo's own vellum.json#socialLinks or
   // VitePress themeConfig.socialLinks.
   socialLinks?: SocialLink[];
+  // Per-repo search synonyms. Merged on top of site.searchAliases (and the
+  // built-in baseline) when searching within this repo. Use it for
+  // vocabulary that only makes sense for this product — e.g. mapping a
+  // product code-name to its public-facing terminology.
+  searchAliases?: Record<string, string[]>;
 }
 
 export interface NavItem {
@@ -123,6 +128,14 @@ export interface SiteConfig {
   // deployment can enable one without the other (e.g. summaries on, chat
   // off until you've reviewed bills).
   aiChat?: AiChatConfig;
+  // Search synonyms. Each key is a canonical or shorthand term; values are
+  // the words the docs author is likely to have used for the same concept.
+  // A reader searching for any of these terms will also match pages that
+  // contain the others (alias hits score below primary hits so canonical
+  // matches still win). Merged on top of a built-in baseline (latex/math,
+  // auth/oauth, ws/websocket, …) so config only needs to spell out the
+  // product-specific vocabulary.
+  searchAliases?: Record<string, string[]>;
 }
 
 export interface AiSummaryConfig {

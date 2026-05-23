@@ -36,10 +36,18 @@ interface ExcerptOut {
   html: string;
   sectionSlug?: string;
   sectionTitle?: string;
+  // Section title with inline markdown rendered (backtick spans → `<code>`).
+  // Preferred over `sectionTitle` so headings like `` `teams` `` style as
+  // code instead of showing literal backticks.
+  sectionTitleHtml?: string;
 }
 
 interface SearchHit {
   title: string;
+  // Title with `<mark>` wrapping matched terms. Falls back to plain title
+  // when no terms matched. Rendered via dangerouslySetInnerHTML like the
+  // excerpts.
+  titleHtml?: string;
   // Up to 3 excerpts per page, each clustered around a distinct match position.
   // Each excerpt is optionally tagged with the slug + title of the nearest
   // preceding heading so the result row can link to /url#sectionSlug.
@@ -173,6 +181,11 @@ const useStyles = makeStyles({
     cursor: "pointer",
     border: "1px solid transparent",
     transition: "background-color 80ms ease, border-color 80ms ease",
+    outline: "none",
+    "&:focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "2px",
+    },
   },
   hitActive: {
     backgroundColor: tokens.colorBrandBackground2,
@@ -188,6 +201,25 @@ const useStyles = makeStyles({
     display: "block",
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
+    "& mark": {
+      // Yellow status-palette tokens give a high-visibility highlight that
+      // adapts to both themes — light yellow on dark text in light mode,
+      // saturated yellow on bright text in dark mode. Way more legible than
+      // the soft brand tint we used before.
+      backgroundColor: tokens.colorPaletteYellowBackground2,
+      color: tokens.colorPaletteYellowForeground1,
+      paddingInline: "3px",
+      borderRadius: "2px",
+      fontWeight: tokens.fontWeightSemibold,
+    },
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.92em",
+      paddingInline: "4px",
+      paddingBlock: "1px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
+    },
   },
   // One excerpt block — wraps the section caption + the highlighted snippet.
   // Hoverable so users see it's its own clickable target (jumps to the
@@ -213,6 +245,14 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     fontWeight: tokens.fontWeightSemibold,
     marginBottom: "2px",
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.95em",
+      paddingInline: "4px",
+      paddingBlock: "1px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
+    },
   },
   hitExcerpt: {
     display: "block",
@@ -220,10 +260,24 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     lineHeight: 1.45,
     "& mark": {
-      backgroundColor: tokens.colorBrandBackgroundInvertedHover,
-      color: tokens.colorBrandForeground1,
-      padding: "0 2px",
+      // Yellow status-palette tokens give a high-visibility highlight that
+      // adapts to both themes — light yellow on dark text in light mode,
+      // saturated yellow on bright text in dark mode. Way more legible than
+      // the soft brand tint we used before.
+      backgroundColor: tokens.colorPaletteYellowBackground2,
+      color: tokens.colorPaletteYellowForeground1,
+      paddingInline: "3px",
       borderRadius: "2px",
+      fontWeight: tokens.fontWeightSemibold,
+    },
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.92em",
+      paddingInline: "4px",
+      paddingBlock: "1px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
     },
   },
   hitMeta: {
@@ -315,6 +369,10 @@ export function SearchPage() {
   const [urlHydrated, setUrlHydrated] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // True only when the last activeIdx change came from arrow keys. The
+  // scroll-into-view effect reads this so mouse hovers don't auto-scroll
+  // partially-offscreen cards into full view.
+  const keyboardNavRef = useRef(false);
 
   // After mount: pull ?q= and ?repo= out of the URL, then load recent searches
   // and focus the input. Runs once.
@@ -347,8 +405,11 @@ export function SearchPage() {
     const timer = setTimeout(async () => {
       try {
         const repoParam = scope ?? "*";
+        // verbose=1 asks the worker for wider excerpt windows + more
+        // excerpts per hit. The compact dialog gets the default; the
+        // full-page view has room to show actual body content.
         const r = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}&repo=${encodeURIComponent(repoParam)}&locale=${encodeURIComponent(data.route.localeCode)}&limit=30`,
+          `/api/search?q=${encodeURIComponent(q)}&repo=${encodeURIComponent(repoParam)}&locale=${encodeURIComponent(data.route.localeCode)}&limit=30&verbose=1`,
         );
         const j = (await r.json()) as { hits: SearchHit[] };
         if (!cancelled) {
@@ -430,29 +491,55 @@ export function SearchPage() {
     [navigate, persistRecent, q],
   );
 
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+  // Page-level keyboard nav. Listening on `window` (not just the search
+  // input) means arrow keys still drive the active hit after Tab moves
+  // focus to a repo-scope tab or a card — readers don't expect the input
+  // to be the sole "carrier" of keyboard navigation on a full-page list.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Don't fight global shortcuts the Layout owns (Ctrl/Cmd+K, "/").
       if (e.key === "ArrowDown") {
+        if (flat.length === 0) return;
         e.preventDefault();
+        keyboardNavRef.current = true;
         setActiveIdx((i) => Math.min(flat.length - 1, i + 1));
       } else if (e.key === "ArrowUp") {
+        if (flat.length === 0) return;
         e.preventDefault();
+        keyboardNavRef.current = true;
         setActiveIdx((i) => Math.max(0, i - 1));
       } else if (e.key === "Enter") {
-        e.preventDefault();
+        // Only intercept Enter when the active row is what's focused or when
+        // focus is on the search input. Letting Enter on a button or link
+        // bubble preserves their native semantics.
+        const tag = (document.activeElement as HTMLElement | null)?.tagName;
+        const inCard = (document.activeElement as HTMLElement | null)?.dataset?.hitIndex != null;
+        if (!inCard && tag !== "INPUT") return;
         const hit = flat[activeIdx];
-        if (hit) goToHit(hit);
+        if (!hit) return;
+        e.preventDefault();
+        goToHit(hit);
       }
-    },
-    [flat, activeIdx, goToHit],
-  );
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [flat, activeIdx, goToHit]);
 
-  // Scroll the active hit into view as the user arrows through results.
+  // Scroll the active hit into view as the user arrows through results,
+  // and shift DOM focus along with it so subsequent Tab presses continue
+  // from the right spot. Mouse-driven activeIdx changes skip both —
+  // hovering a card whose edge is just offscreen would otherwise yank the
+  // page to fully reveal it, and stealing focus on hover is hostile.
   useEffect(() => {
+    if (!keyboardNavRef.current) return;
+    keyboardNavRef.current = false;
     const list = listRef.current;
     if (!list) return;
     const el = list.querySelector<HTMLElement>(`[data-hit-index="${activeIdx}"]`);
-    if (el) el.scrollIntoView({ block: "nearest" });
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest" });
+    el.focus({ preventScroll: true });
   }, [activeIdx]);
 
   return (
@@ -476,7 +563,6 @@ export function SearchPage() {
           placeholder={t("ui.search.placeholder")}
           value={q}
           onChange={(_, d) => setQ(d.value)}
-          onKeyDown={onKeyDown}
           aria-label={t("ui.search")}
           autoComplete="off"
           spellCheck={false}
@@ -597,14 +683,26 @@ export function SearchPage() {
                     key={h.url}
                     className={mergeClasses(styles.hit, isActive && styles.hitActive)}
                     data-hit-index={idx}
+                    tabIndex={0}
                     onMouseEnter={() => setActiveIdx(idx)}
+                    // Sync activeIdx with focus so Tab walking the list and
+                    // arrow nav both highlight the same row.
+                    onFocus={() => setActiveIdx(idx)}
                     onClick={() => goToHit(h)}
                     role="option"
                     aria-selected={isActive}
                   >
                     <Document24Regular className={styles.hitIcon} />
                     <div className={styles.hitText}>
-                      <Text className={styles.hitTitle}>{h.title}</Text>
+                      {/* Plain `span` — FluentUI's `Text` filters out
+                          `dangerouslySetInnerHTML` (not in its allowed-props
+                          list), so going through it renders empty. */}
+                      <span
+                        className={styles.hitTitle}
+                        dangerouslySetInnerHTML={{
+                          __html: h.titleHtml ?? escapeHtml(h.title),
+                        }}
+                      />
                       {/* Render every excerpt the worker returned. Each carries
                           the nearest preceding heading (when it has one), so
                           a click on the excerpt jumps to /url#sectionSlug. */}
@@ -621,12 +719,16 @@ export function SearchPage() {
                         >
                           {ex.sectionTitle && (
                             <Caption1 className={styles.hitSection}>
-                              <ChevronRight16Regular /> {ex.sectionTitle}
+                              <ChevronRight16Regular />{" "}
+                              {ex.sectionTitleHtml ? (
+                                <span dangerouslySetInnerHTML={{ __html: ex.sectionTitleHtml }} />
+                              ) : (
+                                ex.sectionTitle
+                              )}
                             </Caption1>
                           )}
-                          <Text
+                          <span
                             className={styles.hitExcerpt}
-                            as="span"
                             dangerouslySetInnerHTML={{ __html: ex.html }}
                           />
                         </div>
@@ -674,4 +776,10 @@ function readScopeParam(validSlugs: string[]): string | null {
   const v = sp.get("repo");
   if (!v || v === "*") return null;
   return validSlugs.includes(v) ? v : null;
+}
+
+// Defensive escape for the (rare) case where a cached /api/search response
+// predates the titleHtml field and we have to fall back to the plain text.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
