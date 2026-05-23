@@ -501,8 +501,11 @@ async function renderRoute(
 
   // Cache key includes the hostname so multi-host deployments don't pollute
   // each other's cached HTML — the SEO head now embeds absolute URLs derived
-  // from the request origin, so the rendered bytes are host-specific.
-  const htmlKey = `html2:${url.host}:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}`;
+  // from the request origin, so the rendered bytes are host-specific. Theme is
+  // part of the key too: FluentUI's CSS-in-JS tokens are baked into the SSR
+  // HTML, so a dark-mode page can't be reused for a light-mode visitor.
+  const initialTheme = pickTheme(request);
+  const htmlKey = `html3:${url.host}:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}:${initialTheme}`;
   if (!wantsJson) {
     const cachedHtml = await readCache<string>(env, htmlKey);
     if (cachedHtml) {
@@ -660,7 +663,7 @@ async function renderRoute(
     // Non-fatal.
   }
 
-  const initialTheme = pickTheme(request);
+  // `initialTheme` already computed above for the cache key — reused here.
 
   // Title resolution:
   //   frontmatter.title > first h1 > hero.name (for `layout: home` pages) > repo display name (for index) > derived from path
@@ -733,8 +736,16 @@ function htmlHeaders(env: Env): HeadersInit {
   const ttl = ttlSeconds(env, "html");
   return {
     "content-type": "text/html; charset=utf-8",
-    "cache-control": `public, max-age=${ttl}, s-maxage=${ttl * 4}, stale-while-revalidate=${ttl * 10}`,
-    vary: "Accept",
+    // `private`: the SSR'd HTML is theme-personalized (cookies decide which
+    // FluentUI tokens are baked in), so shared caches can't reuse it across
+    // users. `no-cache`: the browser still stores the response but must
+    // revalidate on every navigation — without this, a `location.replace()`
+    // from the theme-detection pre-script returns the same cached light
+    // HTML and the reload loop never escapes. The CDN edge layer keeps
+    // `s-maxage` for repeated identical requests; the worker's own cache
+    // (theme-keyed) handles the hot path on the server side.
+    "cache-control": `private, no-cache, s-maxage=${ttl * 4}, stale-while-revalidate=${ttl * 10}`,
+    vary: "Accept, Cookie",
     "x-vellum": "edge-ssr",
   };
 }
@@ -765,9 +776,15 @@ function titleFromPath(p: string): string {
 
 function pickTheme(request: Request): "light" | "dark" {
   const cookie = request.headers.get("cookie") ?? "";
-  const m = cookie.match(/(?:^|;\s*)vellum-theme=(light|dark)/);
-  if (m) return m[1] as "light" | "dark";
-  // Server can't see prefers-color-scheme; default to light and let client swap.
+  // Explicit toggle wins — never override what the user clicked.
+  const explicit = cookie.match(/(?:^|;\s*)vellum-theme=(light|dark)/);
+  if (explicit) return explicit[1] as "light" | "dark";
+  // Auto-detected (written by the head pre-script on a previous visit). Lets
+  // SSR render the right FluentUI tokens so components don't flash on load.
+  const auto = cookie.match(/(?:^|;\s*)vellum-theme-auto=(light|dark)/);
+  if (auto) return auto[1] as "light" | "dark";
+  // First visit, or non-cookie-aware client. The head pre-script will fix the
+  // CSS-variable background immediately and write the auto cookie for next time.
   return "light";
 }
 

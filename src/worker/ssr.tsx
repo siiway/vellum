@@ -135,12 +135,18 @@ html[data-theme="dark"] .shiki span[style*="--shiki-dark-text-decoration"]{text-
 }
 `;
 
-  // Theme resolution must run before first paint so users with prefers-color-scheme:dark
-  // don't get flashed with a light background. Priority: cookie > matchMedia > server
-  // default. Synchronous script in <head> sets data-theme on <html>; the base CSS above
-  // keys off that attribute. Wrapped in a self-invoking function so locals don't leak.
+  // Theme resolution runs synchronously in <head> before first paint. Priority:
+  //   1. Explicit `vellum-theme` cookie (set by the toggle button) — wins always.
+  //   2. `vellum-theme-auto` cookie — written by a previous run of this script
+  //      so the server can SSR with the right FluentUI tokens. If the OS theme
+  //      shifted since we last persisted (e.g. user toggled dark mode mid-day),
+  //      we update the cookie + reload so the SSR matches what the user expects.
+  //   3. First-ever visit (neither cookie present): detect via matchMedia, write
+  //      the auto cookie, and `location.replace()` to reload. The reload swap
+  //      is in-flight before the rest of the document parses, so the user sees
+  //      a near-instant re-fetch rather than a light-themed flash.
   const serverTheme = payload.initialTheme;
-  const themeScript = `(function(){try{var m=document.cookie.match(/(?:^|; )vellum-theme=(light|dark)/);var t=m?m[1]:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
+  const themeScript = `(function(){try{var c=document.cookie;var m=c.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){document.documentElement.dataset.theme=m[1];return;}var os=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var a=c.match(/(?:^|; )vellum-theme-auto=(light|dark)/);if(!a){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';location.replace(location.href);return;}if(a[1]!==os){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';location.replace(location.href);return;}document.documentElement.dataset.theme=a[1];}catch(e){document.documentElement.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
 
   return `<!doctype html>
 <html lang="${escapeAttr(toBcp47(payload.route.localeCode, payload.config))}" data-theme="${payload.initialTheme}">
