@@ -15,6 +15,10 @@ export interface LinkContext {
   // normalizeInternal to detect and dedupe author-written `/zh/...` paths on a
   // page whose repoUrlBase already ends with `/zh`.
   localePrefix: string;
+  // locale code (e.g. "zh") — may differ from localePrefix (e.g. "zh-CN").
+  // Authors in source files use the code in docs-root-relative links
+  // (`/zh/getting-started`); we need both to strip either form.
+  localeCode?: string;
   // True when the current page renders an index file (its URL is a
   // directory in URL space — e.g. "/vl-handbook" maps to
   // vl-handbook/index.md). Relative links from an index resolve INSIDE

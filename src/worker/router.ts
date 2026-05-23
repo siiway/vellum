@@ -140,6 +140,18 @@ export async function dispatch(
     return Response.redirect(dest.toString(), 301);
   }
 
+  // Duplicate-locale-code normalization: URLs like `/{prefix}/{repo}/{code}/page`
+  // where `code` is the locale code that differs from the URL prefix (e.g.
+  // `/zh-CN/prism/zh/getting-started`). The locale is already encoded in the
+  // prefix; the extra `/{code}` segment would double-up inside the source path
+  // lookup and 404. Redirect to the form without the redundant segment.
+  const dupLocale = detectDuplicateLocaleCode(path);
+  if (dupLocale) {
+    const dest = new URL(dupLocale, url.origin);
+    url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+    return Response.redirect(dest.toString(), 301);
+  }
+
   // Force a locale prefix on every page URL. Anything that gets this far is a
   // page request (API / SEO / static-asset paths short-circuited above) — if
   // its first segment isn't a configured locale prefix, pick one and bounce
@@ -416,6 +428,26 @@ function detectLegacyLocaleShape(pathname: string): string | null {
   return `/${locale.prefix}/${parts[0]}${suffix}`;
 }
 
+// Detect `/{localePrefix}/{repoSlug}/{localeCode}/...` where code !== prefix.
+// This arises when authors write docs-root-relative links using the locale
+// code (`/zh/getting-started`) inside a source file whose URL prefix is
+// different (`zh-CN`). The link rewriter now strips these, but old cached
+// pages / bookmarks may still carry the doubled form. Returns the corrected
+// path or null.
+function detectDuplicateLocaleCode(pathname: string): string | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
+  if (parts.length < 3) return null;
+  const locale = SITE.site.locales.find((l) => l.prefix && l.prefix === parts[0]);
+  if (!locale) return null;
+  const repo = SITE.repos.find((r) => r.slug === parts[1]);
+  if (!repo) return null;
+  // Third segment equals the locale code but not the prefix → redundant.
+  if (parts[2] !== locale.code || locale.code === locale.prefix) return null;
+  const rest = parts.slice(3);
+  const suffix = rest.length ? `/${rest.join("/")}` : "";
+  return `/${locale.prefix}/${repo.slug}${suffix}`;
+}
+
 // Build a RouteContext for the landing page (`/` or `/{localePrefix}`)
 // pointing at the configured homepageRepo's index. The canonical URL is the
 // short form so the URL bar / sitemap / `<link rel=canonical>` all agree.
@@ -647,8 +679,7 @@ async function renderRoute(
     currentUrl: isShortHomepageCanonical ? repoUrlBase : route.canonicalUrl,
     repoUrlBase,
     localePrefix: localeUrlPath,
-    // Tells the relative-link resolver to treat currentUrl as a directory
-    // (index pages don't have a trailing slash after canonicalization).
+    localeCode: route.localeCode,
     pageIsIndex: route.pagePath === "index",
     resolveXref: (slug, rest) => {
       const r = SITE.repos.find((x) => x.slug === slug);
@@ -798,14 +829,7 @@ async function renderRoute(
         machineTranslated,
         translationAttempted,
         translatedBy,
-        // Only compute the available-translations list when the MT pipeline
-        // touched this page — that's the only surface that uses it (the
-        // MachineTranslatedBanner). For hand-curated pages we skip the D1
-        // round-trip entirely.
-        translatedLocales:
-          machineTranslated || translationAttempted
-            ? await resolveTranslatedLocales(env, SITE, route)
-            : undefined,
+        translatedLocales: await resolveTranslatedLocales(env, SITE, route),
       },
     },
   };
@@ -867,7 +891,7 @@ function htmlHeaders(env: Env): HeadersInit {
 async function resolveTranslatedLocales(
   env: Env,
   site: VellumConfig,
-  route: RouteContext,
+  route: { repoSlug: string; version: { branch: string }; pagePath: string },
 ): Promise<string[]> {
   const handCurated = site.site.locales.filter((l) => !l.machineTranslated).map((l) => l.code);
   const cached = await listTranslatedLocalesForPage(
@@ -1197,6 +1221,27 @@ async function renderLanguagesPage(
     translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
   ]);
 
+  // Parse ?page= to determine which page the reader came from, so we can
+  // compute translatedLocales for that specific page. The languages page
+  // uses this to show per-locale status badges (translated, not yet, etc.).
+  let translatedLocales: string[] | undefined;
+  const pageParam = url.searchParams.get("page");
+  if (pageParam && pageParam.startsWith("/") && !pageParam.includes("..")) {
+    const pageParts = pageParam.replace(/^\/+/, "").split("/").filter(Boolean);
+    if (pageParts.length >= 1) {
+      const targetRepo = SITE.repos.find((r) => r.slug === pageParts[0]);
+      if (targetRepo) {
+        const targetBranch = repoRef(targetRepo);
+        const targetPage = pageParts.length > 1 ? pageParts.slice(1).join("/") : "index";
+        translatedLocales = await resolveTranslatedLocales(env, SITE, {
+          repoSlug: targetRepo.slug,
+          version: { branch: targetBranch },
+          pagePath: targetPage,
+        });
+      }
+    }
+  }
+
   const title = translate(match.localeCode, "ui.languages.title");
   const description = translate(match.localeCode, "ui.languages.subtitle");
 
@@ -1218,9 +1263,9 @@ async function renderLanguagesPage(
       meta: {
         title,
         description,
-        // Layout switch consumed by Layout.tsx.
         frontmatter: { layout: "languages" },
         outline: [],
+        translatedLocales,
       },
     },
   };

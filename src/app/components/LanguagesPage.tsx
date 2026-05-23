@@ -180,6 +180,11 @@ export function LanguagesPage() {
   const styles = useStyles();
   const { data, navigate, t } = useVellum();
   const locales = data.config.site.locales;
+  const translatedSet = useMemo(
+    () => (data.page.meta.translatedLocales ? new Set(data.page.meta.translatedLocales) : null),
+    [data.page.meta.translatedLocales],
+  );
+  const defaultLocale = data.config.site.defaultLocale;
 
   const [target, setTarget] = useState<string>(() => readTargetFromUrl());
   useEffect(() => {
@@ -277,8 +282,17 @@ export function LanguagesPage() {
               <div className={styles.grid}>
                 {items.map((l) => {
                   const isCurrent = l.code === data.route.localeCode;
+                  const isSource = l.code === defaultLocale;
+                  const isTranslated = !translatedSet || translatedSet.has(l.code);
                   const href = urlFor(l);
                   const displayCode = displayLocaleCode(l);
+
+                  const badges: Array<{ label: string; appearance: "tint" | "outline"; color: "brand" | "informative" | "subtle" }> = [];
+                  if (isCurrent) badges.push({ label: t("ui.languages.current"), appearance: "tint", color: "brand" });
+                  if (isSource) badges.push({ label: t("ui.languages.source"), appearance: "outline", color: "informative" });
+                  else if (l.machineTranslated && isTranslated) badges.push({ label: t("ui.languages.machineTranslated"), appearance: "outline", color: "brand" });
+                  else if (l.machineTranslated && !isTranslated) badges.push({ label: t("ui.languages.notTranslatedYet"), appearance: "outline", color: "subtle" });
+
                   return (
                     <a
                       key={l.code}
@@ -294,18 +308,13 @@ export function LanguagesPage() {
                       >
                         <Subtitle1 className={styles.cardLabel}>{l.label}</Subtitle1>
                         <Caption1 className={styles.cardCode}>{displayCode}</Caption1>
-                        {isCurrent || l.machineTranslated ? (
+                        {badges.length > 0 ? (
                           <div className={styles.badgeRow}>
-                            {isCurrent && (
-                              <Badge appearance="tint" color="brand">
-                                {t("ui.languages.current")}
+                            {badges.map((b) => (
+                              <Badge key={b.label} appearance={b.appearance} color={b.color}>
+                                {b.label}
                               </Badge>
-                            )}
-                            {l.machineTranslated && (
-                              <Badge appearance="outline" color="brand">
-                                {t("ui.languages.machineTranslated")}
-                              </Badge>
-                            )}
+                            ))}
                           </div>
                         ) : (
                           <div className={styles.badgeRowPlaceholder} aria-hidden="true" />
