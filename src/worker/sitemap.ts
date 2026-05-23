@@ -8,6 +8,7 @@
 
 import type { Env } from "./env";
 import type { VellumConfig } from "../shared/types";
+import { localeSourcePrefix } from "../shared/types";
 import { fetchSourceTree, docsRootPrefix, repoRef } from "./sources";
 import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";

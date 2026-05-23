@@ -5,10 +5,12 @@ import type { Env } from "./env";
 import type {
   BootstrapPayload,
   ErrorState,
+  LocaleConfig,
   RepoConfig,
   RouteContext,
   VellumConfig,
 } from "../shared/types";
+import { localeSourcePrefix } from "../shared/types";
 import config from "../../vellum.config.json";
 import {
   fetchSourceFile,
@@ -70,15 +72,18 @@ export async function dispatch(
     return env.ASSETS.fetch(request);
   }
 
-  // `/` and bare-locale `/zh` serve the homepageRepo's index page directly —
-  // canonical URL is `/` (or `/zh`), not `/{homepageRepo}`. The slug variant
-  // (`/{homepageRepo}` and `/{locale}/{homepageRepo}`) is redirected to the
-  // short form below, so there's a single canonical URL for the landing page.
+  // `/` is the language-detect entry point. Cookie wins over Accept-Language
+  // so a returning visitor who explicitly clicked into a different locale
+  // doesn't get bounced back. The redirect persists the choice via cookie so
+  // the same logic applies on every subsequent root visit.
   if (path === "/" || path === "") {
-    const homepageRoute = makeHomepageIndexRoute(SITE.site.defaultLocale, "");
-    if (homepageRoute) return renderRoute(env, ctx, request, homepageRoute);
+    const locale = pickLocale(request);
+    return localeRedirect(url, `/${locale.prefix}`, locale.code);
   }
 
+  // Bare locale `/{prefix}` (and `/{prefix}/`) renders the homepageRepo's
+  // index. Canonical URL stays `/{prefix}` — never `/{prefix}/{homepageRepo}`
+  // — so search engines see one address for the landing page per locale.
   const bareLocaleMatch = path.match(/^\/([a-zA-Z][a-zA-Z0-9-]*)\/?$/);
   if (bareLocaleMatch) {
     const candidate = bareLocaleMatch[1]!;
@@ -89,11 +94,10 @@ export async function dispatch(
     }
   }
 
-  // `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}` (the slug form of
-  // the landing page) redirect to `/` and `/{localePrefix}` so the short
-  // form is the only canonical URL. Sub-pages under the homepage repo
-  // (`/{homepageRepo}/<slug>`) keep their slug-prefixed URL and resolve
-  // normally via resolveRoute below.
+  // `/{prefix}/{homepageRepo}` (slug form of the landing page) redirects to
+  // `/{prefix}` so the short form is the only canonical URL. Sub-pages
+  // (`/{prefix}/{homepageRepo}/<slug>`) keep their slug-prefixed URL and
+  // resolve normally via resolveRoute below.
   const homepageSlugRedirect = matchHomepageRepoIndex(path);
   if (homepageSlugRedirect) {
     const dest = new URL(homepageSlugRedirect, url.origin);
@@ -113,9 +117,34 @@ export async function dispatch(
     return Response.redirect(dest.toString(), 301);
   }
 
-  // Full-page cross-repo search. `/search` and `/{localePrefix}/search` are reserved
-  // pseudo-pages: they render without touching GitHub, deferring all data fetches
-  // to the SearchPage client component via `/api/search?repo=*`.
+  // Legacy-prefix normalization: URLs that lead with a locale's short code
+  // (`/en/...`, `/zh/...`) are 301'd to the canonical full prefix
+  // (`/en-US/...`, `/zh-CN/...`). Lets old bookmarks and inbound links keep
+  // working when a config tightens up its prefix to BCP47 form. Skipped when
+  // code === prefix (the locale already uses its short code as the URL).
+  const aliasTarget = detectLegacyLocalePrefixAlias(path);
+  if (aliasTarget) {
+    const dest = new URL(aliasTarget, url.origin);
+    url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+    return Response.redirect(dest.toString(), 301);
+  }
+
+  // Force a locale prefix on every page URL. Anything that gets this far is a
+  // page request (API / SEO / static-asset paths short-circuited above) — if
+  // its first segment isn't a configured locale prefix, pick one and bounce
+  // there. Folds the homepage-shortcut rewrite in too so `/getting-started`
+  // lands directly at `/{prefix}/{homepageRepo}/getting-started` (instead of
+  // chaining a second redirect through the unprefixed shortcut).
+  if (!startsWithLocalePrefix(path)) {
+    const locale = pickLocale(request);
+    const target = addLocalePrefixToPath(path, locale.prefix);
+    if (target !== path) return localeRedirect(url, target, locale.code);
+  }
+
+  // Full-page cross-repo search. `/{localePrefix}/search` is the canonical
+  // form (the unprefixed `/search` would have been redirected above). The
+  // page renders without touching GitHub, deferring all data fetches to the
+  // SearchPage client component via `/api/search?repo=*`.
   const searchRoute = matchSearchRoute(path);
   if (searchRoute) {
     return renderSearchPage(env, ctx, request, searchRoute);
@@ -135,9 +164,11 @@ export async function dispatch(
 
     // No repo / locale match - render a styled 404 with suggested repos.
     const locale = guessLocale(request, path);
+    const localePrefix = SITE.site.locales.find((l) => l.code === locale)?.prefix ?? "";
+    const repoPrefix = localePrefix ? `/${localePrefix}` : "";
     const suggestions = SITE.repos.slice(0, 5).map((r) => ({
       text: r.displayName,
-      link: `/${r.slug}`,
+      link: `${repoPrefix}/${r.slug}`,
     }));
     return errorPage(env, ctx, request, {
       status: 404,
@@ -159,14 +190,159 @@ function guessLocale(request: Request, path: string): string {
     const match = SITE.site.locales.find((l) => l.prefix === seg);
     if (match) return match.code;
   }
-  const accept = request.headers.get("accept-language") ?? "";
-  for (const code of accept.split(",").map((s) => s.split(";")[0]!.trim().toLowerCase())) {
-    for (const l of SITE.site.locales) {
-      if (code === l.code.toLowerCase() || code.startsWith(`${l.code.toLowerCase()}-`))
-        return l.code;
+  return pickLocale(request).code;
+}
+
+// Cookie name used to remember an explicit locale choice. Persisted by the
+// `/` detection redirect and by the client-side LocalePicker; honoured ahead
+// of Accept-Language so a returning visitor isn't bounced to a different
+// locale when their browser preferences drift.
+const LOCALE_COOKIE = "vellum-locale";
+const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
+// Pick the locale to serve for a request that doesn't already carry one in
+// its URL. Resolution order:
+//   1. `vellum-locale` cookie — explicit prior choice.
+//   2. Accept-Language header, ranked by quality value, matched on the full
+//      tag first (so `zh-Hant` beats `zh` when both are configured), then on
+//      the primary subtag (`zh-CN` matches a configured `zh`).
+//   3. The site's defaultLocale.
+function pickLocale(request: Request): LocaleConfig {
+  const fallback =
+    SITE.site.locales.find((l) => l.code === SITE.site.defaultLocale) ?? SITE.site.locales[0]!;
+
+  const cookies = parseCookies(request.headers.get("cookie"));
+  const cookieCode = cookies[LOCALE_COOKIE];
+  if (cookieCode) {
+    const match = SITE.site.locales.find((l) => l.code === cookieCode);
+    if (match) return match;
+  }
+
+  const tags = parseAcceptLanguage(request.headers.get("accept-language"));
+  // Pass 1: exact tag match against locale.code (case-insensitive). Catches
+  // things like `zh-Hant` if anyone configures it.
+  for (const tag of tags) {
+    const exact = SITE.site.locales.find((l) => l.code.toLowerCase() === tag);
+    if (exact) return exact;
+  }
+  // Pass 2: primary subtag (the part before the first `-`). Catches the
+  // common case of `zh-CN` / `en-US` against bare `zh` / `en` configs.
+  for (const tag of tags) {
+    const primary = tag.split("-")[0]!;
+    const match = SITE.site.locales.find((l) => l.code.toLowerCase() === primary);
+    if (match) return match;
+  }
+  return fallback;
+}
+
+// Parse an Accept-Language header into a list of lowercased BCP47 tags
+// ranked by q-value (highest first). Missing q-values default to 1.0;
+// malformed entries are dropped silently.
+function parseAcceptLanguage(header: string | null): string[] {
+  if (!header) return [];
+  const parsed = header
+    .split(",")
+    .map((raw) => {
+      const [tag, ...params] = raw.trim().split(";");
+      const lower = (tag ?? "").trim().toLowerCase();
+      if (!lower || lower === "*") return null;
+      let q = 1;
+      for (const p of params) {
+        const kv = p.trim().split("=");
+        if (kv[0] === "q" && kv[1]) {
+          const n = Number(kv[1]);
+          if (Number.isFinite(n) && n >= 0 && n <= 1) q = n;
+        }
+      }
+      return { tag: lower, q };
+    })
+    .filter((x): x is { tag: string; q: number } => x !== null && x.q > 0);
+  // Stable sort by q descending — preserves header order within a q tier.
+  return parsed.sort((a, b) => b.q - a.q).map((x) => x.tag);
+}
+
+function parseCookies(header: string | null): Record<string, string> {
+  if (!header) return {};
+  const out: Record<string, string> = {};
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (!key) continue;
+    try {
+      out[key] = decodeURIComponent(value);
+    } catch {
+      out[key] = value;
     }
   }
-  return SITE.site.defaultLocale;
+  return out;
+}
+
+// Detect a path whose first segment is the short *code* of a locale whose
+// canonical URL prefix is something longer (e.g. `/en` for a locale with
+// `code: "en"` and `prefix: "en-US"`). Returns the canonical-prefixed URL
+// to 301 to, or null when the path is already canonical (or doesn't lead
+// with a known short code). Region-coded aliases (`/en-us`, `/zh_cn`,
+// `/en_US`) are matched too so any reasonable casing or separator a user
+// might type collapses to the configured form.
+function detectLegacyLocalePrefixAlias(pathname: string): string | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/").filter(Boolean);
+  if (!parts.length) return null;
+  const first = parts[0]!;
+  const normalized = first.toLowerCase().replace(/_/g, "-");
+  for (const l of SITE.site.locales) {
+    if (!l.prefix) continue;
+    if (l.prefix === first) return null; // already canonical
+    const canonicalLower = l.prefix.toLowerCase();
+    const codeLower = l.code.toLowerCase();
+    if (normalized === canonicalLower || normalized === codeLower) {
+      const rest = parts.slice(1);
+      const suffix = rest.length ? `/${rest.join("/")}` : "";
+      return `/${l.prefix}${suffix}`;
+    }
+  }
+  return null;
+}
+
+function startsWithLocalePrefix(pathname: string): boolean {
+  const first = pathname.replace(/^\/+/, "").split("/")[0];
+  if (!first) return false;
+  return SITE.site.locales.some((l) => l.prefix && l.prefix === first);
+}
+
+// Stitch a locale prefix onto an unprefixed path, optionally inserting the
+// homepageRepo slug when the first segment isn't a known repo. Folds the
+// classic "homepage shortcut" rewrite into the locale-prefixing step so we
+// only redirect once for paths like `/getting-started`.
+function addLocalePrefixToPath(pathname: string, prefix: string): string {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/").filter(Boolean);
+  if (parts.length === 0) return `/${prefix}`;
+  const first = parts[0]!;
+  // Reserved: keep search/api/sitemap/etc. routed to themselves under the
+  // new prefix. `api` is already short-circuited; this is belt-and-braces.
+  const reserved = first === "search" || first === "api";
+  const isRepo = SITE.repos.some((r) => r.slug === first);
+  if (reserved || isRepo) {
+    return `/${prefix}/${parts.join("/")}`;
+  }
+  // Non-repo first segment → assume it's a homepage-repo sub-page.
+  return `/${prefix}/${SITE.site.homepageRepo}/${parts.join("/")}`;
+}
+
+// Build a 302 to a locale-prefixed destination, preserving query params and
+// stamping the locale cookie so the choice sticks for future entry-point
+// hits. The response body is empty; the cookie is attached via headers
+// (Response.redirect returns an immutable response, so we rebuild it).
+function localeRedirect(sourceUrl: URL, destPath: string, localeCode: string): Response {
+  const dest = new URL(destPath, sourceUrl.origin);
+  sourceUrl.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+  const headers = new Headers({
+    location: dest.toString(),
+    "set-cookie": `${LOCALE_COOKIE}=${encodeURIComponent(localeCode)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax`,
+    "cache-control": "no-store",
+  });
+  return new Response(null, { status: 302, headers });
 }
 
 // Detect URLs whose first non-locale segment isn't a repo slug, and redirect
@@ -337,8 +513,16 @@ async function renderRoute(
     }
   }
 
-  const localePath = SITE.site.locales.find((l) => l.code === route.localeCode)?.prefix ?? "";
-  const candidates = pageCandidates(route.repo, localePath, route.pagePath);
+  // URL-side prefix (what appears in URLs and matches URL segments) and
+  // source-side prefix (where files live on disk) are decoupled — the
+  // default locale's files sit at the docs root regardless of whether its
+  // URL prefix is set. See `localeSourcePrefix` for the rationale.
+  const localeConfig = SITE.site.locales.find((l) => l.code === route.localeCode);
+  const localeUrlPath = localeConfig?.prefix ?? "";
+  const localeSrcPath = localeConfig
+    ? localeSourcePrefix(localeConfig, SITE.site.defaultLocale)
+    : "";
+  const candidates = pageCandidates(route.repo, localeSrcPath, route.pagePath);
 
   let source: string | null = null;
   let matchedPath: string | null = null;
@@ -355,7 +539,7 @@ async function renderRoute(
 
   if (!source || !matchedPath) {
     // Build "did you mean" suggestions by scanning the repo tree for similarly-named pages.
-    const suggestions = await suggestPages(env, ctx, route, localePath);
+    const suggestions = await suggestPages(env, ctx, route, localeSrcPath);
     return errorPage(
       env,
       ctx,
@@ -371,31 +555,30 @@ async function renderRoute(
     );
   }
 
-  // Locale-first base: `/{localePrefix}/{repoSlug}`. Cross-repo xrefs (`@slug/...`)
+  // Locale-first base: `/{localeUrlPath}/{repoSlug}`. Cross-repo xrefs (`@slug/...`)
   // resolve into the SAME locale as the current page, so a zh page linking
   // `@prism/foo` lands on `/zh/prism/foo`.
-  const repoUrlBase = `${localePath ? `/${localePath}` : ""}/${route.repoSlug}`;
-  // For the landing page (canonical `/` or `/{localePrefix}` served from the
+  const repoUrlBase = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${route.repoSlug}`;
+  // For the landing page (canonical `/{localeUrlPath}` served from the
   // homepageRepo's index), the relative-link resolver still needs to anchor
-  // at the repo slug — otherwise `./foo` becomes `/foo` instead of
-  // `/{homepageRepo}/foo`, and we'd lean on the homepage-shortcut redirect
-  // for every relative link. Use the slug-rooted URL here while keeping the
-  // short canonical URL elsewhere (SEO, URL bar, sitemap).
+  // at the repo slug — otherwise `./foo` becomes `/{prefix}/foo` instead of
+  // `/{prefix}/{homepageRepo}/foo`. Use the slug-rooted URL here while
+  // keeping the short canonical URL elsewhere (SEO, URL bar, sitemap).
   const isShortHomepageCanonical =
     route.repoSlug === SITE.site.homepageRepo &&
     route.pagePath === "index" &&
-    (route.canonicalUrl === "/" || route.canonicalUrl === `/${localePath}`);
+    (route.canonicalUrl === "/" || route.canonicalUrl === `/${localeUrlPath}`);
   const linkContext: LinkContext = {
     currentUrl: isShortHomepageCanonical ? repoUrlBase : route.canonicalUrl,
     repoUrlBase,
-    localePrefix: localePath,
+    localePrefix: localeUrlPath,
     // Tells the relative-link resolver to treat currentUrl as a directory
     // (index pages don't have a trailing slash after canonicalization).
     pageIsIndex: route.pagePath === "index",
     resolveXref: (slug, rest) => {
       const r = SITE.repos.find((x) => x.slug === slug);
       if (!r) return null;
-      const base = `${localePath ? `/${localePath}` : ""}/${r.slug}`;
+      const base = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`;
       return `${base}/${rest.replace(/\.md$/, "")}`.replace(/\/+/g, "/");
     },
   };
@@ -439,11 +622,18 @@ async function renderRoute(
       env,
       route.repo,
       route.version.branch,
-      route.localeCode,
-      ctx,
+      localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
       SITE.site.defaultLocale,
+      ctx,
     ),
-    loadRepoNav(env, route.repo, route.version.branch, route.localeCode, ctx),
+    loadRepoNav(
+      env,
+      route.repo,
+      route.version.branch,
+      localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
+      SITE.site.defaultLocale,
+      ctx,
+    ),
     loadVueComponents(env, route.repo, route.version.branch, ctx),
     loadRepoSocialLinks(env, route.repo, route.version.branch, ctx),
   ]);
@@ -652,14 +842,14 @@ async function suggestPages(
   env: Env,
   ctx: ExecutionContext,
   route: RouteContext,
-  localePath: string,
+  srcPath: string,
 ): Promise<Array<{ text: string; link: string }>> {
   try {
     const tree = await fetchSourceTree(env, route.repo, route.version.branch, {
       ctx,
     });
     const docsPrefix = docsRootPrefix(route.repo.docsRoot);
-    const locPrefix = localePath ? `${localePath}/` : "";
+    const locPrefix = srcPath ? `${srcPath}/` : "";
     const targets = tree
       .filter(
         (e) =>
@@ -686,7 +876,12 @@ async function suggestPages(
       .slice(0, 4)
       .filter((s) => s.score > 0);
 
-    const repoBase = `/${route.repoSlug}${localePath ? `/${localePath}` : ""}`;
+    // Link construction uses the URL prefix (which can differ from the
+    // source path — default locale lives at the docs root but its URL is
+    // still locale-prefixed). Locale-first order matches the canonical
+    // shape: `/{urlPrefix}/{repoSlug}/{rel}`.
+    const urlPrefix = SITE.site.locales.find((l) => l.code === route.localeCode)?.prefix ?? "";
+    const repoBase = `${urlPrefix ? `/${urlPrefix}` : ""}/${route.repoSlug}`;
     return scored.map((s) => {
       const rel = locPrefix && s.p.startsWith(locPrefix) ? s.p.slice(locPrefix.length) : s.p;
       const link =

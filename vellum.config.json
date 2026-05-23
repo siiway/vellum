@@ -10,8 +10,8 @@
     "homepageRepo": "homepage",
     "defaultLocale": "en",
     "locales": [
-      { "code": "en", "label": "English", "prefix": "" },
-      { "code": "zh", "label": "中文", "prefix": "zh" }
+      { "code": "en", "label": "English", "prefix": "en-US" },
+      { "code": "zh", "label": "中文", "prefix": "zh-CN" }
     ],
     "socialLinks": [{ "icon": "github", "link": "https://github.com/siiway" }],
     "aiSummary": {

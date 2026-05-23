@@ -3,7 +3,21 @@
 export interface LocaleConfig {
   code: string;
   label: string;
-  prefix: string; // empty string means root locale
+  // URL prefix segment for this locale (e.g. "en", "zh"). Used when matching
+  // and building canonical URLs. Decoupled from the source-file layout —
+  // see `localeSourcePrefix` below.
+  prefix: string;
+}
+
+// Where this locale's source markdown lives, relative to the repo's docsRoot.
+// The default locale's content sits at the docs root with no subdirectory;
+// every other locale lives under a subdir named after its short `code`
+// (e.g. `docs/zh/`, `docs/ja/`) — the long-standing repo convention,
+// preserved even when URLs use a richer BCP47 prefix like `zh-CN`. This
+// keeps existing repo layouts working when authors tighten up their
+// `prefix` to a region-coded form.
+export function localeSourcePrefix(locale: LocaleConfig, defaultLocaleCode: string): string {
+  return locale.code === defaultLocaleCode ? "" : locale.code;
 }
 
 export interface RepoVersion {

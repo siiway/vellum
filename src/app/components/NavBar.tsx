@@ -358,11 +358,28 @@ function LocalePicker() {
   function linkFor(localeCode: string): string {
     const locale = data.config.site.locales.find((l) => l.code === localeCode)!;
     const prefix = locale.prefix ? `/${locale.prefix}` : "";
-    // Locale-first: `/{prefix}/{repoSlug}/{pagePath}`.
-    return (
-      `${prefix}/${repoSlug}/${pagePath}`.replace(/\/+/g, "/").replace(/\/$/, "") ||
-      `${prefix}/${repoSlug}`
-    );
+    // Special cases for the canonical short forms:
+    //   - homepageRepo's index → `/{prefix}` (no slug, no "index" segment)
+    //   - any other repo's index → `/{prefix}/{slug}` (no trailing "index")
+    // Without these the link would be `/zh/homepage/index`, which is the
+    // long form and immediately bounces through two redirects before
+    // landing at `/zh`.
+    if (pagePath === "index" && repoSlug === data.config.site.homepageRepo) return prefix || "/";
+    if (pagePath === "index") return `${prefix}/${repoSlug}`;
+    return `${prefix}/${repoSlug}/${pagePath}`.replace(/\/+/g, "/").replace(/\/$/, "");
+  }
+
+  function chooseLocale(localeCode: string) {
+    // Persist the explicit choice so the `/` entry-point redirect (which
+    // reads this cookie before Accept-Language) honours it on future visits.
+    // 1 year matches the server-side Max-Age so cookie expiry agrees.
+    try {
+      document.cookie = `vellum-locale=${encodeURIComponent(localeCode)}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+    } catch {
+      // Some embedding contexts (sandboxed iframes) can throw on cookie writes;
+      // navigation still works without the persistence.
+    }
+    navigate(linkFor(localeCode));
   }
 
   return (
@@ -375,7 +392,7 @@ function LocalePicker() {
           {data.config.site.locales.map((l) => (
             <MenuItem
               key={l.code}
-              onClick={() => navigate(linkFor(l.code))}
+              onClick={() => chooseLocale(l.code)}
               disabled={l.code === currentLocale}
             >
               {l.label}
