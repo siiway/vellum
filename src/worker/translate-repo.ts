@@ -2,9 +2,15 @@
 // via Server-Sent Events so the client can show a real-time progress bar.
 //
 // Strategy: enumerate the repo's source tree, filter to .md files under the
-// docs root, prioritize index + sidebar files, then translate each page
-// sequentially. Each completed page emits an SSE event with the current count
-// and total.
+// docs root, prioritize index + sidebar files, then translate pages
+// concurrently (respecting site.translate.concurrency). Each completed page
+// emits an SSE event with the current count and total.
+//
+// Variant fallback: when the target is a regional variant (e.g. zh-HK) and
+// a linguistically closer locale (e.g. zh-CN) already has a cached
+// translation for that page, the closer translation is used as the source
+// instead of the default locale. This produces much better output for
+// closely related variants.
 //
 // Job state is persisted in D1 (kind = "translate-job") so any browser tab
 // can poll progress via GET /api/translate-repo?repo=…&locale=…. Cancel is
@@ -14,7 +20,7 @@
 import type { Env } from "./env";
 import type { RepoConfig, VellumConfig, LocaleConfig } from "../shared/types";
 import { fetchSourceTree, fetchSourceFile, repoRef, docsRootPrefix } from "./sources";
-import { translate, isMtTarget } from "./translate";
+import { translate, isMtTarget, readCachedTranslation } from "./translate";
 import { loadSidebar } from "./sidebar";
 
 // --- D1 job helpers ---------------------------------------------------------
@@ -80,6 +86,72 @@ function generateToken(): string {
     hex += bytes[i]!.toString(16).padStart(2, "0");
   }
   return hex;
+}
+
+// --- Variant source fallback -----------------------------------------------
+
+// Find the linguistically closest locale that already has cached
+// translations, so zh-HK translates from zh-CN (not en-US), pt-PT from
+// pt-BR, etc. Returns the locale code to use as the translation source,
+// or null to fall back to the default locale.
+function findClosestLocale(targetCode: string, site: VellumConfig): string | null {
+  let targetLang: string;
+  try {
+    targetLang = new Intl.Locale(targetCode).language;
+  } catch {
+    return null;
+  }
+
+  const defaultCode = site.site.defaultLocale;
+  const candidates: string[] = [];
+
+  for (const l of site.site.locales) {
+    if (l.code === targetCode || l.code === defaultCode) continue;
+    try {
+      const lang = new Intl.Locale(l.code).language;
+      if (lang === targetLang) candidates.push(l.code);
+    } catch {
+      continue;
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  // Prefer hand-curated over machine-translated
+  const handCurated = candidates.filter(
+    (c) => !site.site.locales.find((l) => l.code === c)?.machineTranslated,
+  );
+  if (handCurated.length) return handCurated[0]!;
+  return candidates[0]!;
+}
+
+// Try to get a cached translation from a closer variant locale for a
+// specific page. Returns the translated content or null.
+async function fetchVariantSource(
+  env: Env,
+  closestLocale: string,
+  repoSlug: string,
+  branch: string,
+  pagePath: string,
+): Promise<string | null> {
+  return readCachedTranslation(env, "page", `${repoSlug}@${branch}:${pagePath}`, closestLocale);
+}
+
+// --- Concurrency pool ------------------------------------------------------
+
+async function pooled<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      await fn(items[i]!, i);
+    }
+  });
+  await Promise.all(workers);
 }
 
 // --- Router entry -----------------------------------------------------------
@@ -216,6 +288,8 @@ async function handleStart(
 
   const cancelToken = generateToken();
   const db = env.VELLUM_TRANSLATION_DB;
+  const concurrency = site.site.translate?.concurrency ?? 4;
+  const closestLocale = findClosestLocale(locale, site);
 
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream();
@@ -228,8 +302,8 @@ async function handleStart(
 
   ctx.waitUntil(
     (async () => {
+      let cancelled = false;
       try {
-        // Write initial job state to D1
         const job: TranslateJob = {
           cancelToken,
           done: 0,
@@ -243,7 +317,6 @@ async function handleStart(
         if (db) await writeJob(db, repoSlug, locale, job);
 
         await sendEvent("start", { total, repo: repoSlug, locale, cancelToken });
-
         await sendEvent("progress", { done: 0, total, current: "_sidebar", phase: "sidebar" });
 
         try {
@@ -255,59 +328,86 @@ async function handleStart(
         }
 
         let done = 0;
-        for (const pagePath of priorityPages) {
-          // Check for cancellation
+
+        // Translate pages concurrently in batches
+        for (let i = 0; i < priorityPages.length; i += concurrency) {
+          // Check cancellation once per batch
           if (db) {
             const current = await readJob(db, repoSlug, locale);
             if (current?.status === "cancelled") {
+              cancelled = true;
               await sendEvent("cancelled", { done, total });
               break;
             }
           }
 
-          await sendEvent("progress", { done, total, current: pagePath, phase: "page" });
+          const batch = priorityPages.slice(i, i + concurrency);
 
-          // Update D1 job state
+          await sendEvent("progress", {
+            done,
+            total,
+            current: batch.length > 1 ? `${batch[0]} (+${batch.length - 1} more)` : batch[0],
+            phase: "page",
+          });
+
+          await pooled(batch, concurrency, async (pagePath) => {
+            try {
+              // Try variant source first (e.g. zh-CN for zh-HK)
+              let source: string | null = null;
+              if (closestLocale) {
+                source = await fetchVariantSource(env, closestLocale, repoSlug, branch, pagePath);
+                if (source) {
+                  console.log(
+                    `[vellum][translate-repo] ${pagePath}: using ${closestLocale} as source for ${locale}`,
+                  );
+                }
+              }
+              // Fall back to default locale source
+              if (!source) {
+                source = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
+              }
+              if (source) {
+                await translate({
+                  env,
+                  ctx,
+                  site,
+                  kind: "page",
+                  key: `${repoSlug}@${branch}:${pagePath}`,
+                  locale,
+                  source,
+                });
+              }
+            } catch (err) {
+              console.warn(
+                `[vellum][translate-repo] page ${pagePath} failed: ${(err as Error).message}`,
+              );
+            }
+          });
+
+          done += batch.length;
+
+          // Update D1 job state after each batch
           if (db) {
             job.done = done;
-            job.current = pagePath;
+            job.current = batch[batch.length - 1]!;
             job.phase = "page";
             await writeJob(db, repoSlug, locale, job);
           }
 
-          try {
-            const source = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
-            if (source) {
-              await translate({
-                env,
-                ctx,
-                site,
-                kind: "page",
-                key: `${repoSlug}@${branch}:${pagePath}`,
-                locale,
-                source,
-              });
-            }
-          } catch (err) {
-            console.warn(
-              `[vellum][translate-repo] page ${pagePath} failed: ${(err as Error).message}`,
-            );
-          }
-
-          done++;
-          await sendEvent("progress", { done, total, current: pagePath, phase: "page" });
+          await sendEvent("progress", {
+            done,
+            total,
+            current: batch[batch.length - 1],
+            phase: "page",
+          });
         }
 
-        // Check final status
-        if (db) {
-          const final = await readJob(db, repoSlug, locale);
-          if (final?.status !== "cancelled") {
+        if (!cancelled) {
+          if (db) {
             job.done = done;
             job.status = "complete";
             await writeJob(db, repoSlug, locale, job);
-            await sendEvent("complete", { done, total });
           }
-        } else {
           await sendEvent("complete", { done, total });
         }
       } catch (err) {

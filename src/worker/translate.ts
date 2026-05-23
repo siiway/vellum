@@ -350,6 +350,22 @@ export function findLocale(site: VellumConfig, code: string) {
   return site.site.locales.find((l) => l.code === code);
 }
 
+// Read a cached translation from D1. Returns the translated content string
+// or null when no cached row exists. Used by the bulk-translate endpoint to
+// look up existing translations for variant-source fallback (e.g. using
+// zh-CN content as the source for zh-HK instead of the default locale).
+export async function readCachedTranslation(
+  env: Env,
+  kind: TranslateKind,
+  key: string,
+  locale: string,
+): Promise<string | null> {
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (!db) return null;
+  const row = await readRow(db, kind, key, locale);
+  return row?.content ?? null;
+}
+
 // --- D1 row helpers -------------------------------------------------------
 
 interface TranslationRow {

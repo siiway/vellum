@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Body1,
   Button,
@@ -15,8 +15,8 @@ import { useVellum } from "../context";
 import type { MessageKey } from "../../shared/i18n";
 import {
   type TranslateJobState,
-  readJobFromStorage,
-  clearJobFromStorage,
+  fetchJobStatus,
+  clearCancelToken,
   TranslateRepoDialog,
 } from "./TranslateRepoDialog";
 
@@ -88,67 +88,55 @@ export function TranslationProgressBanner() {
 
   const [job, setJob] = useState<TranslateJobState | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll localStorage to detect active translation jobs
+  // Poll D1 for active translation jobs across all repos
   useEffect(() => {
-    const check = () => {
-      const stored = readJobFromStorage();
-      setJob(stored);
-    };
-    check();
-    const id = setInterval(check, 1000);
-    window.addEventListener("storage", check);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener("storage", check);
-    };
-  }, []);
+    const repos = data.config.repos;
+    const locales = data.config.site.locales.filter((l) => l.machineTranslated);
 
-  // Also poll server for progress if we have a running job but no SSE connection
-  useEffect(() => {
-    if (!job || job.phase !== "translating" || !job.currentRepoSlug) return;
-    const id = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `/api/translate-repo?repo=${encodeURIComponent(job.currentRepoSlug)}&locale=${encodeURIComponent(job.locale)}`,
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as Record<string, unknown>;
-        if (data.status === "idle" || data.status === "no-db") return;
-        const stored = readJobFromStorage();
-        if (!stored) return;
-        const updated: TranslateJobState = {
-          ...stored,
-          done: (data.done as number) ?? stored.done,
-          total: (data.total as number) ?? stored.total,
-          currentFile: (data.current as string) ?? stored.currentFile,
-          currentPhase: (data.phase as string) ?? stored.currentPhase,
-        };
-        if (data.status === "complete" || data.status === "cancelled" || data.status === "error") {
-          updated.phase = data.status as TranslateJobState["phase"];
-          if (data.errorMessage) updated.errorMessage = data.errorMessage as string;
+    let mounted = true;
+
+    const poll = async () => {
+      for (const repo of repos) {
+        for (const locale of locales) {
+          const status = await fetchJobStatus(repo.slug, locale.code);
+          if (!mounted) return;
+          if (
+            status &&
+            (status.phase === "translating" ||
+              status.phase === "complete" ||
+              status.phase === "cancelled")
+          ) {
+            setJob(status);
+            return;
+          }
         }
-        try {
-          localStorage.setItem("vellum-translate-job", JSON.stringify(updated));
-        } catch {
-          // ignore
-        }
-        setJob(updated);
-      } catch {
-        // network error
       }
-    }, 3000);
-    return () => clearInterval(id);
-  }, [job?.phase, job?.currentRepoSlug, job?.locale]);
+      if (mounted) setJob(null);
+    };
+
+    void poll();
+    pollRef.current = setInterval(poll, 3000);
+
+    return () => {
+      mounted = false;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [data.config.repos, data.config.site.locales]);
 
   const handleDismiss = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    clearJobFromStorage();
+    clearCancelToken();
+    setDismissed(true);
     setJob(null);
   }, []);
 
-  // Don't show if no active job, or if on the languages page (it has its own dialog)
-  if (!job) return null;
+  if (!job || dismissed) return null;
   if (job.phase !== "translating" && job.phase !== "complete" && job.phase !== "cancelled")
     return null;
 

@@ -32,7 +32,7 @@ import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { displayLocaleCode, localeContinent, type LocaleConfig } from "../../shared/types";
 import type { MessageKey } from "../../shared/i18n";
-import { TranslateRepoDialog } from "./TranslateRepoDialog";
+import { TranslateRepoDialog, fetchJobStatus } from "./TranslateRepoDialog";
 
 const useStyles = makeStyles({
   root: {
@@ -212,6 +212,34 @@ export function LanguagesPage() {
     setTranslateLocale(locale);
   }, []);
 
+  // Track active translation jobs by polling D1
+  const [activeJobs, setActiveJobs] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!hasTranslateConfig) return;
+    let mounted = true;
+    const poll = async () => {
+      const jobs = new Map<string, number>();
+      const mtLocales = locales.filter((l) => l.machineTranslated);
+      for (const repo of data.config.repos) {
+        for (const loc of mtLocales) {
+          const status = await fetchJobStatus(repo.slug, loc.code);
+          if (!mounted) return;
+          if (status && status.phase === "translating") {
+            const pct = status.total > 0 ? Math.round((status.done / status.total) * 100) : 0;
+            jobs.set(loc.code, Math.max(jobs.get(loc.code) ?? 0, pct));
+          }
+        }
+      }
+      if (mounted) setActiveJobs(jobs);
+    };
+    void poll();
+    const id = setInterval(poll, 3000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, [hasTranslateConfig, locales, data.config.repos]);
+
   // Bucket locales by continent. Each bucket is sorted by native label so
   // readers can scan alphabetically inside a section. Filter applies before
   // bucketing — empty buckets get pruned from the rendered output.
@@ -332,6 +360,14 @@ export function LanguagesPage() {
                       label: t("ui.languages.notTranslatedYet"),
                       appearance: "outline",
                       color: "subtle",
+                    });
+
+                  const jobPercent = activeJobs.get(l.code);
+                  if (jobPercent !== undefined)
+                    badges.push({
+                      label: `${t("ui.languages.translating" as MessageKey, "Translating")} ${jobPercent}%`,
+                      appearance: "tint",
+                      color: "brand",
                     });
 
                   return (

@@ -19,7 +19,8 @@ import { useVellum } from "../context";
 import type { LocaleConfig, RepoConfig } from "../../shared/types";
 import type { MessageKey } from "../../shared/i18n";
 
-const LS_KEY = "vellum-translate-job";
+// localStorage stores ONLY the cancel token — progress lives in D1.
+const LS_TOKEN_KEY = "vellum-translate-cancel-token";
 
 export interface TranslateJobState {
   phase: "idle" | "translating" | "complete" | "cancelled" | "error";
@@ -32,8 +33,6 @@ export interface TranslateJobState {
   repoCount: number;
   currentRepoSlug: string;
   locale: string;
-  cancelToken?: string;
-  startedAt?: number;
 }
 
 const INITIAL_STATE: TranslateJobState = {
@@ -48,32 +47,61 @@ const INITIAL_STATE: TranslateJobState = {
   locale: "",
 };
 
-export function readJobFromStorage(): TranslateJobState | null {
+// Cancel token helpers — only auth info in localStorage
+export function readCancelToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as TranslateJobState;
+    return localStorage.getItem(LS_TOKEN_KEY);
   } catch {
     return null;
   }
 }
 
-function writeJobToStorage(state: TranslateJobState) {
+function writeCancelToken(token: string) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    localStorage.setItem(LS_TOKEN_KEY, token);
   } catch {
-    // storage full or unavailable
+    // ignore
   }
 }
 
-export function clearJobFromStorage() {
+export function clearCancelToken() {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(LS_TOKEN_KEY);
   } catch {
     // ignore
+  }
+}
+
+// Poll D1 for job status
+export async function fetchJobStatus(
+  repoSlug: string,
+  locale: string,
+): Promise<TranslateJobState | null> {
+  try {
+    const res = await fetch(
+      `/api/translate-repo?repo=${encodeURIComponent(repoSlug)}&locale=${encodeURIComponent(locale)}`,
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, unknown>;
+    if (data.status === "idle" || data.status === "no-db") return null;
+    return {
+      phase:
+        data.status === "running" ? "translating" : (data.status as TranslateJobState["phase"]),
+      done: (data.done as number) ?? 0,
+      total: (data.total as number) ?? 0,
+      currentFile: (data.current as string) ?? "",
+      currentPhase: (data.phase as string) ?? "",
+      errorMessage: data.errorMessage as string | undefined,
+      repoIndex: 0,
+      repoCount: 1,
+      currentRepoSlug: (data.repoSlug as string) ?? repoSlug,
+      locale: (data.locale as string) ?? locale,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -154,86 +182,55 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
   const styles = useStyles();
   const { t } = useVellum();
   const abortRef = useRef<AbortController | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [state, setState] = useState<TranslateJobState>(() => {
-    const stored = readJobFromStorage();
-    if (stored && stored.locale === locale.code && stored.phase === "translating") {
-      return stored;
-    }
-    return { ...INITIAL_STATE, locale: locale.code, repoCount: repos.length };
+  const [state, setState] = useState<TranslateJobState>({
+    ...INITIAL_STATE,
+    locale: locale.code,
+    repoCount: repos.length,
   });
 
-  const updateState = useCallback((updater: (prev: TranslateJobState) => TranslateJobState) => {
-    setState((prev) => {
-      const next = updater(prev);
-      writeJobToStorage(next);
-      return next;
-    });
-  }, []);
-
-  const pollStatusRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  // Poll D1 for progress
   const startPolling = useCallback(
-    (repoSlug: string, loc: string) => {
-      if (pollStatusRef.current) clearInterval(pollStatusRef.current);
-      pollStatusRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(
-            `/api/translate-repo?repo=${encodeURIComponent(repoSlug)}&locale=${encodeURIComponent(loc)}`,
-          );
-          if (!res.ok) return;
-          const data = (await res.json()) as Record<string, unknown>;
-          if (
-            data.status === "complete" ||
-            data.status === "cancelled" ||
-            data.status === "error"
-          ) {
-            if (pollStatusRef.current) {
-              clearInterval(pollStatusRef.current);
-              pollStatusRef.current = null;
-            }
-            updateState((prev) => ({
-              ...prev,
-              phase: data.status as TranslateJobState["phase"],
-              done: (data.done as number) ?? prev.done,
-              total: (data.total as number) ?? prev.total,
-              errorMessage: data.errorMessage as string | undefined,
-            }));
-          } else if (data.status === "running") {
-            updateState((prev) => ({
-              ...prev,
-              done: (data.done as number) ?? prev.done,
-              total: (data.total as number) ?? prev.total,
-              currentFile: (data.current as string) ?? prev.currentFile,
-              currentPhase: (data.phase as string) ?? prev.currentPhase,
-            }));
-          }
-        } catch {
-          // network error, keep polling
+    (repoSlug: string) => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        const job = await fetchJobStatus(repoSlug, locale.code);
+        if (!job) return;
+        setState((prev) => ({ ...prev, ...job }));
+        if (job.phase !== "translating" && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
         }
       }, 2000);
     },
-    [updateState],
+    [locale.code],
   );
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
 
   const startTranslation = useCallback(async () => {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    updateState(() => ({
+    setState({
       ...INITIAL_STATE,
       phase: "translating",
       locale: locale.code,
       repoCount: repos.length,
       currentPhase: "sidebar",
-      startedAt: Date.now(),
-    }));
+    });
 
     for (let ri = 0; ri < repos.length; ri++) {
       if (ac.signal.aborted) return;
       const repo = repos[ri]!;
 
-      updateState((prev) => ({
+      setState((prev) => ({
         ...prev,
         repoIndex: ri,
         currentRepoSlug: repo.slug,
@@ -278,14 +275,14 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                 const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
                 if (eventType === "start") {
                   const cancelToken = data.cancelToken as string | undefined;
-                  updateState((prev) => ({
+                  if (cancelToken) writeCancelToken(cancelToken);
+                  setState((prev) => ({
                     ...prev,
                     total: data.total as number,
                     done: 0,
-                    cancelToken: cancelToken ?? prev.cancelToken,
                   }));
                 } else if (eventType === "progress") {
-                  updateState((prev) => ({
+                  setState((prev) => ({
                     ...prev,
                     done: data.done as number,
                     total: data.total as number,
@@ -294,7 +291,7 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                   }));
                 } else if (eventType === "complete") {
                   if (ri === repos.length - 1) {
-                    updateState((prev) => ({
+                    setState((prev) => ({
                       ...prev,
                       done: data.done as number,
                       total: data.total as number,
@@ -302,9 +299,9 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                     }));
                   }
                 } else if (eventType === "cancelled") {
-                  updateState((prev) => ({ ...prev, phase: "cancelled" }));
+                  setState((prev) => ({ ...prev, phase: "cancelled" }));
                 } else if (eventType === "error") {
-                  updateState((prev) => ({
+                  setState((prev) => ({
                     ...prev,
                     phase: "error",
                     errorMessage: data.message as string,
@@ -326,78 +323,63 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
     }
 
     if (!ac.signal.aborted) {
-      updateState((prev) => ({
+      setState((prev) => ({
         ...prev,
         phase: prev.phase === "cancelled" ? "cancelled" : "complete",
         done: prev.total,
       }));
     }
-  }, [repos, locale.code, updateState]);
+  }, [repos, locale.code]);
 
-  // On open: if there's already a running job for this locale that we didn't
-  // start (no SSE connection), poll the server for status updates.
-  useEffect(() => {
-    if (!open) return;
-    if (state.phase === "translating" && !abortRef.current) {
-      // We're viewing a job we didn't start (or reconnecting after nav).
-      // Poll the server for progress.
-      if (state.currentRepoSlug) {
-        startPolling(state.currentRepoSlug, locale.code);
-      }
-    } else if (state.phase === "idle") {
-      void startTranslation();
-    }
-    return () => {
-      if (pollStatusRef.current) {
-        clearInterval(pollStatusRef.current);
-        pollStatusRef.current = null;
-      }
-    };
-  }, [open, state.phase, locale.code, startPolling, startTranslation, state.currentRepoSlug]);
-
+  // On open: check D1 for an existing running job first, otherwise start new
   useEffect(() => {
     if (!open) {
-      // Don't abort or clear state — the job continues server-side.
-      // Just stop polling.
-      if (pollStatusRef.current) {
-        clearInterval(pollStatusRef.current);
-        pollStatusRef.current = null;
-      }
+      stopPolling();
+      return;
     }
-  }, [open]);
+    // Check if there's already a running job for any repo in this locale
+    (async () => {
+      for (const repo of repos) {
+        const job = await fetchJobStatus(repo.slug, locale.code);
+        if (job && job.phase === "translating") {
+          setState(job);
+          startPolling(repo.slug);
+          return;
+        }
+      }
+      // No running job — start fresh
+      if (state.phase === "idle") {
+        void startTranslation();
+      }
+    })();
+    return stopPolling;
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const percent = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0;
 
   const handleCancel = async () => {
-    const stored = readJobFromStorage();
-    if (!stored?.cancelToken || !state.currentRepoSlug) return;
-
+    const token = readCancelToken();
+    if (!token || !state.currentRepoSlug) return;
     try {
       await fetch(
         `/api/translate-repo?repo=${encodeURIComponent(state.currentRepoSlug)}&locale=${encodeURIComponent(locale.code)}`,
-        {
-          method: "DELETE",
-          headers: { "x-cancel-token": stored.cancelToken },
-        },
+        { method: "DELETE", headers: { "x-cancel-token": token } },
       );
     } catch {
       // best-effort
     }
     abortRef.current?.abort();
-    updateState((prev) => ({ ...prev, phase: "cancelled" }));
+    setState((prev) => ({ ...prev, phase: "cancelled" }));
   };
 
-  const handleClose = () => {
-    // Don't abort — let the job continue. Just close the dialog.
-    onClose();
-  };
+  const handleClose = () => onClose();
 
   const handleDone = () => {
-    clearJobFromStorage();
+    clearCancelToken();
     onClose();
   };
 
-  const ownsJob = !!state.cancelToken;
+  const ownsJob = !!readCancelToken();
 
   return (
     <Dialog
@@ -455,10 +437,7 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
               <div className={styles.complete}>
                 <Checkmark24Regular />
                 <Body1Strong>
-                  {t(
-                    "ui.translateRepo.complete" as MessageKey,
-                    `Translation complete! ${state.done} pages translated.`,
-                  )}
+                  {t("ui.translateRepo.complete" as MessageKey, "Translation complete!")}
                 </Body1Strong>
               </div>
             )}
@@ -510,12 +489,12 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                     appearance="secondary"
                     icon={<ArrowSync24Regular />}
                     onClick={() => {
-                      clearJobFromStorage();
-                      updateState(() => ({
+                      clearCancelToken();
+                      setState({
                         ...INITIAL_STATE,
                         locale: locale.code,
                         repoCount: repos.length,
-                      }));
+                      });
                     }}
                   >
                     {t("ui.translateRepo.retranslate" as MessageKey, "Retranslate")}
