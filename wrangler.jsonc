@@ -59,7 +59,7 @@
 		{
 			"binding": "VELLUM_TRANSLATION_DB",
 			"database_name": "vellum-translations",
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "5b7dff17-ffa9-4b24-8f39-58cdfb7d29f2",
 			"migrations_dir": "migrations"
 		}
 	],
