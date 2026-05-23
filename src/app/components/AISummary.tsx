@@ -113,14 +113,9 @@ const useStyles = makeStyles({
     color: tokens.colorPaletteRedForeground1,
   },
   turnstileSlot: {
-    // Reserved for the invisible Turnstile iframe. The widget injects its own
-    // visible UI only when the visitor is challenged; in that case Turnstile
-    // positions a modal on top of the page, so we don't need to allocate room
-    // here. We keep the node mounted so widget IDs stay valid across renders.
     position: "absolute",
-    width: 0,
-    height: 0,
-    overflow: "hidden",
+    bottom: 0,
+    right: 0,
   },
 });
 
@@ -133,15 +128,17 @@ interface TurnstileGlobal {
       "error-callback"?: (err: unknown) => void;
       "expired-callback"?: () => void;
       "timeout-callback"?: () => void;
-      size?: "normal" | "compact" | "invisible";
+      size?: "normal" | "compact" | "flexible";
+      execution?: "render" | "execute";
       appearance?: "always" | "execute" | "interaction-only";
       retry?: "auto" | "never";
       action?: string;
     },
-  ) => string;
-  execute: (widgetId: string) => void;
-  reset: (widgetId: string) => void;
-  remove: (widgetId: string) => void;
+  ) => string | undefined;
+  execute: (container: HTMLElement | string) => void;
+  reset: (container?: HTMLElement | string) => void;
+  remove: (container?: HTMLElement | string) => void;
+  getResponse: (container?: HTMLElement | string) => string | undefined;
 }
 
 declare global {
@@ -152,9 +149,6 @@ declare global {
 
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
-// Promise-cached script loader so concurrent expands don't inject the script
-// twice. The script auto-discovers `[data-sitekey]` widgets by default; we
-// pass `?render=explicit` so it only acts on our explicit render() call.
 let turnstileLoadPromise: Promise<TurnstileGlobal> | null = null;
 function loadTurnstile(): Promise<TurnstileGlobal> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
@@ -164,6 +158,10 @@ function loadTurnstile(): Promise<TurnstileGlobal> {
   turnstileLoadPromise = new Promise<TurnstileGlobal>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>("script[data-vellum-turnstile]");
     if (existing) {
+      if (window.turnstile) {
+        resolve(window.turnstile);
+        return;
+      }
       existing.addEventListener("load", () => {
         if (window.turnstile) resolve(window.turnstile);
         else reject(new Error("Turnstile loaded without exposing the global."));
@@ -186,36 +184,68 @@ function loadTurnstile(): Promise<TurnstileGlobal> {
   return turnstileLoadPromise;
 }
 
-// Wraps Turnstile's callback-shaped render() into a one-shot promise the
-// caller can await. The widget is rendered as `invisible` so the visitor
-// never sees a CAPTCHA UI unless Cloudflare decides a challenge is needed.
+let tsWidgetHost: HTMLElement | null = null;
+let tsResolve: ((token: string) => void) | null = null;
+let tsReject: ((err: Error) => void) | null = null;
+
 function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<string> {
   return new Promise((resolve, reject) => {
     loadTurnstile().then(
       (ts) => {
-        let widgetId = "";
-        const finish = (val: string | null, err?: string) => {
+        tsResolve = resolve;
+        tsReject = reject;
+
+        if (tsWidgetHost === host) {
+          ts.reset(host);
+          ts.execute(host);
+          return;
+        }
+
+        if (tsWidgetHost) {
           try {
-            if (widgetId) ts.remove(widgetId);
+            ts.remove(tsWidgetHost);
           } catch {
-            // ignore
+            /* ignore */
           }
-          if (val) resolve(val);
-          else reject(new Error(err ?? "Captcha cancelled."));
-        };
-        widgetId = ts.render(host, {
+        }
+        ts.render(host, {
           sitekey: siteKey,
-          size: "invisible",
+          size: "compact",
+          execution: "execute",
+          appearance: "interaction-only",
           retry: "auto",
           action: "summarize",
-          callback: (token: string) => finish(token),
-          "error-callback": () => finish(null, "Captcha error."),
-          "expired-callback": () => finish(null, "Captcha expired."),
-          "timeout-callback": () => finish(null, "Captcha timed out."),
+          callback: (token: string) => {
+            if (tsResolve) {
+              tsResolve(token);
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "error-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha error."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "expired-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha expired."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "timeout-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha timed out."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
         });
-        // For invisible widgets, render() returns immediately but the
-        // challenge isn't kicked off until execute() runs.
-        ts.execute(widgetId);
+        tsWidgetHost = host;
+        ts.execute(host);
       },
       (err: Error) => reject(err),
     );

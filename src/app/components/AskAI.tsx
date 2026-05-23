@@ -428,9 +428,8 @@ const useStyles = makeStyles({
   },
   turnstileSlot: {
     position: "absolute",
-    width: 0,
-    height: 0,
-    overflow: "hidden",
+    bottom: 0,
+    right: 0,
   },
 });
 
@@ -445,13 +444,17 @@ interface TurnstileGlobal {
       "error-callback"?: (err: unknown) => void;
       "expired-callback"?: () => void;
       "timeout-callback"?: () => void;
-      size?: "normal" | "compact" | "invisible";
+      size?: "normal" | "compact" | "flexible";
+      execution?: "render" | "execute";
+      appearance?: "always" | "execute" | "interaction-only";
       retry?: "auto" | "never";
       action?: string;
     },
-  ) => string;
-  execute: (widgetId: string) => void;
-  remove: (widgetId: string) => void;
+  ) => string | undefined;
+  execute: (container: HTMLElement | string) => void;
+  reset: (container?: HTMLElement | string) => void;
+  remove: (container?: HTMLElement | string) => void;
+  getResponse: (container?: HTMLElement | string) => string | undefined;
 }
 
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
@@ -463,15 +466,16 @@ function loadTurnstile(): Promise<TurnstileGlobal> {
   if (turnstileLoadPromise) return turnstileLoadPromise;
   turnstileLoadPromise = new Promise<TurnstileGlobal>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>("script[data-vellum-turnstile]");
-    const finalize = (s: HTMLScriptElement) => {
-      s.addEventListener("load", () => {
+    if (existing) {
+      if (window.turnstile) {
+        resolve(window.turnstile);
+        return;
+      }
+      existing.addEventListener("load", () => {
         if (window.turnstile) resolve(window.turnstile);
         else reject(new Error("Turnstile loaded without exposing the global."));
       });
-      s.addEventListener("error", () => reject(new Error("Turnstile script failed.")));
-    };
-    if (existing) {
-      finalize(existing);
+      existing.addEventListener("error", () => reject(new Error("Turnstile script failed.")));
       return;
     }
     const s = document.createElement("script");
@@ -479,37 +483,78 @@ function loadTurnstile(): Promise<TurnstileGlobal> {
     s.async = true;
     s.defer = true;
     s.dataset.vellumTurnstile = "1";
-    finalize(s);
+    s.addEventListener("load", () => {
+      if (window.turnstile) resolve(window.turnstile);
+      else reject(new Error("Turnstile loaded without exposing the global."));
+    });
+    s.addEventListener("error", () => reject(new Error("Turnstile script failed.")));
     document.head.appendChild(s);
   });
   return turnstileLoadPromise;
 }
 
+let tsWidgetHost: HTMLElement | null = null;
+let tsResolve: ((token: string) => void) | null = null;
+let tsReject: ((err: Error) => void) | null = null;
+
 function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<string> {
   return new Promise((resolve, reject) => {
     loadTurnstile().then(
       (ts) => {
-        let widgetId = "";
-        const finish = (val: string | null, err?: string) => {
+        tsResolve = resolve;
+        tsReject = reject;
+
+        if (tsWidgetHost === host) {
+          ts.reset(host);
+          ts.execute(host);
+          return;
+        }
+
+        if (tsWidgetHost) {
           try {
-            if (widgetId) ts.remove(widgetId);
+            ts.remove(tsWidgetHost);
           } catch {
-            // ignore
+            /* ignore */
           }
-          if (val) resolve(val);
-          else reject(new Error(err ?? "Captcha cancelled."));
-        };
-        widgetId = ts.render(host, {
+        }
+        ts.render(host, {
           sitekey: siteKey,
-          size: "invisible",
+          size: "compact",
+          execution: "execute",
+          appearance: "interaction-only",
           retry: "auto",
           action: "ask-ai",
-          callback: (token: string) => finish(token),
-          "error-callback": () => finish(null, "Captcha error."),
-          "expired-callback": () => finish(null, "Captcha expired."),
-          "timeout-callback": () => finish(null, "Captcha timed out."),
+          callback: (token: string) => {
+            if (tsResolve) {
+              tsResolve(token);
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "error-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha error."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "expired-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha expired."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
+          "timeout-callback": () => {
+            if (tsReject) {
+              tsReject(new Error("Captcha timed out."));
+              tsResolve = null;
+              tsReject = null;
+            }
+          },
         });
-        ts.execute(widgetId);
+        tsWidgetHost = host;
+        ts.execute(host);
       },
       (err: Error) => reject(err),
     );
