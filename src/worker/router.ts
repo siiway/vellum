@@ -1221,6 +1221,27 @@ async function renderLanguagesPage(
     translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
   ]);
 
+  // Parse ?page= to determine which page the reader came from, so we can
+  // compute translatedLocales for that specific page. The languages page
+  // uses this to show per-locale status badges (translated, not yet, etc.).
+  let translatedLocales: string[] | undefined;
+  const pageParam = url.searchParams.get("page");
+  if (pageParam && pageParam.startsWith("/") && !pageParam.includes("..")) {
+    const pageParts = pageParam.replace(/^\/+/, "").split("/").filter(Boolean);
+    if (pageParts.length >= 1) {
+      const targetRepo = SITE.repos.find((r) => r.slug === pageParts[0]);
+      if (targetRepo) {
+        const targetBranch = repoRef(targetRepo);
+        const targetPage = pageParts.length > 1 ? pageParts.slice(1).join("/") : "index";
+        translatedLocales = await resolveTranslatedLocales(env, SITE, {
+          repoSlug: targetRepo.slug,
+          version: { branch: targetBranch },
+          pagePath: targetPage,
+        } as RouteContext);
+      }
+    }
+  }
+
   const title = translate(match.localeCode, "ui.languages.title");
   const description = translate(match.localeCode, "ui.languages.subtitle");
 
@@ -1242,9 +1263,9 @@ async function renderLanguagesPage(
       meta: {
         title,
         description,
-        // Layout switch consumed by Layout.tsx.
         frontmatter: { layout: "languages" },
         outline: [],
+        translatedLocales,
       },
     },
   };
