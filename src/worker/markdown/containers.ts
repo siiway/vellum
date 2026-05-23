@@ -21,6 +21,7 @@
 // HTML keep their structure.
 
 import type MarkdownIt from "markdown-it";
+import type StateBlock from "markdown-it/lib/rules_block/state_block.mjs";
 
 type ContainerKind =
   | "tip"
@@ -143,9 +144,14 @@ export function applyContainers(md: MarkdownIt): void {
   md.renderer.rules["container_code-group_close"] = () => `</div>\n`;
 }
 
-function containerRule(state: any, startLine: number, endLine: number, silent: boolean): boolean {
-  const start = state.bMarks[startLine] + state.tShift[startLine];
-  const max = state.eMarks[startLine];
+function containerRule(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  silent: boolean,
+): boolean {
+  const start = state.bMarks[startLine]! + state.tShift[startLine]!;
+  const max = state.eMarks[startLine]!;
   // Fast reject: first char must be ':' (0x3a).
   if (state.src.charCodeAt(start) !== 0x3a) return false;
 
@@ -162,8 +168,8 @@ function containerRule(state: any, startLine: number, endLine: number, silent: b
   let depth = 1;
   let closeLine = startLine + 1;
   for (; closeLine < endLine; closeLine++) {
-    const cStart = state.bMarks[closeLine] + state.tShift[closeLine];
-    const cMax = state.eMarks[closeLine];
+    const cStart = state.bMarks[closeLine]! + state.tShift[closeLine]!;
+    const cMax = state.eMarks[closeLine]!;
     if (state.src.charCodeAt(cStart) !== 0x3a) continue;
     const cLine = state.src.slice(cStart, cMax);
 
@@ -200,7 +206,7 @@ function containerRule(state: any, startLine: number, endLine: number, silent: b
   // instead of leaking as literal characters in the rendered summary / title.
   if (head.title) {
     const parsed = state.md.parseInline(head.title, state.env)[0]?.children ?? [];
-    (openToken as any).meta = { titleTokens: parsed };
+    openToken.meta = { titleTokens: parsed };
   }
 
   // Recursively tokenize the inner range. Nested containers will hit this same

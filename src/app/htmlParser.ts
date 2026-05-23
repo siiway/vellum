@@ -17,7 +17,7 @@ export function parseHtml(
 ): ReturnType<typeof domToReact> {
   const dom = (htmlToDOMServer as (html: string, opts?: unknown) => DOMNode[])(
     html,
-    (options as any).htmlparser2,
+    (options as unknown as { htmlparser2: unknown }).htmlparser2,
   );
   return domToReact(dom, options);
 }

@@ -281,6 +281,7 @@ export function LanguagesPage() {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     try {
+      // eslint-disable-next-line react-hooks/immutability
       document.cookie = `vellum-locale=${encodeURIComponent(locale.code)}; Path=/; Max-Age=${
         60 * 60 * 24 * 365
       }; SameSite=Lax`;

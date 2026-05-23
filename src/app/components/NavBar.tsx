@@ -445,6 +445,7 @@ function LocalePicker() {
     // reads this cookie before Accept-Language) honours it on future visits.
     // 1 year matches the server-side Max-Age so cookie expiry agrees.
     try {
+      // eslint-disable-next-line react-hooks/immutability
       document.cookie = `vellum-locale=${encodeURIComponent(localeCode)}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
     } catch {
       // Some embedding contexts (sandboxed iframes) can throw on cookie writes;

@@ -8,7 +8,7 @@
 // generation, and (c) make it impossible to dev-watch the docs tree
 // independently of the rest of the public assets.
 
-import { readdir, readFile, mkdir, writeFile, stat } from "node:fs/promises";
+import { readdir, readFile, mkdir, stat } from "node:fs/promises";
 import { join, posix, relative, resolve, sep } from "node:path";
 import { existsSync } from "node:fs";
 import type { Plugin } from "vite";
@@ -108,9 +108,4 @@ async function* walk(dir: string): AsyncGenerator<string> {
       yield full;
     }
   }
-}
-
-async function writeText(path: string, content: string): Promise<void> {
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, content, "utf8");
 }

@@ -87,8 +87,7 @@ export function VueIslands() {
         },
         log(type: string, ...args: unknown[]) {
           if (type === "info") return;
-          // eslint-disable-next-line no-console
-          (console as any)[type]?.(...args);
+          (console as unknown as Record<string, (...a: unknown[]) => void>)[type]?.(...args);
         },
       };
 
@@ -103,10 +102,12 @@ export function VueIslands() {
           try {
             const propsJson = el.dataset.vueProps;
             const props = propsJson ? JSON.parse(decodeURIComponent(propsJson)) : {};
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const Component = await loadModule(ref.path, options as any);
             // Clear placeholder content (e.g. literal text from the original tag).
             el.textContent = "";
             const app = createApp({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               render: () => h(Component as any, props as Record<string, unknown>),
             });
             app.mount(el);
@@ -151,6 +152,7 @@ function escape(s: string): string {
 // Rewrites markdown HTML so registered Vue tags become mountable placeholders.
 // Handles both `<Name ... />` (self-closing) and `<Name ...>...</Name>` forms.
 // Attribute values become JSON-encoded props on the placeholder.
+// eslint-disable-next-line react-refresh/only-export-components
 export function rewriteVueTags(html: string, components: { name: string }[]): string {
   if (components.length === 0) return html;
   let out = html;

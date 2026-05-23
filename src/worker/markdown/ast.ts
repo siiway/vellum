@@ -605,7 +605,7 @@ function parseBlocks(
         type: "opsImage",
         src: opts.rewriteImage ? opts.rewriteImage(m.source ?? "") : (m.source ?? ""),
         alt: m["alt-text"] ?? m.alt ?? "",
-        kind: (m.type as any) ?? "content",
+        kind: (m.type as "content" | "icon" | "complex" | undefined) ?? "content",
         lightbox: m.lightbox || undefined,
         border: m.border === "true" ? true : m.border === "false" ? false : undefined,
         caption: undefined,
@@ -1000,7 +1000,7 @@ function parentOfTop(stack: Inline[][], root: Inline[]): Inline | null {
   for (let depth = stack.length - 2; depth >= 0; depth--) {
     const frame = stack[depth]!;
     for (const node of frame) {
-      if ((node as any).children === top) return node;
+      if ("children" in node && (node as { children: unknown }).children === top) return node;
     }
   }
   return null;

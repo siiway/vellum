@@ -786,9 +786,10 @@ async function renderRoute(
 
   // Title resolution:
   //   frontmatter.title > first h1 > hero.name (for `layout: home` pages) > repo display name (for index) > derived from path
+  const heroObj = rendered.frontmatter?.hero;
   const heroName =
-    rendered.frontmatter && typeof (rendered.frontmatter as any).hero === "object"
-      ? ((rendered.frontmatter as any).hero?.name as string | undefined)
+    heroObj && typeof heroObj === "object"
+      ? ((heroObj as Record<string, unknown>).name as string | undefined)
       : undefined;
   // For the index page, fall back to the translated repo displayName so the
   // `<title>` and hero match the rest of the localized chrome.
@@ -800,8 +801,8 @@ async function renderRoute(
 
   // Description: frontmatter.description > frontmatter.hero.tagline > repo.description
   const heroTagline =
-    rendered.frontmatter && typeof (rendered.frontmatter as any).hero === "object"
-      ? ((rendered.frontmatter as any).hero?.tagline as string | undefined)
+    heroObj && typeof heroObj === "object"
+      ? ((heroObj as Record<string, unknown>).tagline as string | undefined)
       : undefined;
   const finalDescription =
     rendered.description ||

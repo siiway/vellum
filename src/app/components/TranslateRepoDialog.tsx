@@ -48,6 +48,7 @@ const INITIAL_STATE: TranslateJobState = {
 };
 
 // Cancel token helpers — only auth info in localStorage
+// eslint-disable-next-line react-refresh/only-export-components
 export function readCancelToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -66,6 +67,7 @@ function writeCancelToken(token: string) {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function clearCancelToken() {
   if (typeof window === "undefined") return;
   try {
@@ -76,6 +78,7 @@ export function clearCancelToken() {
 }
 
 // Poll D1 for job status
+// eslint-disable-next-line react-refresh/only-export-components
 export async function fetchJobStatus(
   repoSlug: string,
   locale: string,
