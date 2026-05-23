@@ -28,6 +28,7 @@
 
 import type { Env } from "./env";
 import type { NavItem, TranslateConfig, VellumConfig } from "../shared/types";
+import { resolveEndpoints, runWithFailover, type ResolvedEndpoint } from "./ai-endpoints";
 
 // --- Public types ---------------------------------------------------------
 
@@ -68,19 +69,30 @@ export interface TranslateArgs {
 
 // --- Public entrypoints ---------------------------------------------------
 
+// Outcome of a translate() call. `content` is what callers should
+// render; `model` is the `${ep.id}:${model}` label that produced the
+// content (undefined when translation was skipped or fell back to
+// source); `attempted` is true when the MT pipeline ran at all
+// (whether or not it produced a translation).
+export interface TranslateResult {
+  content: string;
+  model?: string;
+  attempted: boolean;
+}
+
 // Translate a single source string (markdown for `page`, JSON for `sidebar`/
 // `repo-nav`/`frontmatter`/`ui`/`config`, plain text otherwise) into the
 // requested locale. Returns the source unchanged when translation is
 // disabled, when the locale isn't a configured target, when the D1 binding
 // is missing, or when the provider call fails — so callers never have to
 // special-case "no translation available".
-export async function translate(args: TranslateArgs): Promise<string> {
+export async function translate(args: TranslateArgs): Promise<TranslateResult> {
   const translateConfig = args.site.site.translate;
   const tag = `[vellum][translate] kind=${args.kind} key=${args.key} locale=${args.locale}`;
 
   if (!translateConfig) {
     console.log(`${tag} skip: site.translate not configured`);
-    return args.source;
+    return { content: args.source, attempted: false };
   }
 
   // Translating into the default locale or a locale not listed as an MT
@@ -88,11 +100,11 @@ export async function translate(args: TranslateArgs): Promise<string> {
   // without being in `targets`) skip the service too — author content wins.
   if (args.locale === args.site.site.defaultLocale) {
     console.log(`${tag} skip: locale is the default`);
-    return args.source;
+    return { content: args.source, attempted: false };
   }
   if (!isMtTarget(args.site, args.locale)) {
     console.log(`${tag} skip: locale is hand-curated, not an MT target`);
-    return args.source;
+    return { content: args.source, attempted: false };
   }
 
   const db = args.env.VELLUM_TRANSLATION_DB;
@@ -103,20 +115,21 @@ export async function translate(args: TranslateArgs): Promise<string> {
     // request. Production should always have the binding bound.
     console.warn(`${tag} no D1 binding (VELLUM_TRANSLATION_DB); running uncached provider call`);
     try {
-      const translated = await runProvider(
+      const result = await runProvider(
         args.env,
+        args.site,
         translateConfig,
         args.kind,
         args.locale,
         args.source,
       );
       console.log(
-        `${tag} provider ok (uncached) bytes_in=${args.source.length} bytes_out=${translated.length}`,
+        `${tag} provider ok (uncached) model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
       );
-      return translated;
+      return { content: result.content, model: result.model, attempted: true };
     } catch (err) {
       console.warn(`${tag} provider failed (uncached): ${(err as Error).message}`);
-      return args.source;
+      return { content: args.source, attempted: true };
     }
   }
 
@@ -124,7 +137,11 @@ export async function translate(args: TranslateArgs): Promise<string> {
   const cached = await readRow(db, args.kind, args.key, args.locale);
   if (cached && cached.source_hash === sourceHash) {
     console.log(`${tag} cache hit model=${cached.model ?? "?"}`);
-    return cached.content;
+    return {
+      content: cached.content,
+      model: cached.model ?? undefined,
+      attempted: true,
+    };
   }
 
   console.log(
@@ -134,15 +151,16 @@ export async function translate(args: TranslateArgs): Promise<string> {
   );
 
   try {
-    const translated = await runProvider(
+    const result = await runProvider(
       args.env,
+      args.site,
       translateConfig,
       args.kind,
       args.locale,
       args.source,
     );
     console.log(
-      `${tag} provider ok model=${translateConfig.model ?? defaultModelFor(translateConfig.provider)} bytes_in=${args.source.length} bytes_out=${translated.length}`,
+      `${tag} provider ok model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
     );
     // Write-through. waitUntil so callers don't block on the DB round-trip.
     args.ctx.waitUntil(
@@ -151,23 +169,27 @@ export async function translate(args: TranslateArgs): Promise<string> {
         key: args.key,
         locale: args.locale,
         source_hash: sourceHash,
-        content: translated,
-        model: translateConfig.model ?? defaultModelFor(translateConfig.provider),
+        content: result.content,
+        model: result.model,
         refreshed_at: Date.now(),
       })
         .then(() => console.log(`${tag} cached`))
         .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`)),
     );
-    return translated;
+    return { content: result.content, model: result.model, attempted: true };
   } catch (err) {
     // Provider failure — fall back to source so the page still renders.
     // The cron refresher will retry on its next pass.
     console.warn(`${tag} provider failed: ${(err as Error).message}`);
     if (cached) {
       console.log(`${tag} serving stale cache as fallback`);
-      return cached.content; // stale beats unrendered
+      return {
+        content: cached.content,
+        model: cached.model ?? undefined,
+        attempted: true,
+      };
     }
-    return args.source;
+    return { content: args.source, attempted: true };
   }
 }
 
@@ -186,7 +208,7 @@ export async function translateBundle(args: {
   entries: Record<string, string>;
 }): Promise<Record<string, string>> {
   const source = JSON.stringify({ entries: args.entries });
-  const translated = await translate({
+  const result = await translate({
     env: args.env,
     ctx: args.ctx,
     site: args.site,
@@ -195,9 +217,9 @@ export async function translateBundle(args: {
     locale: args.locale,
     source,
   });
-  if (translated === source) return args.entries;
+  if (result.content === source) return args.entries;
   try {
-    const parsed = JSON.parse(translated) as TranslateBundle;
+    const parsed = JSON.parse(result.content) as TranslateBundle;
     const out: Record<string, string> = {};
     // Preserve the original keyset — drop anything the model invented and
     // fill missing keys from the source so the caller always sees a
@@ -512,26 +534,38 @@ async function sha256Hex(input: string): Promise<string> {
 
 // --- Provider plumbing ----------------------------------------------------
 
+interface ProviderResult {
+  content: string;
+  // Identifier of the provider+model that ultimately produced the result.
+  // Recorded into the D1 row so the table reflects what's actually been
+  // cached when the failover picks a non-primary endpoint.
+  model: string;
+}
+
 async function runProvider(
   env: Env,
+  site: VellumConfig,
   cfg: TranslateConfig,
   kind: TranslateKind,
   locale: string,
   source: string,
-): Promise<string> {
-  const model = cfg.model ?? defaultModelFor(cfg.provider);
+): Promise<ProviderResult> {
   const { system, user } = buildPrompt(kind, locale, source);
+  const endpoints = resolveEndpoints(cfg, site, env);
+  const tag = `[vellum][translate] kind=${kind} locale=${locale}`;
 
-  if (cfg.provider === "workers-ai") {
-    return runWorkersAi(env, model, system, user);
-  }
-  if (cfg.provider === "anthropic") {
-    return runAnthropic(env, model, system, user);
-  }
-  return runOpenAi(env, cfg, model, system, user);
+  return runWithFailover(tag, endpoints, async (ep) => {
+    const model = ep.model ?? defaultModelFor(ep.provider);
+    const label = `${ep.id}:${model}`;
+    let content: string;
+    if (ep.provider === "workers-ai") content = await runWorkersAi(env, ep, model, system, user);
+    else if (ep.provider === "anthropic") content = await runAnthropic(ep, model, system, user);
+    else content = await runOpenAi(ep, model, system, user);
+    return { content, model: label };
+  });
 }
 
-function defaultModelFor(provider: TranslateConfig["provider"]): string {
+function defaultModelFor(provider: "workers-ai" | "openai-compatible" | "anthropic"): string {
   switch (provider) {
     case "workers-ai":
       return "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -544,6 +578,7 @@ function defaultModelFor(provider: TranslateConfig["provider"]): string {
 
 async function runWorkersAi(
   env: Env,
+  ep: ResolvedEndpoint,
   model: string,
   system: string,
   user: string,
@@ -552,8 +587,10 @@ async function runWorkersAi(
     throw new Error("AI binding not available. Add [ai] to wrangler.jsonc.");
   }
   const result = (await env.AI.run(model, {
-    stream: false,
     max_tokens: 4096,
+    ...(ep.extraBody ?? {}),
+    // Structural fields win over extraBody.
+    stream: false,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -565,33 +602,36 @@ async function runWorkersAi(
 }
 
 async function runOpenAi(
-  env: Env,
-  cfg: TranslateConfig,
+  ep: ResolvedEndpoint,
   model: string,
   system: string,
   user: string,
 ): Promise<string> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  if (!apiKey) throw new Error("VELLUM_AI_API_KEY is not set.");
-  const baseUrl = (env.VELLUM_AI_BASE_URL ?? cfg.baseUrl ?? "https://api.openai.com/v1").replace(
-    /\/+$/,
-    "",
-  );
+  if (!ep.apiKey) {
+    throw new Error(`OpenAI-compatible API key is not set (expected env var ${ep.apiKeyEnv}).`);
+  }
+  const baseUrl = (ep.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${ep.apiKey}`,
       "http-referer": "https://github.com/siiway/vellum",
       "x-title": "Vellum Translate",
     },
     body: JSON.stringify({
-      model,
-      // Translation benefits from being deterministic. Pinning temperature
-      // also keeps cron refreshes producing the same output for the same
-      // source so the table doesn't churn.
+      // Tunable defaults first. extraBody can override these for
+      // provider-specific tuning (e.g. translate at temperature 0.3 to
+      // reduce mistakes on idiomatic phrases) or to enable
+      // provider-specific features (deepseek's chat_template_kwargs,
+      // top_p, presence_penalty, …).
       temperature: 0,
       max_tokens: 4096,
+      ...(ep.extraBody ?? {}),
+      // Structural fields — always win so the worker's streaming
+      // / message-shape assumptions can't be accidentally broken via
+      // extraBody.
+      model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -611,23 +651,27 @@ async function runOpenAi(
 }
 
 async function runAnthropic(
-  env: Env,
+  ep: ResolvedEndpoint,
   model: string,
   system: string,
   user: string,
 ): Promise<string> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  if (!apiKey) throw new Error("VELLUM_AI_API_KEY is not set.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  if (!ep.apiKey) {
+    throw new Error(`Anthropic API key is not set (expected env var ${ep.apiKeyEnv}).`);
+  }
+  const baseUrl = (ep.baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
+  const res = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": apiKey,
+      "x-api-key": ep.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model,
       max_tokens: 4096,
+      ...(ep.extraBody ?? {}),
+      // Structural fields win over extraBody.
+      model,
       system,
       messages: [{ role: "user", content: user }],
     }),

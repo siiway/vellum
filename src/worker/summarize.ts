@@ -23,6 +23,7 @@ import type { AiSummaryConfig, RepoConfig, VellumConfig } from "../shared/types"
 import { localeSourcePrefix } from "../shared/types";
 import { fetchSourceFile, repoRef, docsRootPrefix } from "./sources";
 import { readCache, writeCache } from "./cache";
+import { resolveEndpoints, runWithFailover, type ResolvedEndpoint } from "./ai-endpoints";
 
 // --- Public entrypoint ----------------------------------------------------
 
@@ -120,7 +121,7 @@ export async function handleSummarize(
     locale: route.localeCode,
   });
 
-  return streamFromProvider(env, ai, prompt, ctx, cacheKey, ttl);
+  return streamFromProvider(env, site, ai, prompt, ctx, cacheKey, ttl);
 }
 
 // --- Route resolution -----------------------------------------------------
@@ -304,6 +305,7 @@ function buildPrompt(args: { title: string | null; body: string; locale: string 
 
 function streamFromProvider(
   env: Env,
+  site: VellumConfig,
   ai: AiSummaryConfig,
   prompt: { system: string; user: string },
   ctx: ExecutionContext,
@@ -319,7 +321,7 @@ function streamFromProvider(
 
   // Buffer of accumulated tokens, written to KV on completion.
   let collected = "";
-  let modelLabel = ai.model ?? defaultModelFor(ai.provider);
+  let modelLabel = ai.model ?? "ai";
 
   const finish = async (err?: unknown) => {
     if (err) {
@@ -341,23 +343,49 @@ function streamFromProvider(
     await send("token", { text });
   };
 
-  // Kick off the provider call in the background — the response stream is
-  // already being returned by the time this resolves.
+  // Two-phase provider call so failover can fire on the upstream's POST
+  // response status without re-emitting any tokens that have already been
+  // streamed to the client:
+  //
+  //   1. `openProvider(ep)` issues the POST, throws on a non-2xx so
+  //      `runWithFailover` can retry against the next endpoint.
+  //   2. The returned `drain` closure consumes the upstream stream
+  //      verbatim into onToken. Mid-stream errors here propagate as
+  //      stream errors — no retry, no duplicate tokens.
   ctx.waitUntil(
     (async () => {
       try {
-        if (ai.provider === "workers-ai") {
-          modelLabel = ai.model ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-          await runWorkersAi(env, modelLabel, prompt, onToken);
-        } else if (ai.provider === "openai-compatible") {
-          modelLabel = ai.model ?? "openai/gpt-4o-mini";
-          await runOpenAi(env, ai, modelLabel, prompt, onToken);
-        } else if (ai.provider === "anthropic") {
-          modelLabel = ai.model ?? "claude-haiku-4-5";
-          await runAnthropic(env, modelLabel, prompt, onToken);
-        } else {
-          throw new Error(`Unknown provider: ${ai.provider}`);
-        }
+        const endpoints = resolveEndpoints(ai, site, env);
+        const drain = await runWithFailover(
+          "[vellum][summarize]",
+          endpoints,
+          async (ep) => {
+            const model = ep.model ?? defaultModelFor(ep.provider);
+            modelLabel = `${ep.id}:${model}`;
+            if (ep.provider === "workers-ai") {
+              return openWorkersAi(env, ep, model, prompt);
+            }
+            if (ep.provider === "anthropic") {
+              return openAnthropic(ep, model, prompt);
+            }
+            return openOpenAi(ep, model, prompt);
+          },
+          (info) => {
+            // Mirror failover state to the client so a "Trying foo (1/3)…"
+            // status line can render under the loading spinner. Non-fatal;
+            // we swallow the writer error if the client has hung up.
+            void send("provider", {
+              id: info.endpoint.id,
+              provider: info.endpoint.provider,
+              model: info.endpoint.model,
+              attempt: info.attempt,
+              total: info.total,
+              status: info.status,
+              error: info.error,
+            }).catch(() => undefined);
+          },
+        );
+        await drain(onToken);
         await finish();
       } catch (err) {
         await finish(err).catch(() => undefined);
@@ -368,7 +396,12 @@ function streamFromProvider(
   return new Response(readable, { status: 200, headers: sseHeaders() });
 }
 
-function defaultModelFor(provider: AiSummaryConfig["provider"]): string {
+// Drains the upstream into onToken. Returned by each `open*` runner so
+// the failover wrapper can decide whether to retry (open phase) or
+// commit (drain phase).
+type Drain = (onToken: (text: string) => Promise<void>) => Promise<void>;
+
+function defaultModelFor(provider: "workers-ai" | "openai-compatible" | "anthropic"): string {
   switch (provider) {
     case "workers-ai":
       return "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -381,19 +414,22 @@ function defaultModelFor(provider: AiSummaryConfig["provider"]): string {
 
 // --- Workers AI -----------------------------------------------------------
 
-async function runWorkersAi(
+async function openWorkersAi(
   env: Env,
+  ep: ResolvedEndpoint,
   model: string,
   prompt: { system: string; user: string },
-  onToken: (text: string) => Promise<void>,
-): Promise<void> {
+): Promise<Drain> {
   if (!env.AI) {
     throw new Error("AI binding not available. Add [ai] to wrangler.jsonc.");
   }
   // Workers AI returns a ReadableStream of SSE chunks when stream:true.
   const result = (await env.AI.run(model, {
-    stream: true,
     max_tokens: 600,
+    ...(ep.extraBody ?? {}),
+    // Structural fields win over extraBody so streaming + message
+    // shape can't be broken via config.
+    stream: true,
     messages: [
       { role: "system", content: prompt.system },
       { role: "user", content: prompt.user },
@@ -406,57 +442,60 @@ async function runWorkersAi(
     // works on those models.
     const obj = result as { response?: string };
     if (obj?.response) {
-      await onToken(obj.response);
-      return;
+      const text = obj.response;
+      return async (onToken) => {
+        await onToken(text);
+      };
     }
     throw new Error("Workers AI returned an unexpected response shape.");
   }
 
-  await consumeSse(result, async (data) => {
-    if (data === "[DONE]") return;
-    try {
-      const parsed = JSON.parse(data) as { response?: string };
-      if (parsed.response) await onToken(parsed.response);
-    } catch {
-      // Some models emit raw text per chunk instead of JSON; treat that as a
-      // token literal.
-      await onToken(data);
-    }
-  });
+  const stream = result;
+  return async (onToken) => {
+    await consumeSse(stream, async (data) => {
+      if (data === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(data) as { response?: string };
+        if (parsed.response) await onToken(parsed.response);
+      } catch {
+        // Some models emit raw text per chunk instead of JSON; treat that
+        // as a token literal.
+        await onToken(data);
+      }
+    });
+  };
 }
 
 // --- OpenAI-compatible (OpenAI, OpenRouter, Together, Groq, …) ------------
 
-async function runOpenAi(
-  env: Env,
-  ai: AiSummaryConfig,
+async function openOpenAi(
+  ep: ResolvedEndpoint,
   model: string,
   prompt: { system: string; user: string },
-  onToken: (text: string) => Promise<void>,
-): Promise<void> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("VELLUM_AI_API_KEY is not set.");
+): Promise<Drain> {
+  if (!ep.apiKey) {
+    throw new Error(`OpenAI-compatible API key is not set (expected env var ${ep.apiKeyEnv}).`);
   }
-  const baseUrl = (env.VELLUM_AI_BASE_URL ?? ai.baseUrl ?? "https://api.openai.com/v1").replace(
-    /\/+$/,
-    "",
-  );
+  const baseUrl = (ep.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
 
   const upstream = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${ep.apiKey}`,
       // OpenRouter rewards / requires these — harmless for vanilla OpenAI.
       "http-referer": "https://github.com/siiway/vellum",
       "x-title": "Vellum AI Summary",
     },
     body: JSON.stringify({
-      model,
-      stream: true,
+      // Tunable defaults; extraBody can override.
       max_tokens: 600,
       temperature: 0.3,
+      ...(ep.extraBody ?? {}),
+      // Structural fields win over extraBody so streaming + message
+      // shape can't be broken via config.
+      model,
+      stream: true,
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user },
@@ -469,44 +508,48 @@ async function runOpenAi(
     throw new Error(`Upstream ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`);
   }
 
-  await consumeSse(upstream.body, async (data) => {
-    if (data === "[DONE]") return;
-    try {
-      const json = JSON.parse(data) as {
-        choices?: Array<{ delta?: { content?: string } }>;
-      };
-      const delta = json.choices?.[0]?.delta?.content;
-      if (delta) await onToken(delta);
-    } catch {
-      // Ignore malformed lines (keep-alives, partial buffers).
-    }
-  });
+  const body = upstream.body;
+  return async (onToken) => {
+    await consumeSse(body, async (data) => {
+      if (data === "[DONE]") return;
+      try {
+        const json = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const delta = json.choices?.[0]?.delta?.content;
+        if (delta) await onToken(delta);
+      } catch {
+        // Ignore malformed lines (keep-alives, partial buffers).
+      }
+    });
+  };
 }
 
 // --- Anthropic ------------------------------------------------------------
 
-async function runAnthropic(
-  env: Env,
+async function openAnthropic(
+  ep: ResolvedEndpoint,
   model: string,
   prompt: { system: string; user: string },
-  onToken: (text: string) => Promise<void>,
-): Promise<void> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("VELLUM_AI_API_KEY is not set.");
+): Promise<Drain> {
+  if (!ep.apiKey) {
+    throw new Error(`Anthropic API key is not set (expected env var ${ep.apiKeyEnv}).`);
   }
+  const baseUrl = (ep.baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
 
-  const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+  const upstream = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": apiKey,
+      "x-api-key": ep.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
+      max_tokens: 600,
+      ...(ep.extraBody ?? {}),
+      // Structural fields win over extraBody.
       model,
       stream: true,
-      max_tokens: 600,
       system: prompt.system,
       messages: [{ role: "user", content: prompt.user }],
     }),
@@ -517,22 +560,25 @@ async function runAnthropic(
     throw new Error(`Upstream ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`);
   }
 
-  await consumeSse(upstream.body, async (data) => {
-    try {
-      const json = JSON.parse(data) as {
-        type?: string;
-        delta?: { type?: string; text?: string };
-      };
-      if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
-        const text = json.delta.text ?? "";
-        if (text) await onToken(text);
+  const body = upstream.body;
+  return async (onToken) => {
+    await consumeSse(body, async (data) => {
+      try {
+        const json = JSON.parse(data) as {
+          type?: string;
+          delta?: { type?: string; text?: string };
+        };
+        if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
+          const text = json.delta.text ?? "";
+          if (text) await onToken(text);
+        }
+      } catch {
+        // Anthropic also emits `event:` lines and pings; consumeSse already
+        // hands us just `data:` payloads so anything we can't parse here is
+        // just noise.
       }
-    } catch {
-      // Anthropic also emits `event:` lines and pings; consumeSse already
-      // hands us just `data:` payloads so anything we can't parse here is
-      // just noise.
-    }
-  });
+    });
+  };
 }
 
 // --- SSE helpers ----------------------------------------------------------

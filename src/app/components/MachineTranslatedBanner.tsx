@@ -1,4 +1,5 @@
 import {
+  Badge,
   Caption1,
   Link,
   MessageBar,
@@ -67,6 +68,15 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground4,
   },
   notice: {
+    color: tokens.colorNeutralForeground3,
+  },
+  // Row that pairs the "Translated by" label with a Badge wrapping the
+  // upstream id. Inline-flex so the badge sits on the same baseline as
+  // the label text, with a small gap so they don't crowd each other.
+  modelRow: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
     color: tokens.colorNeutralForeground3,
   },
 });
@@ -167,6 +177,24 @@ export function MachineTranslatedBanner() {
             </div>
           )}
           <Caption1 className={styles.notice}>{notice}</Caption1>
+          {meta.translatedBy &&
+            (() => {
+              // Split the localized "Translated by {model}" string at the
+              // placeholder so we can embed a FluentUI Badge in place of
+              // the model id — gives the upstream identifier a chip-style
+              // affordance that reads at a glance.
+              const template = t("ui.translated.byModel");
+              const [before, after] = template.split("{model}");
+              return (
+                <Caption1 className={styles.modelRow}>
+                  {before}
+                  <Badge appearance="outline" size="small">
+                    {meta.translatedBy}
+                  </Badge>
+                  {after}
+                </Caption1>
+              );
+            })()}
         </MessageBarBody>
       </MessageBar>
     </div>

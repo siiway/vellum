@@ -552,6 +552,10 @@ async function renderRoute(
   let matchedPath: string | null = null;
   let machineTranslated = false;
   let translationAttempted = false;
+  // `${ep.id}:${model}` label of the provider that produced the
+  // translation, surfaced on the banner so readers see which upstream
+  // rendered their page when a failover chain is configured.
+  let translatedBy: string | undefined;
   for (const c of candidates) {
     const s = await fetchSourceFile(env, route.repo, route.version.branch, c, {
       ctx,
@@ -584,7 +588,7 @@ async function renderRoute(
       const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
       if (s) {
         translationAttempted = true;
-        const translated = await mtTranslate({
+        const result = await mtTranslate({
           env,
           ctx,
           site: SITE,
@@ -593,10 +597,12 @@ async function renderRoute(
           locale: route.localeCode,
           source: s,
         });
-        source = translated;
+        source = result.content;
         matchedPath = c;
-        machineTranslated = !!translated && translated !== s;
-        if (!machineTranslated) {
+        machineTranslated = !!result.content && result.content !== s;
+        if (machineTranslated) {
+          translatedBy = result.model;
+        } else {
           console.warn(
             `[vellum][router] MT no-op for ${route.repoSlug}@${route.version.branch}:${route.pagePath} locale=${route.localeCode}; serving source unchanged`,
           );
@@ -791,6 +797,7 @@ async function renderRoute(
         next,
         machineTranslated,
         translationAttempted,
+        translatedBy,
         // Only compute the available-translations list when the MT pipeline
         // touched this page — that's the only surface that uses it (the
         // MachineTranslatedBanner). For hand-curated pages we skip the D1

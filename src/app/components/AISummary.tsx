@@ -6,6 +6,8 @@ import {
   Card,
   CardFooter,
   CardHeader,
+  Field,
+  ProgressBar,
   Spinner,
   Text,
   tokens,
@@ -21,6 +23,7 @@ import {
 } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { format } from "../../shared/i18n";
 
 // Microsoft Learn-style "AI Summary" widget. Lives below the page hero and
 // above the article body. Two states:
@@ -91,6 +94,14 @@ const useStyles = makeStyles({
     alignItems: "center",
     gap: tokens.spacingHorizontalS,
     color: tokens.colorNeutralForeground2,
+  },
+  // Provider-attempt progress sits under the spinner row as a FluentUI
+  // Field + ProgressBar. The bar fills as the failover loop advances
+  // through endpoints; the field's validation state flips to "warning"
+  // when an endpoint has just failed so the colour change reads as a
+  // status, not just decoration.
+  providerProgress: {
+    marginTop: tokens.spacingVerticalS,
   },
   // CardFooter is a flex row by default; we just need to push the two
   // <Text>s apart and tone them down.
@@ -222,6 +233,16 @@ export function AISummary() {
   const [model, setModel] = useState<string | null>(null);
   const [cached, setCached] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Provider-attempt state. Driven by the `provider` SSE event the worker
+  // emits around each failover step. Cleared when streaming actually
+  // starts (first `token` event) so the status line doesn't linger
+  // beside the spinner once content is flowing.
+  const [provider, setProvider] = useState<{
+    id: string;
+    attempt: number;
+    total: number;
+    status: "trying" | "failed";
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const turnstileHostRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -242,6 +263,7 @@ export function AISummary() {
     setModel(null);
     setCached(false);
     setLoading(false);
+    setProvider(null);
   }, [data.route.repoSlug, data.route.localeCode, data.route.pagePath]);
 
   const run = useCallback(
@@ -252,6 +274,7 @@ export function AISummary() {
       setText("");
       setModel(null);
       setCached(false);
+      setProvider(null);
 
       // Cancel any prior stream.
       abortRef.current?.abort();
@@ -289,16 +312,43 @@ export function AISummary() {
         await consumeStream(res.body, ac.signal, (ev) => {
           if (ev.event === "token") {
             const d = ev.data as { text?: string };
-            if (d.text) setText((prev) => prev + d.text);
+            if (d.text) {
+              // First token committed — clear the provider-trying status so
+              // the loading area swaps to the streaming-text view cleanly.
+              setProvider(null);
+              setText((prev) => prev + d.text);
+            }
+          } else if (ev.event === "provider") {
+            const d = ev.data as {
+              id?: string;
+              attempt?: number;
+              total?: number;
+              status?: "trying" | "failed" | "ok";
+            };
+            if (
+              d.id &&
+              typeof d.attempt === "number" &&
+              typeof d.total === "number" &&
+              (d.status === "trying" || d.status === "failed")
+            ) {
+              setProvider({
+                id: d.id,
+                attempt: d.attempt,
+                total: d.total,
+                status: d.status,
+              });
+            }
           } else if (ev.event === "done") {
             const d = ev.data as { model?: string; cached?: boolean };
             if (d.model) setModel(d.model);
             if (d.cached) setCached(true);
             setLoading(false);
+            setProvider(null);
           } else if (ev.event === "error") {
             const d = ev.data as { message?: string };
             setError(d.message || "Unknown error.");
             setLoading(false);
+            setProvider(null);
           }
         });
       } catch (err) {
@@ -408,9 +458,33 @@ export function AISummary() {
           ) : text ? (
             <AiMarkdown source={text} streaming={loading} />
           ) : loading ? (
-            <div className={styles.loadingRow}>
-              <Spinner size="extra-tiny" />
-              <Text>{t("ui.aiSummary.loading")}</Text>
+            <div>
+              <div className={styles.loadingRow}>
+                <Spinner size="extra-tiny" />
+                <Text>{t("ui.aiSummary.loading")}</Text>
+              </div>
+              {provider && (
+                <Field
+                  className={styles.providerProgress}
+                  validationState={provider.status === "failed" ? "warning" : "none"}
+                  validationMessage={
+                    provider.status === "failed"
+                      ? format(t("ui.ai.providerFailed"), { id: provider.id })
+                      : format(t("ui.ai.tryingProvider"), {
+                          id: provider.id,
+                          attempt: provider.attempt,
+                          total: provider.total,
+                        })
+                  }
+                >
+                  <ProgressBar
+                    value={provider.attempt}
+                    max={provider.total}
+                    shape="rounded"
+                    thickness="medium"
+                  />
+                </Field>
+              )}
             </div>
           ) : null}
         </div>

@@ -48,6 +48,7 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `favicon`       |          | URL of the favicon.                                                                |
 | `themeColor`    |          | `<meta name="theme-color">` hex value, e.g. `#0078d4`.                             |
 | `footer`        |          | Footer text rendered below every page.                                             |
+| `aiProviders`   |          | Global AI provider pool. See [AI providers](#ai-providers-global-pool).            |
 | `aiSummary`     |          | Microsoft Learn-style summary button per page. See [AI Summary](#ai-summary).      |
 | `aiChat`        |          | Ask-AI chat drawer. See [Ask AI](#ask-ai).                                         |
 | `translate`     |          | Machine translation. See [Machine translation](#machine-translation).              |
@@ -58,6 +59,181 @@ a Microsoft Learn-style landing page (see [Layouts](./layouts)). The bundled
 config does exactly this — the landing page lives in `local-docs/homepage/`.
 :::
 
+## AI providers (global pool)
+
+All three AI features (AI Summary, Ask AI, Machine translation) draw from
+a single pool of upstream providers declared at `site.aiProviders`. Each
+entry is a fully-specified endpoint with its own provider kind, model,
+base URL, and API key env var. Features either consume the whole pool or
+narrow it via their own `providers` whitelist.
+
+Order matters: the worker tries entries left-to-right and falls over to
+the next on a retryable error (HTTP 401/402/403/429/5xx or network
+failure). See [Failover behaviour](#failover-behaviour) below.
+
+```jsonc
+"site": {
+  "aiProviders": [
+    {
+      "id": "openrouter",
+      "provider": "openai-compatible",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4o-mini",
+      "apiKeyEnv": "VELLUM_AI_API_KEY"     // optional; this is the default
+    },
+    {
+      "id": "openrouter-backup",
+      "provider": "openai-compatible",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4o-mini",
+      "apiKeyEnv": "VELLUM_AI_API_KEY_BACKUP"
+    },
+    {
+      "id": "anthropic",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "apiKeyEnv": "VELLUM_AI_API_KEY_ANTHROPIC"
+    },
+    {
+      "id": "workers-ai",
+      "provider": "workers-ai",
+      "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    }
+  ]
+}
+```
+
+| Field        | Required | Notes                                                                                                                              |
+| ------------ | :------: | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `id`         |    ✓     | Short identifier (lowercase kebab). Referenced by feature-level `providers` filters.                                              |
+| `provider`   |    ✓     | `"workers-ai"`, `"openai-compatible"`, or `"anthropic"`.                                                                          |
+| `model`      |          | Default model id for this entry. Defaults: Llama 3.3 70B Fast / gpt-4o-mini / Haiku 4.5. Features may override per-call.          |
+| `baseUrl`    |          | OpenAI-compatible base URL (OpenRouter, Together, a self-hosted gateway). Ignored for `workers-ai` / `anthropic`.                |
+| `apiKeyEnv`  |          | Env var name — or **array** of names — that hold the API keys. Defaults to `VELLUM_AI_API_KEY`. See [Multiple keys per provider](#multiple-keys-per-provider).  |
+| `extraBody`  |          | JSON merged into the provider request body for provider-specific features (DeepSeek thinking mode, Anthropic extended thinking, extra sampling params). See [Provider body extensions](#provider-body-extensions). |
+
+Credentials live in worker env vars, not the config file:
+
+- `VELLUM_AI_API_KEY` — bearer / x-api-key for `openai-compatible` and
+  `anthropic` providers. `workers-ai` doesn't need one. Override per
+  entry with `apiKeyEnv` to stage multiple keys.
+- `VELLUM_AI_BASE_URL` — legacy global override. Wins over every
+  provider entry's `baseUrl` when set; useful when one config ships to
+  multiple environments that all share a single gateway.
+- `VELLUM_TURNSTILE_SECRET` — paired with feature-level `turnstileSiteKey`.
+  Set both or neither; half-configured Turnstile fails closed.
+
+For `workers-ai`, the AI binding is declared in `wrangler.jsonc` (`"ai": { "binding": "AI" }`).
+
+### Multiple keys per provider
+
+When a provider has multiple keys that each carry independent quotas
+(common for OpenRouter / Together / Groq free tiers), Vellum supports
+two ways to stage them. Both expand into separate failover attempts.
+
+**Option A — array of env var names.** Each name expands into its own
+attempt, sharing everything else.
+
+```jsonc
+{
+  "id": "openrouter",
+  "provider": "openai-compatible",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "model": "openai/gpt-4o-mini",
+  "apiKeyEnv": [
+    "VELLUM_AI_API_KEY",
+    "VELLUM_AI_API_KEY_BACKUP",
+    "VELLUM_AI_API_KEY_THIRD"
+  ]
+}
+```
+
+**Option B — one env var, one key per line.** Easier to operate when
+you don't want to juggle N secrets. The env var's value is split on
+newlines (LF / CRLF / CR all work); each non-empty line becomes a
+separate attempt labelled `${envName}#1`, `#2`, … in log lines.
+
+```jsonc
+{
+  "id": "openrouter",
+  "provider": "openai-compatible",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "model": "openai/gpt-4o-mini",
+  "apiKeyEnv": "VELLUM_AI_API_KEYS"
+}
+```
+
+```bash
+wrangler secret put VELLUM_AI_API_KEYS
+# paste at the prompt:
+# sk-or-v1-abc...
+# sk-or-v1-def...
+# sk-or-v1-ghi...
+```
+
+The two options stack: `apiKeyEnv: ["FOO", "BAR"]` with `FOO`
+holding two newline-separated keys and `BAR` holding one runs four
+attempts in order (FOO#1, FOO#2, BAR). At resolve time the worker
+walks the resulting list left-to-right, falling over to the next key
+on any retryable error.
+
+### Provider body extensions
+
+Some provider features aren't exposed by Vellum's first-class fields:
+DeepSeek's thinking mode, Anthropic's extended thinking, extra sampling
+params, custom headers via OpenRouter routing, etc. The `extraBody`
+field on an AiProvider entry is merged verbatim into the provider's
+request body before the worker's required fields:
+
+```jsonc
+[
+  // DeepSeek thinking mode via vLLM-flavoured kwargs.
+  {
+    "id": "deepseek-reasoning",
+    "provider": "openai-compatible",
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "apiKeyEnv": "VELLUM_AI_API_KEY_DEEPSEEK",
+    "extraBody": {
+      "chat_template_kwargs": { "enable_thinking": true }
+    }
+  },
+  // Anthropic extended thinking — passed through verbatim to /v1/messages.
+  {
+    "id": "claude-thinking",
+    "provider": "anthropic",
+    "model": "claude-opus-4-7",
+    "apiKeyEnv": "VELLUM_AI_API_KEY_ANTHROPIC",
+    "extraBody": {
+      "thinking": { "type": "enabled", "budget_tokens": 4000 }
+    }
+  },
+  // Extra sampling tuning that the worker doesn't expose directly.
+  {
+    "id": "openrouter-creative",
+    "provider": "openai-compatible",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "model": "openai/gpt-4o",
+    "apiKeyEnv": "VELLUM_AI_API_KEY",
+    "extraBody": {
+      "top_p": 0.95,
+      "presence_penalty": 0.1
+    }
+  }
+]
+```
+
+`extraBody` merges with **lower precedence** than the worker's
+structural fields. That means `model`, `messages`, `stream`, `system`,
+and `tools` always win — so a stray `extraBody.model` can't accidentally
+break the streaming setup. Tunable params (`temperature`, `max_tokens`,
+`top_p`, …) live at higher precedence than the runner's defaults, so
+`extraBody.temperature` does override the worker's translate-time
+temperature of `0`.
+
+For `workers-ai` entries the same object is merged into the
+`env.AI.run` input — same precedence rules apply.
+
 ## AI Summary
 
 Mirrors Microsoft Learn's "AI Summary" button. When `site.aiSummary` is set,
@@ -67,33 +243,18 @@ a 2–4 paragraph summary into an expandable card.
 ```json
 "site": {
   "aiSummary": {
-    "provider": "openai-compatible",
-    "model": "openai/gpt-4o-mini",
-    "baseUrl": "https://openrouter.ai/api/v1",
     "turnstileSiteKey": "0x4AAA...",
     "cacheTtlSeconds": 604800
   }
 }
 ```
 
-| Field              |              Required               | Notes                                                                                                       |
-| ------------------ | :---------------------------------: | ----------------------------------------------------------------------------------------------------------- |
-| `provider`         |                  ✓                  | `"workers-ai"`, `"openai-compatible"`, or `"anthropic"`.                                                    |
-| `model`            |                                     | Model id. Defaults are Llama 3.3 70B Fast / gpt-4o-mini / Haiku 4.5 respectively.                           |
-| `baseUrl`          |                                     | OpenAI-compatible base URL (OpenRouter, Together, a self-hosted gateway). `VELLUM_AI_BASE_URL` overrides.   |
-| `turnstileSiteKey` |                                     | Cloudflare Turnstile site key. When set, the button challenges the visitor before calling the model.       |
-| `cacheTtlSeconds`  |                                     | Time a generated summary lives in KV. Defaults to 7 days.                                                   |
-
-Credentials live in worker env vars, not the config file:
-
-- `VELLUM_AI_API_KEY` — bearer / x-api-key for `openai-compatible` and
-  `anthropic` providers. `workers-ai` doesn't need one.
-- `VELLUM_AI_BASE_URL` — overrides `aiSummary.baseUrl`. Useful when the same
-  config ships to multiple environments.
-- `VELLUM_TURNSTILE_SECRET` — paired with `turnstileSiteKey`. Set both or
-  neither; half-configured Turnstile fails closed.
-
-For `workers-ai`, the AI binding is declared in `wrangler.jsonc` (`"ai": { "binding": "AI" }`).
+| Field              | Required | Notes                                                                                                                       |
+| ------------------ | :------: | --------------------------------------------------------------------------------------------------------------------------- |
+| `model`            |          | Optional model override applied to every provider in the pool when this feature runs.                                       |
+| `providers`        |          | Optional whitelist of provider ids from `site.aiProviders` (preserves the order you list them in — the failover order).    |
+| `turnstileSiteKey` |          | Cloudflare Turnstile site key. When set, the button challenges the visitor before calling the model.                       |
+| `cacheTtlSeconds`  |          | Time a generated summary lives in KV. Defaults to 7 days.                                                                   |
 
 ## Ask AI
 
@@ -104,22 +265,18 @@ with `site.aiChat`:
 ```json
 "site": {
   "aiChat": {
-    "provider": "openai-compatible",
-    "model": "openai/gpt-4o-mini",
-    "baseUrl": "https://openrouter.ai/api/v1",
     "turnstileSiteKey": "0x4AAA...",
     "maxIterations": 6
   }
 }
 ```
 
-| Field              | Required | Notes                                                                                                |
-| ------------------ | :------: | ---------------------------------------------------------------------------------------------------- |
-| `provider`         |    ✓     | Same matrix as `aiSummary.provider`. Tool calling is most reliable with `openai-compatible` and `anthropic`. |
-| `model`            |          | Model id passed verbatim to the provider.                                                            |
-| `baseUrl`          |          | Override for openai-compatible providers.                                                            |
-| `turnstileSiteKey` |          | Cloudflare Turnstile site key. One invisible challenge per chat session; the worker mints a 60-minute signed token. |
-| `maxIterations`    |          | Maximum agent tool-call rounds per user message. Defaults to 6.                                      |
+| Field              | Required | Notes                                                                                                                       |
+| ------------------ | :------: | --------------------------------------------------------------------------------------------------------------------------- |
+| `model`            |          | Optional model override. A stronger reasoning model is often worth the extra cost for chat answers.                         |
+| `providers`        |          | Optional whitelist. The agent loop locks to a single API shape (Anthropic vs OpenAI-compatible) based on the first provider — list providers of the matching shape here when the pool mixes both. |
+| `turnstileSiteKey` |          | Cloudflare Turnstile site key. One invisible challenge per chat session; the worker mints a 60-minute signed token.        |
+| `maxIterations`    |          | Maximum agent tool-call rounds per user message. Defaults to 6.                                                             |
 
 The AI has these tools and uses them on its own:
 
@@ -128,9 +285,8 @@ The AI has these tools and uses them on its own:
 - `list_repos()` — enumerate the repos on this site.
 - `list_pages(repo, locale?)` — list every page in a repo.
 
-Credentials reuse the same env vars as the summary feature
-(`VELLUM_AI_API_KEY`, `VELLUM_AI_BASE_URL`, `VELLUM_TURNSTILE_SECRET`). One
-extra secret unique to chat:
+Credentials reuse the env vars declared in [AI providers](#ai-providers-global-pool).
+One extra secret unique to chat:
 
 - `VELLUM_SESSION_SECRET` — HMAC key (32+ bytes) used to sign the chat
   session tokens issued by `/api/ai/session`. Set with `wrangler secret put`
@@ -170,9 +326,6 @@ push, and pruned on an hourly cron tick when older than `refreshDays`.
 ```json
 "site": {
   "translate": {
-    "provider": "openai-compatible",
-    "baseUrl": "https://openrouter.ai/api/v1",
-    "model": "openai/gpt-4o-mini",
     "targets": ["zh-CN", "zh-TW", "ja", "ko", "es", "pt-BR"],
     "refreshDays": 5
   }
@@ -181,15 +334,14 @@ push, and pruned on an hourly cron tick when older than `refreshDays`.
 
 | Field         | Required | Notes                                                                                                                  |
 | ------------- | :------: | ---------------------------------------------------------------------------------------------------------------------- |
-| `provider`    |    ✓     | `"workers-ai"`, `"openai-compatible"`, or `"anthropic"`. Same matrix as `aiSummary`.                                  |
-| `model`       |          | Model id. Defaults: Llama 3.3 70B Fast / gpt-4o-mini / Haiku 4.5.                                                      |
-| `baseUrl`     |          | OpenAI-compatible base URL. `VELLUM_AI_BASE_URL` overrides.                                                            |
+| `model`       |          | Optional model override. Translation rewards a cheap fast model — no reasoning needed.                                |
+| `providers`   |          | Optional whitelist of provider ids from `site.aiProviders`.                                                            |
 | `targets`     |    ✓     | Array of BCP-47 codes (e.g. `["zh-CN", "pt-BR"]`), or the sentinel `"all"` to expand to every IANA ISO 639-1 code.    |
 | `refreshDays` |          | How long a cached translation row is fresh. Defaults to 5. The hourly cron prunes older rows for lazy re-translation. |
 | `batchSize`   |          | Max rows pruned per cron tick. Defaults to 50.                                                                         |
 
-Credentials reuse the same env vars as `aiSummary` / `aiChat`
-(`VELLUM_AI_API_KEY`, `VELLUM_AI_BASE_URL`). The new piece is the D1
+Credentials reuse the env vars declared in
+[AI providers](#ai-providers-global-pool). The new piece is the D1
 database that backs the cache:
 
 - `VELLUM_TRANSLATION_DB` — D1 binding declared in `wrangler.jsonc`.
@@ -203,6 +355,86 @@ no-ops and MT-target locales fall back to the default-locale source.
 See [Internationalisation → Machine translation](./i18n#machine-translation)
 for the full story: what's translated, how the prompt preserves markdown
 syntax, refresh behaviour, and cost shape.
+
+## Failover behaviour
+
+Every AI feature shares the same failover loop. The worker walks
+`site.aiProviders` (or the feature's filtered subset) left-to-right,
+trying each provider until one succeeds. Common setups:
+
+- **Same provider, multiple keys.** Add the same `provider` + `baseUrl`
+  twice with different `apiKeyEnv` values to stage two OpenRouter keys
+  with independent quotas.
+- **Mixed providers as last resort.** Put a free-tier OpenRouter entry
+  first, an Anthropic entry second, and Workers AI last — readers
+  always get *something*, even when the upstream goes down.
+
+### What triggers a failover
+
+The worker classifies these upstream conditions as "used up" and tries
+the next endpoint:
+
+| Trigger                                              | Why                                              |
+| ---------------------------------------------------- | ------------------------------------------------ |
+| **HTTP 401**                                         | API key invalid or revoked.                      |
+| **HTTP 402**                                         | Account out of credit (OpenRouter, Together, …). |
+| **HTTP 403**                                         | Key valid but blocked for this request.          |
+| **HTTP 429**                                         | Per-key or per-account rate limit hit.           |
+| **HTTP 5xx**                                         | Provider server / gateway error.                 |
+| Network errors (timeout, fetch failed, ECONNRESET)   | TCP / TLS handshake didn't complete.             |
+| `AI binding not available` (workers-ai only)         | Allows a fallback that doesn't need the binding. |
+
+Other 4xx codes (400 bad request, 404 model missing) propagate without
+retry — they're content / config problems and re-issuing the same payload
+elsewhere just burns the fallback budget for the same outcome.
+
+### Streaming-safe semantics
+
+For `aiSummary` and `aiChat`, the SSE stream begins after the upstream
+returns 2xx. Failover only fires before any bytes are written to the
+client — once the worker has emitted a `token` event, it's committed to
+the current endpoint. Mid-stream errors propagate to the client as a
+single `error` event; no duplicate tokens.
+
+For `translate`, the call is single-shot (no streaming to client), so
+every retry is a clean POST.
+
+### Compatibility with `aiChat`
+
+`aiChat` runs a tool-calling agent loop with provider-specific request /
+response shapes. The loop locks to a single API shape based on the
+first provider in the pool that the feature would use:
+
+- **OpenAI-compatible / Workers AI**: the OpenAI chat-completions shape.
+  Failover skips past any `anthropic` entries.
+- **Anthropic**: the Messages-API shape. Failover skips past
+  `openai-compatible` and `workers-ai` entries.
+
+To explicitly pin chat to one shape regardless of pool order, set
+`aiChat.providers` to just the ids you want.
+
+### Env vars and logging
+
+Each endpoint's `apiKeyEnv` names the env var the worker reads its key
+from. Stage them with `wrangler secret put`:
+
+```bash
+wrangler secret put VELLUM_AI_API_KEY               # primary
+wrangler secret put VELLUM_AI_API_KEY_BACKUP        # fallback #1
+wrangler secret put VELLUM_AI_API_KEY_ANTHROPIC     # fallback #2
+```
+
+Every failover decision logs to `wrangler tail` / `wrangler dev` under
+the per-feature tag:
+
+```
+[vellum][summarize] endpoint #1 (openai-compatible, key=VELLUM_AI_API_KEY) failed (Upstream 429: rate limit exceeded); trying #2
+[vellum][summarize] failover ok: succeeded on endpoint #2 (openai-compatible)
+```
+
+A line that mentions "all N endpoints exhausted" means every entry in
+the chain returned a retryable error — usually a sign that a provider-
+wide outage is in progress and you should add more diverse fallbacks.
 
 ## RepoConfig
 

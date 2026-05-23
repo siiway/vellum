@@ -14,24 +14,31 @@
       { "code": "zh", "label": "中文", "prefix": "zh-CN" }
     ],
     "socialLinks": [{ "icon": "github", "link": "https://github.com/siiway" }],
+    "aiProviders": [
+      {
+        "id": "openrouter-glm",
+        "provider": "openai-compatible",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "model": "z-ai/glm-4.5-air:free",
+        "apiKeyEnv": "VELLUM_AI_API_KEY"
+      },
+      {
+        "id": "deepseek",
+        "provider": "openai-compatible",
+        "baseUrl": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "apiKeyEnv": "VELLUM_AI_API_KEY_DEEPSEEK"
+      }
+    ],
     "aiSummary": {
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "provider": "openai-compatible",
-      "model": "z-ai/glm-4.5-air:free",
       "turnstileSiteKey": "0x4AAAAAADU1DRoEmuej6eJL"
     },
     "aiChat": {
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "provider": "openai-compatible",
-      "model": "z-ai/glm-4.5-air:free",
       "maxIterations": 12,
       "turnstileSiteKey": "0x4AAAAAADU1DRoEmuej6eJL"
     },
     "translate": {
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "provider": "openai-compatible",
-      "model": "z-ai/glm-4.5-air:free",
-      "targets": [ ]
+      "targets": []
     }
   },
   "repos": [

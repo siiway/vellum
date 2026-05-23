@@ -77,12 +77,14 @@ const OVERRIDES: Record<string, OverrideTable> = {
       locales: "All supported locales. Order is preserved in the language picker.",
       socialLinks:
         'Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: "<svg ...>" }`.',
+      aiProviders:
+        "Global AI provider pool. Defined once and consumed by every AI feature (aiSummary, aiChat, translate). Each entry's `id` is referenced by features via their `providers` filter. Order is failover order — the worker tries entries left-to-right and falls over to the next on HTTP 401/402/403/429/5xx or network failures. Required if any AI feature is configured.",
       aiSummary:
-        'Microsoft Learn-style "AI Summary" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file.',
+        'Microsoft Learn-style "AI Summary" button rendered below the page title on doc pages. Reads from `site.aiProviders` — set `providers` here to narrow the pool. Credentials (API keys, Turnstile secret) live in worker env vars, not this file.',
       aiChat:
-        '"Ask AI" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary.',
+        '"Ask AI" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Reads from `site.aiProviders`; the agent loop locks to a single API shape (OpenAI vs Anthropic) based on the first provider in the resolved list, so mix shapes carefully.',
       translate:
-        "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through the provider. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output. Omit to disable.",
+        "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through `site.aiProviders`. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output.",
       searchAliases:
         "Search synonyms. Each key is a term a reader might type; the value is the list of words the docs author probably used for the same concept. A reader searching for any of these terms also matches pages containing the others (alias hits score below primary hits). Merged on top of a built-in baseline (latex/math, auth/oauth, ws/websocket, …) so config only needs to spell out product-specific vocabulary.",
     },
@@ -96,36 +98,50 @@ const OVERRIDES: Record<string, OverrideTable> = {
   },
   AiSummaryConfig: {
     descriptions: {
-      provider:
-        '"workers-ai" uses the env.AI binding (Cloudflare Workers AI; no API key needed). "openai-compatible" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …) using VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL. "anthropic" calls the Anthropic Messages API with VELLUM_AI_API_KEY.',
       model:
-        'Model identifier passed verbatim to the provider. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic).',
-      baseUrl:
-        'Base URL override for openai-compatible providers, e.g. "https://openrouter.ai/api/v1". The VELLUM_AI_BASE_URL env var takes precedence when set.',
+        "Optional model override for every provider in the pool when this feature runs. When omitted, each provider's own `model` (or its built-in default) is used.",
+      providers:
+        "Optional whitelist of provider ids from `site.aiProviders`. When omitted, every entry in the global pool is used (in declaration order — that's the failover order too). Use this to narrow the pool when a feature can only consume a subset.",
       turnstileSiteKey:
         "Cloudflare Turnstile site key. When set, the AI Summary button mounts an invisible Turnstile widget and the worker verifies the token before calling the model. Pairs with the VELLUM_TURNSTILE_SECRET worker secret.",
       cacheTtlSeconds:
         "How long to retain a generated summary in KV before regenerating it. Defaults to 604800 (7 days).",
     },
     propertyPatches: {
-      baseUrl: { format: "uri-reference" },
       cacheTtlSeconds: { minimum: 60 },
+    },
+  },
+  AiProvider: {
+    descriptions: {
+      id: "Short identifier referenced by features via their `providers` filter. Must be unique within `site.aiProviders`.",
+      provider:
+        '"workers-ai" uses the env.AI binding (Cloudflare Workers AI; no API key needed). "openai-compatible" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …). "anthropic" calls the Anthropic Messages API.',
+      model:
+        "Default model id for this provider entry. Features may override via their own `model` field.",
+      baseUrl:
+        'Base URL for openai-compatible providers, e.g. "https://openrouter.ai/api/v1". Ignored for workers-ai / anthropic.',
+      apiKeyEnv:
+        'Env var name that holds the API key for this provider — or an array of env var names when the same endpoint has multiple keys with independent quotas. As a shortcut, a single env var can also hold MULTIPLE keys separated by newlines (one per line); each line becomes its own failover attempt labelled `${envName}#N`. The two shapes stack — `apiKeyEnv: ["FOO", "BAR"]` with FOO holding two newline-separated keys yields three attempts (FOO#1, FOO#2, BAR). Defaults to "VELLUM_AI_API_KEY" when omitted.',
+      extraBody:
+        'Arbitrary JSON merged into the provider request body before the worker\'s required fields (model / messages / stream / max_tokens / system, which always win). Use it to enable provider-specific features that don\'t have a first-class field on AiProvider — e.g. DeepSeek thinking mode (`{ "chat_template_kwargs": { "enable_thinking": true } }`), Anthropic extended thinking (`{ "thinking": { "type": "enabled", "budget_tokens": 4000 } }`), or extra sampling params (`{ "top_p": 0.95, "presence_penalty": 0.1 }`). Merged into env.AI.run input for workers-ai providers.',
+    },
+    propertyPatches: {
+      baseUrl: { format: "uri-reference" },
+      id: { pattern: "^[a-z0-9][a-z0-9-]*$" },
     },
   },
   AiChatConfig: {
     descriptions: {
-      provider:
-        'Same matrix as AiSummaryConfig.provider. Note that tool calling (used by the chat agent to fetch docs) is most reliably supported by "openai-compatible" and "anthropic"; "workers-ai" works with a smaller model menu.',
       model:
-        'Model id. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic). A stronger reasoning model is often worth the extra cost here.',
-      baseUrl: "Base URL override for openai-compatible providers.",
+        "Optional model override applied to every provider in the pool when this feature runs. A stronger reasoning model is often worth the extra cost for chat answers.",
+      providers:
+        "Optional whitelist of provider ids from `site.aiProviders`. The chat agent loop locks to a single API shape (Anthropic vs OpenAI-compatible) based on the first provider in the resolved list — list providers of the matching shape here when the global pool mixes both.",
       turnstileSiteKey:
         "Cloudflare Turnstile site key. When set, the visitor solves one invisible challenge per chat session and the worker issues a 60-minute signed session token that subsequent messages present. Pairs with VELLUM_TURNSTILE_SECRET.",
       maxIterations:
         "Maximum agent loop iterations (model-call → tool-call rounds) per user message. Defaults to 6.",
     },
     propertyPatches: {
-      baseUrl: { format: "uri-reference" },
       maxIterations: { minimum: 1, maximum: 12 },
     },
   },
@@ -141,11 +157,10 @@ const OVERRIDES: Record<string, OverrideTable> = {
   },
   TranslateConfig: {
     descriptions: {
-      provider:
-        'Same matrix as AiSummaryConfig.provider. "workers-ai" can use a dedicated MT model (e.g. @cf/meta/m2m100-1.2b); "openai-compatible" and "anthropic" route through a general chat model with a markdown-preserving system prompt.',
       model:
-        'Model id. Defaults: "@cf/meta/m2m100-1.2b" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic).',
-      baseUrl: "Base URL override for openai-compatible providers.",
+        "Optional model override applied to every provider in the pool when translation runs. Translation is high-volume + batch-friendly + doesn't reward reasoning, so a cheap model usually wins.",
+      providers:
+        "Optional whitelist of provider ids from `site.aiProviders`. When omitted, translation uses every provider in the global pool, in declaration order (the failover order).",
       targets:
         'Locale codes to auto-translate into. Pass an array of BCP47-style codes (e.g. `["es", "fr", "ja", "zh-CN"]`) or the sentinel `"all"` to expand to every language in the IANA ISO 639-1 registry (~180 bare-language codes, sourced via the `iso-639-1` npm package). Region-coded variants like `zh-CN`/`pt-BR` aren\'t in the bare ISO 639-1 base set — list them explicitly. Each resolved code is merged into `site.locales` at load time with machineTranslated:true and a label resolved via ISO 639-1 / Intl.DisplayNames. Codes already declared in `site.locales` are skipped.',
       refreshDays:
@@ -156,7 +171,6 @@ const OVERRIDES: Record<string, OverrideTable> = {
         "Per-tick row budget for the scheduled refresher. Defaults to 50. Caps CPU + outbound-fetch time per cron invocation.",
     },
     propertyPatches: {
-      baseUrl: { format: "uri-reference" },
       refreshDays: { minimum: 1, maximum: 365 },
       concurrency: { minimum: 1, maximum: 32 },
       batchSize: { minimum: 1, maximum: 500 },

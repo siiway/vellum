@@ -30,12 +30,14 @@ import {
   DrawerBody,
   DrawerHeader,
   DrawerHeaderTitle,
+  Field,
   Menu,
   MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
+  ProgressBar,
   Radio,
   RadioGroup,
   Text,
@@ -60,6 +62,7 @@ import {
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { AiMarkdown } from "./AiMarkdown";
+import { format } from "../../shared/i18n";
 
 // "Ask AI about this docs". FluentUI Drawer pinned to the right edge,
 // triggered from a button in the NavBar (see AskAiButton). The drawer owns
@@ -404,7 +407,9 @@ const useStyles = makeStyles({
   // discoverable without crowding the composer.
   stopRow: {
     display: "flex",
+    alignItems: "center",
     justifyContent: "center",
+    gap: tokens.spacingHorizontalM,
     paddingInline: tokens.spacingHorizontalL,
     paddingBlock: tokens.spacingVerticalXS,
     backgroundColor: tokens.colorNeutralBackground2,
@@ -412,6 +417,14 @@ const useStyles = makeStyles({
   stopBtn: {
     borderRadius: tokens.borderRadiusCircular,
     boxShadow: tokens.shadow4,
+  },
+  // Provider-attempt FluentUI Field + ProgressBar lives next to the Stop
+  // button while a failover is in progress. The bar advances through
+  // endpoints, the field's validation state flips to "warning" when an
+  // endpoint has just failed so the colour change reads as a status.
+  providerProgress: {
+    flex: 1,
+    minWidth: 0,
   },
   turnstileSlot: {
     position: "absolute",
@@ -541,6 +554,15 @@ export function AskAI({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Provider-attempt status driven by the worker's `provider` SSE event.
+  // Shows "Trying foo (1/3)…" inline while loading so a failover delay
+  // doesn't look like a frozen request. Cleared on first token / done.
+  const [provider, setProvider] = useState<{
+    id: string;
+    attempt: number;
+    total: number;
+    status: "trying" | "failed";
+  } | null>(null);
   // All persisted sessions plus the id of the one currently in view.
   // `activeId === null` means we haven't started writing into a session yet
   // — the first user send mints one (so empty "New chat" states don't
@@ -772,6 +794,9 @@ export function AskAI({
           if (ev.event === "token") {
             const d = ev.data as { text?: string };
             if (!d.text) return;
+            // First token committed — drop the provider-trying line
+            // since the stream is flowing now.
+            setProvider(null);
             setMessages((prev) => {
               const copy = prev.slice();
               const last = copy[copy.length - 1];
@@ -780,6 +805,26 @@ export function AskAI({
               }
               return copy;
             });
+          } else if (ev.event === "provider") {
+            const d = ev.data as {
+              id?: string;
+              attempt?: number;
+              total?: number;
+              status?: "trying" | "failed" | "ok";
+            };
+            if (
+              d.id &&
+              typeof d.attempt === "number" &&
+              typeof d.total === "number" &&
+              (d.status === "trying" || d.status === "failed")
+            ) {
+              setProvider({
+                id: d.id,
+                attempt: d.attempt,
+                total: d.total,
+                status: d.status,
+              });
+            }
           } else if (ev.event === "tool_call") {
             const d = ev.data as { name: string; args?: Record<string, unknown> };
             setMessages((prev) => {
@@ -815,8 +860,10 @@ export function AskAI({
             const d = ev.data as { message?: string };
             setError(d.message || "Unknown error.");
             setLoading(false);
+            setProvider(null);
           } else if (ev.event === "done") {
             setLoading(false);
+            setProvider(null);
           }
         });
       } catch (err) {
@@ -957,6 +1004,28 @@ export function AskAI({
             stream and resolves loading. */}
         {loading && (
           <div className={styles.stopRow}>
+            {provider && (
+              <Field
+                className={styles.providerProgress}
+                validationState={provider.status === "failed" ? "warning" : "none"}
+                validationMessage={
+                  provider.status === "failed"
+                    ? format(t("ui.ai.providerFailed"), { id: provider.id })
+                    : format(t("ui.ai.tryingProvider"), {
+                        id: provider.id,
+                        attempt: provider.attempt,
+                        total: provider.total,
+                      })
+                }
+              >
+                <ProgressBar
+                  value={provider.attempt}
+                  max={provider.total}
+                  shape="rounded"
+                  thickness="medium"
+                />
+              </Field>
+            )}
             <Button
               appearance="outline"
               icon={<Stop24Filled />}

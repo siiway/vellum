@@ -44,6 +44,7 @@ const en: MessageMap = {
   "ui.translated.unavailableBanner": "Translation not ready yet",
   "ui.translated.unavailableNotice":
     "We're showing the original source while the translation is prepared. Try again in a moment, or pick a different language.",
+  "ui.translated.byModel": "Translated by {model}",
 
   "ui.languages.title": "All languages",
   "ui.languages.subtitle": "Pick a language to view this site in.",
@@ -95,6 +96,8 @@ const en: MessageMap = {
   "ui.aiSummary.cached": "cached",
   "ui.aiSummary.disclaimer":
     "AI-generated content may be incorrect. Verify important details against the page.",
+  "ui.ai.tryingProvider": "Trying {id} ({attempt}/{total})…",
+  "ui.ai.providerFailed": "{id} failed, falling over…",
 
   "ui.askAi.button": "Ask AI",
   "ui.askAi.title": "Ask AI about this docs",
@@ -153,6 +156,7 @@ const zh: MessageMap = {
   "ui.translated.unavailableBanner": "翻译暂未就绪",
   "ui.translated.unavailableNotice":
     "当前展示的是原文，翻译稍后会准备好。稍等片刻再试，或切换到其他语言。",
+  "ui.translated.byModel": "由 {model} 翻译",
 
   "ui.languages.title": "全部语言",
   "ui.languages.subtitle": "选择一种语言来查看本站。",
@@ -203,6 +207,8 @@ const zh: MessageMap = {
   "ui.aiSummary.close": "关闭摘要",
   "ui.aiSummary.cached": "缓存",
   "ui.aiSummary.disclaimer": "AI 生成的内容可能不准确，请以原文为准。",
+  "ui.ai.tryingProvider": "尝试 {id}（{attempt}/{total}）…",
+  "ui.ai.providerFailed": "{id} 失败，正在切换…",
 
   "ui.askAi.button": "问问 AI",
   "ui.askAi.title": "向 AI 提问关于这份文档",

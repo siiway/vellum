@@ -340,6 +340,15 @@ export interface SiteConfig {
   // Icon-only links rendered in the NavBar after the locale picker and before
   // the theme toggle. Matches VitePress's themeConfig.socialLinks.
   socialLinks?: SocialLink[];
+  // Global AI provider pool. Defined once and consumed by every AI
+  // feature (aiSummary, aiChat, translate) — keeps multi-provider
+  // failover configs DRY and avoids duplicating endpoint setups per
+  // feature. Each entry's `id` is referenced by features via their
+  // optional `providers` filter. Order in the array is the failover
+  // order; the worker tries entries left-to-right and falls over to
+  // the next on retryable upstream errors (HTTP 401/402/403/429/5xx,
+  // network failures). Omit when no AI feature is configured.
+  aiProviders?: AiProvider[];
   // Microsoft Learn-style AI Summary button rendered below the page title on
   // doc pages. The worker proxies to the configured provider, streams tokens
   // back over SSE, and caches the final summary in KV per (repo, branch,
@@ -370,24 +379,70 @@ export interface SiteConfig {
   searchAliases?: Record<string, string[]>;
 }
 
-export interface AiSummaryConfig {
-  // Which provider the worker should route through. Provider-specific secrets
-  // (API keys) come from worker env vars, not this file.
-  //   - "workers-ai": Cloudflare Workers AI binding (env.AI). No API key needed.
-  //   - "openai-compatible": Anything that speaks OpenAI's /v1/chat/completions
-  //     — OpenAI itself, OpenRouter, Together, Groq, a local llama.cpp, etc.
-  //     Uses VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL.
-  //   - "anthropic": Anthropic's Messages API. Uses VELLUM_AI_API_KEY.
+// A single entry in the site-level AI provider pool. Defined once under
+// `site.aiProviders` and consumed by every AI feature (aiSummary,
+// aiChat, translate) — no need to repeat the same endpoint per feature.
+//
+// `id` is a short identifier features can reference via their `providers`
+// field to narrow the pool to a specific subset. When a feature doesn't
+// set `providers`, the worker tries every entry in `site.aiProviders`
+// in order, falling over to the next when one returns a "used up" error
+// (HTTP 401/402/403/429/5xx, network failure).
+//
+// Each entry can name its own env var via `apiKeyEnv` so multiple keys
+// can be staged side-by-side — useful for OpenRouter / Together / Groq
+// tiers where a single key has a daily quota. `apiKeyEnv` defaults to
+// `VELLUM_AI_API_KEY` when omitted.
+//
+// `model` here is the provider's default; features may override per
+// call via their own `model` field.
+//
+// Failover triggers only on the upstream's first response (the POST
+// status code). Once an endpoint commits to streaming we stay with it —
+// mid-stream errors propagate to the client.
+export interface AiProvider {
+  id: string;
   provider: "workers-ai" | "openai-compatible" | "anthropic";
-  // Model identifier passed to the provider. For workers-ai this is the
-  // model id (e.g. "@cf/meta/llama-3.3-70b-instruct-fp8-fast"). For
-  // openai-compatible / anthropic it's whatever the provider's API expects
-  // (e.g. "openai/gpt-4o-mini" via OpenRouter, "claude-haiku-4-5").
   model?: string;
-  // Base URL override for openai-compatible providers — lets you point at
-  // OpenRouter ("https://openrouter.ai/api/v1"), a self-hosted gateway, etc.
-  // When omitted the worker uses VELLUM_AI_BASE_URL, then OpenAI's URL.
   baseUrl?: string;
+  // Name of the env var that holds the API key — or a list of names
+  // when the same provider has multiple keys with independent quotas
+  // (very common for OpenRouter / Together free-tier setups). Each
+  // entry expands into its own attempt at resolve time, so the
+  // failover loop walks every key before moving on to the next
+  // provider in the pool. Defaults to "VELLUM_AI_API_KEY" when omitted.
+  apiKeyEnv?: string | string[];
+  // Arbitrary JSON merged into the provider's request body before the
+  // worker's required fields (model / messages / stream / max_tokens
+  // / system, which always win). Use it to enable provider-specific
+  // features that don't have a first-class field on AiProvider:
+  //
+  //   - DeepSeek thinking mode:
+  //       { "extraBody": { "chat_template_kwargs": { "enable_thinking": true } } }
+  //   - Anthropic extended thinking:
+  //       { "extraBody": { "thinking": { "type": "enabled", "budget_tokens": 4000 } } }
+  //   - Extra sampling params:
+  //       { "extraBody": { "top_p": 0.95, "presence_penalty": 0.1 } }
+  //
+  // For workers-ai the same object is merged into the env.AI.run
+  // input. Fields the worker controls (model, messages, stream,
+  // tools, …) override anything in extraBody so you can't accidentally
+  // break the streaming setup.
+  extraBody?: Record<string, unknown>;
+}
+
+export interface AiSummaryConfig {
+  // Optional override for the model id, applied to every provider in the
+  // pool when this feature runs. When omitted, each provider's own
+  // `model` is used. Useful when a single OpenRouter provider hosts many
+  // models — `aiSummary` picks the cheap one while `aiChat` picks the
+  // strong one.
+  model?: string;
+  // Optional whitelist of provider ids (from `site.aiProviders`). When
+  // omitted, the feature uses every provider in the global pool, in
+  // order. Use this when a feature needs to be picky — e.g. an
+  // Anthropic-shaped chat that can only fail over within Anthropic.
+  providers?: string[];
   // Cloudflare Turnstile site key. When set, the AI Summary button mounts an
   // invisible Turnstile widget, the client passes the token to /api/summarize,
   // and the worker verifies it against siteverify before calling the model.
@@ -401,18 +456,13 @@ export interface AiSummaryConfig {
 }
 
 export interface TranslateConfig {
-  // Same provider matrix as aiSummary / aiChat. Picks a smaller / cheaper
-  // model than chat by default — translation is high-volume, batch-friendly,
-  // and doesn't reward reasoning the way Q&A does.
-  provider: "workers-ai" | "openai-compatible" | "anthropic";
-  // Model id. Defaults: "@cf/meta/m2m100-1.2b" (workers-ai dedicated MT
-  // model), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5"
-  // (anthropic).
+  // Optional model override for every provider in the pool. Translation
+  // is high-volume + batch-friendly + doesn't reward reasoning, so a
+  // cheap model usually wins here.
   model?: string;
-  // Base URL for openai-compatible providers; falls back to
-  // VELLUM_AI_BASE_URL then OpenAI's URL. Reuses the same VELLUM_AI_API_KEY
-  // secret as aiSummary / aiChat.
-  baseUrl?: string;
+  // Optional whitelist of provider ids (from `site.aiProviders`). When
+  // omitted, translation uses every provider in the global pool in order.
+  providers?: string[];
   // Locale codes to auto-translate into. Pass an explicit list (e.g.
   // `["es", "fr", "ja", "zh-CN"]`) or the sentinel `"all"` to expand to
   // every language in the IANA-maintained ISO 639-1 registry (~180
@@ -448,17 +498,16 @@ export interface TranslateConfig {
 }
 
 export interface AiChatConfig {
-  // Same set as AiSummaryConfig.provider — see there for the matrix. Note
-  // that tool calling is only reliably supported by openai-compatible and
-  // anthropic providers; "workers-ai" works but with a smaller tool-use
-  // model menu (Llama 3.3 70B Fast is the default).
-  provider: "workers-ai" | "openai-compatible" | "anthropic";
-  // Model id. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-  // (workers-ai), "openai/gpt-4o-mini" (openai-compatible),
-  // "claude-haiku-4-5" (anthropic). Use a stronger model than for summaries
-  // if you can afford it — chat answers benefit from more reasoning.
+  // Optional model override for every provider in the pool. Chat
+  // benefits from a stronger model than summaries — bump this if you've
+  // got the budget.
   model?: string;
-  baseUrl?: string;
+  // Optional whitelist of provider ids (from `site.aiProviders`). When
+  // omitted, chat uses every provider in the global pool in order.
+  // Useful when the pool mixes Anthropic + OpenAI shapes: list only the
+  // matching-shape entries here, since the chat tool-calling loop can't
+  // bridge the two API contracts.
+  providers?: string[];
   // Cloudflare Turnstile site key. When set, the visitor solves one
   // (invisible) challenge per chat session; the worker issues a short-lived
   // signed session token that subsequent messages present in the
@@ -522,6 +571,14 @@ export interface PageMeta {
   // state separately so readers can tell "translation unavailable" from
   // "you are looking at a hand-curated locale".
   translationAttempted?: boolean;
+  // Identifier of the provider entry that ultimately produced this
+  // page's translation, in the form `${aiProvider.id}:${model}` — for
+  // example `openrouter:openai/gpt-4o-mini` or
+  // `anthropic:claude-haiku-4-5`. Surfaced by the banner so readers can
+  // tell which upstream rendered their page, especially useful when a
+  // mixed pool / failover chain is configured. Undefined for
+  // hand-curated pages and for MT calls that no-op'd.
+  translatedBy?: string;
   // Locale codes (from `site.locales`) the reader can switch to and find
   // this same page rendered. Includes:
   //   - the default locale (the source the translator translates from);

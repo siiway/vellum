@@ -82,17 +82,24 @@
           },
           "description": "Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: \"<svg ...>\" }`."
         },
+        "aiProviders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AiProvider"
+          },
+          "description": "Global AI provider pool. Defined once and consumed by every AI feature (aiSummary, aiChat, translate). Each entry's `id` is referenced by features via their `providers` filter. Order is failover order — the worker tries entries left-to-right and falls over to the next on HTTP 401/402/403/429/5xx or network failures. Required if any AI feature is configured."
+        },
         "aiSummary": {
           "$ref": "#/definitions/AiSummaryConfig",
-          "description": "Microsoft Learn-style \"AI Summary\" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file."
+          "description": "Microsoft Learn-style \"AI Summary\" button rendered below the page title on doc pages. Reads from `site.aiProviders` — set `providers` here to narrow the pool. Credentials (API keys, Turnstile secret) live in worker env vars, not this file."
         },
         "aiChat": {
           "$ref": "#/definitions/AiChatConfig",
-          "description": "\"Ask AI\" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary."
+          "description": "\"Ask AI\" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Reads from `site.aiProviders`; the agent loop locks to a single API shape (OpenAI vs Anthropic) based on the first provider in the resolved list, so mix shapes carefully."
         },
         "translate": {
           "$ref": "#/definitions/TranslateConfig",
-          "description": "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through the provider. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output. Omit to disable."
+          "description": "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through `site.aiProviders`. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output."
         },
         "searchAliases": {
           "type": "object",
@@ -198,9 +205,14 @@
         "telegram"
       ]
     },
-    "AiSummaryConfig": {
+    "AiProvider": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Short identifier referenced by features via their `providers` filter. Must be unique within `site.aiProviders`.",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
         "provider": {
           "type": "string",
           "enum": [
@@ -208,16 +220,56 @@
             "openai-compatible",
             "anthropic"
           ],
-          "description": "\"workers-ai\" uses the env.AI binding (Cloudflare Workers AI; no API key needed). \"openai-compatible\" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …) using VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL. \"anthropic\" calls the Anthropic Messages API with VELLUM_AI_API_KEY."
+          "description": "\"workers-ai\" uses the env.AI binding (Cloudflare Workers AI; no API key needed). \"openai-compatible\" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …). \"anthropic\" calls the Anthropic Messages API."
         },
         "model": {
           "type": "string",
-          "description": "Model identifier passed verbatim to the provider. Defaults: \"@cf/meta/llama-3.3-70b-instruct-fp8-fast\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic)."
+          "description": "Default model id for this provider entry. Features may override via their own `model` field."
         },
         "baseUrl": {
           "type": "string",
-          "description": "Base URL override for openai-compatible providers, e.g. \"https://openrouter.ai/api/v1\". The VELLUM_AI_BASE_URL env var takes precedence when set.",
+          "description": "Base URL for openai-compatible providers, e.g. \"https://openrouter.ai/api/v1\". Ignored for workers-ai / anthropic.",
           "format": "uri-reference"
+        },
+        "apiKeyEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Env var name that holds the API key for this provider — or an array of env var names when the same endpoint has multiple keys with independent quotas. As a shortcut, a single env var can also hold MULTIPLE keys separated by newlines (one per line); each line becomes its own failover attempt labelled `${envName}#N`. The two shapes stack — `apiKeyEnv: [\"FOO\", \"BAR\"]` with FOO holding two newline-separated keys yields three attempts (FOO#1, FOO#2, BAR). Defaults to \"VELLUM_AI_API_KEY\" when omitted."
+        },
+        "extraBody": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary JSON merged into the provider request body before the worker's required fields (model / messages / stream / max_tokens / system, which always win). Use it to enable provider-specific features that don't have a first-class field on AiProvider — e.g. DeepSeek thinking mode (`{ \"chat_template_kwargs\": { \"enable_thinking\": true } }`), Anthropic extended thinking (`{ \"thinking\": { \"type\": \"enabled\", \"budget_tokens\": 4000 } }`), or extra sampling params (`{ \"top_p\": 0.95, \"presence_penalty\": 0.1 }`). Merged into env.AI.run input for workers-ai providers."
+        }
+      },
+      "required": [
+        "id",
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "AiSummaryConfig": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Optional model override for every provider in the pool when this feature runs. When omitted, each provider's own `model` (or its built-in default) is used."
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional whitelist of provider ids from `site.aiProviders`. When omitted, every entry in the global pool is used (in declaration order — that's the failover order too). Use this to narrow the pool when a feature can only consume a subset."
         },
         "turnstileSiteKey": {
           "type": "string",
@@ -229,31 +281,21 @@
           "minimum": 60
         }
       },
-      "required": [
-        "provider"
-      ],
       "additionalProperties": false
     },
     "AiChatConfig": {
       "type": "object",
       "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "workers-ai",
-            "openai-compatible",
-            "anthropic"
-          ],
-          "description": "Same matrix as AiSummaryConfig.provider. Note that tool calling (used by the chat agent to fetch docs) is most reliably supported by \"openai-compatible\" and \"anthropic\"; \"workers-ai\" works with a smaller model menu."
-        },
         "model": {
           "type": "string",
-          "description": "Model id. Defaults: \"@cf/meta/llama-3.3-70b-instruct-fp8-fast\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic). A stronger reasoning model is often worth the extra cost here."
+          "description": "Optional model override applied to every provider in the pool when this feature runs. A stronger reasoning model is often worth the extra cost for chat answers."
         },
-        "baseUrl": {
-          "type": "string",
-          "description": "Base URL override for openai-compatible providers.",
-          "format": "uri-reference"
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional whitelist of provider ids from `site.aiProviders`. The chat agent loop locks to a single API shape (Anthropic vs OpenAI-compatible) based on the first provider in the resolved list — list providers of the matching shape here when the global pool mixes both."
         },
         "turnstileSiteKey": {
           "type": "string",
@@ -266,31 +308,21 @@
           "maximum": 12
         }
       },
-      "required": [
-        "provider"
-      ],
       "additionalProperties": false
     },
     "TranslateConfig": {
       "type": "object",
       "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "workers-ai",
-            "openai-compatible",
-            "anthropic"
-          ],
-          "description": "Same matrix as AiSummaryConfig.provider. \"workers-ai\" can use a dedicated MT model (e.g. @cf/meta/m2m100-1.2b); \"openai-compatible\" and \"anthropic\" route through a general chat model with a markdown-preserving system prompt."
-        },
         "model": {
           "type": "string",
-          "description": "Model id. Defaults: \"@cf/meta/m2m100-1.2b\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic)."
+          "description": "Optional model override applied to every provider in the pool when translation runs. Translation is high-volume + batch-friendly + doesn't reward reasoning, so a cheap model usually wins."
         },
-        "baseUrl": {
-          "type": "string",
-          "description": "Base URL override for openai-compatible providers.",
-          "format": "uri-reference"
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional whitelist of provider ids from `site.aiProviders`. When omitted, translation uses every provider in the global pool, in declaration order (the failover order)."
         },
         "targets": {
           "anyOf": [
@@ -327,7 +359,6 @@
         }
       },
       "required": [
-        "provider",
         "targets"
       ],
       "additionalProperties": false

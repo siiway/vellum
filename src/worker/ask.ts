@@ -21,6 +21,7 @@ import type { Env } from "./env";
 import type { AiChatConfig, VellumConfig } from "../shared/types";
 import { verifySessionRequest } from "./session";
 import { buildToolDefs, dispatchTool, type ToolContext, type ToolScope } from "./tools";
+import { resolveEndpoints, runWithFailover, type ResolvedEndpoint } from "./ai-endpoints";
 
 // --- Public entrypoint ----------------------------------------------------
 
@@ -216,7 +217,18 @@ function streamAgent(
     (async () => {
       try {
         const maxIter = Math.max(1, Math.min(12, ai.maxIterations ?? 6));
-        if (ai.provider === "anthropic") {
+        // Each agent loop speaks a single API shape (OpenAI's chat
+        // completions vs Anthropic's Messages). Pick the loop based on
+        // the first provider in the resolved pool — that's the primary
+        // for this feature. The per-turn failover inside each loop then
+        // skips providers that don't match the same shape.
+        const endpoints = resolveEndpoints(ai, tctx.site, env);
+        if (!endpoints.length) {
+          throw new Error(
+            "No AI providers configured. Add at least one entry to site.aiProviders, or set site.aiChat.providers to an existing id.",
+          );
+        }
+        if (endpoints[0]!.provider === "anthropic") {
           await runAnthropicLoop(
             env,
             ai,
@@ -228,8 +240,6 @@ function streamAgent(
             send,
           );
         } else {
-          // workers-ai and openai-compatible share the OpenAI chat-completions
-          // shape. Workers AI's binding exposes that shape too.
           await runOpenAiLoop(env, ai, tools, systemPrompt, initialMessages, tctx, maxIter, send);
         }
         await finish();
@@ -240,6 +250,21 @@ function streamAgent(
   );
 
   return new Response(readable, { status: 200, headers: sseHeaders() });
+}
+
+// Filters the endpoint list to entries whose provider matches the agent
+// loop's shape. Used inside the OpenAI / Anthropic loops to skip pool
+// entries that the running loop can't talk to — e.g. a mixed pool with
+// both an OpenRouter primary and an Anthropic backup will keep working
+// for both `aiSummary` (which is shape-agnostic) and `aiChat` (which
+// will pick the OpenAI loop and only fail over to other OpenAI-compatible
+// entries).
+function filterByShape(
+  endpoints: ResolvedEndpoint[],
+  shape: "openai" | "anthropic",
+): ResolvedEndpoint[] {
+  if (shape === "anthropic") return endpoints.filter((e) => e.provider === "anthropic");
+  return endpoints.filter((e) => e.provider !== "anthropic");
 }
 
 // --- OpenAI-shaped loop (covers openai-compatible + workers-ai) -----------
@@ -287,7 +312,7 @@ async function runOpenAiLoop(
   }));
 
   for (let iter = 0; iter < maxIter; iter++) {
-    const { text, toolCalls } = await openAiOneTurn(env, ai, messages, apiTools, send);
+    const { text, toolCalls } = await openAiOneTurn(env, ai, tctx.site, messages, apiTools, send);
 
     if (toolCalls.length === 0) {
       // Final answer; the assistant text has already been streamed.
@@ -325,44 +350,91 @@ async function runOpenAiLoop(
   });
 }
 
+// Drain function that consumes the upstream stream into the chat send
+// pipeline + collects tool-call state. Returned by each `open*` helper so
+// the failover wrapper can decide whether to retry (open phase: throw
+// before any token is sent) or commit (drain phase: mid-stream errors
+// propagate to the agent loop without retry).
+type TurnDrain = (
+  send: (event: string, data: unknown) => Promise<void>,
+) => Promise<{ text: string; toolCalls: OpenAiToolCall[] }>;
+
 async function openAiOneTurn(
   env: Env,
   ai: AiChatConfig,
+  site: VellumConfig,
   messages: OpenAiMessage[],
   apiTools: unknown,
   send: (event: string, data: unknown) => Promise<void>,
 ): Promise<{ text: string; toolCalls: OpenAiToolCall[] }> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  const model = ai.model ?? defaultChatModel(ai.provider);
-
-  // Workers AI exposes an OpenAI-compatible REST endpoint via the AI Gateway,
-  // but for the simple binding case we go through env.AI.run directly.
-  if (ai.provider === "workers-ai") {
-    return workersAiOneTurn(env, model, messages, apiTools, send);
+  // Two-phase per-turn dispatch with endpoint failover. The `open*`
+  // helpers return a TurnDrain only when the upstream's POST returned a
+  // 2xx response — any 4xx/5xx (rate limit, bad key, server error) is
+  // thrown before token streaming starts so runWithFailover can swap to
+  // the next endpoint without emitting duplicate tokens to the client.
+  //
+  // We filter the pool to OpenAI-shaped providers (workers-ai +
+  // openai-compatible). Anthropic entries in the pool would speak a
+  // different request shape, so they're skipped here — the chat loop
+  // committed to OpenAI shape upstream when it picked this branch.
+  const endpoints = filterByShape(resolveEndpoints(ai, site, env), "openai");
+  if (!endpoints.length) {
+    throw new Error(
+      "No OpenAI-compatible providers available for aiChat. Add an entry to site.aiProviders with provider 'openai-compatible' or 'workers-ai'.",
+    );
   }
-
-  if (!apiKey) {
-    throw new Error("VELLUM_AI_API_KEY is not set.");
-  }
-
-  const baseUrl = (env.VELLUM_AI_BASE_URL ?? ai.baseUrl ?? "https://api.openai.com/v1").replace(
-    /\/+$/,
-    "",
+  const drain = await runWithFailover(
+    "[vellum][ask]",
+    endpoints,
+    async (ep) => {
+      const model = ep.model ?? defaultChatModel(ep.provider);
+      if (ep.provider === "workers-ai") {
+        return openWorkersAiTurn(env, ep, model, messages, apiTools);
+      }
+      return openOpenAiTurn(ep, model, messages, apiTools);
+    },
+    (info) => {
+      void send("provider", {
+        id: info.endpoint.id,
+        provider: info.endpoint.provider,
+        model: info.endpoint.model,
+        attempt: info.attempt,
+        total: info.total,
+        status: info.status,
+        error: info.error,
+      }).catch(() => undefined);
+    },
   );
+  return drain(send);
+}
+
+async function openOpenAiTurn(
+  ep: ResolvedEndpoint,
+  model: string,
+  messages: OpenAiMessage[],
+  apiTools: unknown,
+): Promise<TurnDrain> {
+  if (!ep.apiKey) {
+    throw new Error(`OpenAI-compatible API key is not set (expected env var ${ep.apiKeyEnv}).`);
+  }
+  const baseUrl = (ep.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
 
   const upstream = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${ep.apiKey}`,
       "http-referer": "https://github.com/siiway/vellum",
       "x-title": "Vellum Ask AI",
     },
     body: JSON.stringify({
-      model,
-      stream: true,
       max_tokens: 800,
       temperature: 0.4,
+      ...(ep.extraBody ?? {}),
+      // Structural fields win over extraBody so streaming, tool
+      // calling, and message shape can't be broken via config.
+      model,
+      stream: true,
       messages,
       tools: apiTools,
     }),
@@ -373,67 +445,72 @@ async function openAiOneTurn(
     throw new Error(`Upstream ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`);
   }
 
-  let text = "";
-  // Tool calls arrive piece by piece; index maps the upstream `index` field
-  // to our growing record.
-  const calls = new Map<number, OpenAiToolCall>();
+  const body = upstream.body;
+  return async (send) => {
+    let text = "";
+    // Tool calls arrive piece by piece; index maps the upstream `index`
+    // field to our growing record.
+    const calls = new Map<number, OpenAiToolCall>();
 
-  await consumeUpstreamSse(upstream.body, async (data) => {
-    if (data === "[DONE]") return;
-    type Chunk = {
-      choices?: Array<{
-        delta?: {
-          content?: string;
-          tool_calls?: Array<{
-            index?: number;
-            id?: string;
-            function?: { name?: string; arguments?: string };
-          }>;
-        };
-      }>;
-    };
-    const json = safeJson<Chunk>(data);
-    if (!json) return;
+    await consumeUpstreamSse(body, async (data) => {
+      if (data === "[DONE]") return;
+      type Chunk = {
+        choices?: Array<{
+          delta?: {
+            content?: string;
+            tool_calls?: Array<{
+              index?: number;
+              id?: string;
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+        }>;
+      };
+      const json = safeJson<Chunk>(data);
+      if (!json) return;
 
-    const delta = json.choices?.[0]?.delta;
-    if (!delta) return;
+      const delta = json.choices?.[0]?.delta;
+      if (!delta) return;
 
-    if (delta.content) {
-      text += delta.content;
-      await send("token", { text: delta.content });
-    }
-    if (Array.isArray(delta.tool_calls)) {
-      for (const tc of delta.tool_calls) {
-        const idx = tc.index ?? 0;
-        let rec = calls.get(idx);
-        if (!rec) {
-          rec = { id: tc.id ?? `call_${idx}`, name: tc.function?.name ?? "", argsStr: "" };
-          calls.set(idx, rec);
-        }
-        if (tc.id) rec.id = tc.id;
-        if (tc.function?.name) rec.name = tc.function.name;
-        if (tc.function?.arguments) rec.argsStr += tc.function.arguments;
+      if (delta.content) {
+        text += delta.content;
+        await send("token", { text: delta.content });
       }
-    }
-  });
+      if (Array.isArray(delta.tool_calls)) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          let rec = calls.get(idx);
+          if (!rec) {
+            rec = { id: tc.id ?? `call_${idx}`, name: tc.function?.name ?? "", argsStr: "" };
+            calls.set(idx, rec);
+          }
+          if (tc.id) rec.id = tc.id;
+          if (tc.function?.name) rec.name = tc.function.name;
+          if (tc.function?.arguments) rec.argsStr += tc.function.arguments;
+        }
+      }
+    });
 
-  return { text, toolCalls: [...calls.values()].filter((c) => c.name) };
+    return { text, toolCalls: [...calls.values()].filter((c) => c.name) };
+  };
 }
 
-async function workersAiOneTurn(
+async function openWorkersAiTurn(
   env: Env,
+  ep: ResolvedEndpoint,
   model: string,
   messages: OpenAiMessage[],
   apiTools: unknown,
-  send: (event: string, data: unknown) => Promise<void>,
-): Promise<{ text: string; toolCalls: OpenAiToolCall[] }> {
+): Promise<TurnDrain> {
   if (!env.AI) {
     throw new Error("AI binding not available. Add [ai] to wrangler.jsonc.");
   }
 
   const result = (await env.AI.run(model, {
-    stream: true,
     max_tokens: 800,
+    ...(ep.extraBody ?? {}),
+    // Structural fields win over extraBody.
+    stream: true,
     messages,
     tools: apiTools,
   })) as unknown;
@@ -443,49 +520,54 @@ async function workersAiOneTurn(
       response?: string;
       tool_calls?: Array<{ name: string; arguments: unknown }>;
     };
-    let text = "";
-    if (obj.response) {
-      text = obj.response;
-      await send("token", { text });
-    }
-    const calls: OpenAiToolCall[] = (obj.tool_calls ?? []).map((c, i) => ({
-      id: `call_${i}`,
-      name: c.name,
-      argsStr: typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments ?? {}),
-    }));
-    return { text, toolCalls: calls };
+    return async (send) => {
+      let text = "";
+      if (obj.response) {
+        text = obj.response;
+        await send("token", { text });
+      }
+      const calls: OpenAiToolCall[] = (obj.tool_calls ?? []).map((c, i) => ({
+        id: `call_${i}`,
+        name: c.name,
+        argsStr: typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments ?? {}),
+      }));
+      return { text, toolCalls: calls };
+    };
   }
 
-  let text = "";
-  const calls = new Map<number, OpenAiToolCall>();
-  await consumeUpstreamSse(result, async (data) => {
-    if (data === "[DONE]") return;
-    const json = safeJson<{
-      response?: string;
-      tool_calls?: Array<{ id?: string; name?: string; arguments?: unknown }>;
-    }>(data);
-    if (!json) {
-      // Some Workers AI models stream raw text; treat as a token literal.
-      text += data;
-      await send("token", { text: data });
-      return;
-    }
-    if (json.response) {
-      text += json.response;
-      await send("token", { text: json.response });
-    }
-    if (Array.isArray(json.tool_calls)) {
-      json.tool_calls.forEach((c, i) => {
-        calls.set(i, {
-          id: c.id ?? `call_${i}`,
-          name: c.name ?? "",
-          argsStr:
-            typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments ?? {}),
+  const stream = result;
+  return async (send) => {
+    let text = "";
+    const calls = new Map<number, OpenAiToolCall>();
+    await consumeUpstreamSse(stream, async (data) => {
+      if (data === "[DONE]") return;
+      const json = safeJson<{
+        response?: string;
+        tool_calls?: Array<{ id?: string; name?: string; arguments?: unknown }>;
+      }>(data);
+      if (!json) {
+        // Some Workers AI models stream raw text; treat as a token literal.
+        text += data;
+        await send("token", { text: data });
+        return;
+      }
+      if (json.response) {
+        text += json.response;
+        await send("token", { text: json.response });
+      }
+      if (Array.isArray(json.tool_calls)) {
+        json.tool_calls.forEach((c, i) => {
+          calls.set(i, {
+            id: c.id ?? `call_${i}`,
+            name: c.name ?? "",
+            argsStr:
+              typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments ?? {}),
+          });
         });
-      });
-    }
-  });
-  return { text, toolCalls: [...calls.values()].filter((c) => c.name) };
+      }
+    });
+    return { text, toolCalls: [...calls.values()].filter((c) => c.name) };
+  };
 }
 
 // --- Anthropic loop -------------------------------------------------------
@@ -530,6 +612,7 @@ async function runAnthropicLoop(
     const { blocks, stopReason } = await anthropicOneTurn(
       env,
       ai,
+      tctx.site,
       systemPrompt,
       messages,
       apiTools,
@@ -578,31 +661,77 @@ async function runAnthropicLoop(
   });
 }
 
+type AnthropicTurnDrain = (
+  send: (event: string, data: unknown) => Promise<void>,
+) => Promise<{ blocks: AnthropicContentBlock[]; stopReason: string | null }>;
+
 async function anthropicOneTurn(
   env: Env,
   ai: AiChatConfig,
+  site: VellumConfig,
   systemPrompt: string,
   messages: AnthropicMessage[],
   apiTools: unknown,
   send: (event: string, data: unknown) => Promise<void>,
 ): Promise<{ blocks: AnthropicContentBlock[]; stopReason: string | null }> {
-  const apiKey = env.VELLUM_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("VELLUM_AI_API_KEY is not set.");
+  // Same two-phase failover dance as the OpenAI loop — fail over before
+  // any tokens are sent to the client, commit once the upstream returns 2xx.
+  // Filter the pool to Anthropic providers; the Anthropic Messages-API
+  // shape isn't compatible with OpenAI / Workers AI entries.
+  const endpoints = filterByShape(resolveEndpoints(ai, site, env), "anthropic");
+  if (!endpoints.length) {
+    throw new Error(
+      "No Anthropic providers available for aiChat. Add an entry to site.aiProviders with provider 'anthropic'.",
+    );
   }
-  const model = ai.model ?? defaultChatModel("anthropic");
+  const drain = await runWithFailover(
+    "[vellum][ask]",
+    endpoints,
+    async (ep) => {
+      const model = ep.model ?? defaultChatModel("anthropic");
+      return openAnthropicTurn(ep, model, systemPrompt, messages, apiTools);
+    },
+    (info) => {
+      void send("provider", {
+        id: info.endpoint.id,
+        provider: info.endpoint.provider,
+        model: info.endpoint.model,
+        attempt: info.attempt,
+        total: info.total,
+        status: info.status,
+        error: info.error,
+      }).catch(() => undefined);
+    },
+  );
+  return drain(send);
+}
 
-  const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+async function openAnthropicTurn(
+  ep: ResolvedEndpoint,
+  model: string,
+  systemPrompt: string,
+  messages: AnthropicMessage[],
+  apiTools: unknown,
+): Promise<AnthropicTurnDrain> {
+  if (!ep.apiKey) {
+    throw new Error(`Anthropic API key is not set (expected env var ${ep.apiKeyEnv}).`);
+  }
+  const baseUrl = (ep.baseUrl ?? "https://api.anthropic.com").replace(/\/+$/, "");
+
+  const upstream = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": apiKey,
+      "x-api-key": ep.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
+      max_tokens: 1024,
+      ...(ep.extraBody ?? {}),
+      // Structural fields win over extraBody so streaming, tool
+      // calling, and message shape can't be broken via config.
       model,
       stream: true,
-      max_tokens: 1024,
       system: systemPrompt,
       messages,
       tools: apiTools,
@@ -614,54 +743,58 @@ async function anthropicOneTurn(
     throw new Error(`Upstream ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`);
   }
 
-  const blocks: AnthropicContentBlock[] = [];
-  let stopReason: string | null = null;
-  // Buffer the JSON string for each tool_use block as content_block_delta
-  // events stream `input_json_delta` partials.
-  const toolJsonBuffers: Record<number, string> = {};
+  const body = upstream.body;
+  return async (send) => {
+    const blocks: AnthropicContentBlock[] = [];
+    let stopReason: string | null = null;
+    // Buffer the JSON string for each tool_use block as content_block_delta
+    // events stream `input_json_delta` partials.
+    const toolJsonBuffers: Record<number, string> = {};
 
-  await consumeUpstreamSse(upstream.body, async (data) => {
-    const json = safeJson<{
-      type?: string;
-      index?: number;
-      content_block?: AnthropicContentBlock;
-      delta?: {
+    await consumeUpstreamSse(body, async (data) => {
+      const json = safeJson<{
         type?: string;
-        text?: string;
-        partial_json?: string;
-        stop_reason?: string;
-      };
-    }>(data);
-    if (!json) return;
+        index?: number;
+        content_block?: AnthropicContentBlock;
+        delta?: {
+          type?: string;
+          text?: string;
+          partial_json?: string;
+          stop_reason?: string;
+        };
+      }>(data);
+      if (!json) return;
 
-    if (json.type === "content_block_start" && typeof json.index === "number") {
-      const block = json.content_block ?? { type: "text" };
-      blocks[json.index] = { ...block };
-      if (block.type === "tool_use") toolJsonBuffers[json.index] = "";
-    } else if (json.type === "content_block_delta" && typeof json.index === "number") {
-      if (json.delta?.type === "text_delta" && json.delta.text) {
-        const cur = blocks[json.index];
-        if (cur && cur.type === "text") cur.text = (cur.text ?? "") + json.delta.text;
-        await send("token", { text: json.delta.text });
-      } else if (json.delta?.type === "input_json_delta" && json.delta.partial_json) {
-        toolJsonBuffers[json.index] = (toolJsonBuffers[json.index] ?? "") + json.delta.partial_json;
-      }
-    } else if (json.type === "content_block_stop" && typeof json.index === "number") {
-      const block = blocks[json.index];
-      const buf = toolJsonBuffers[json.index];
-      if (block && block.type === "tool_use" && buf !== undefined) {
-        try {
-          block.input = JSON.parse(buf);
-        } catch {
-          block.input = {};
+      if (json.type === "content_block_start" && typeof json.index === "number") {
+        const block = json.content_block ?? { type: "text" };
+        blocks[json.index] = { ...block };
+        if (block.type === "tool_use") toolJsonBuffers[json.index] = "";
+      } else if (json.type === "content_block_delta" && typeof json.index === "number") {
+        if (json.delta?.type === "text_delta" && json.delta.text) {
+          const cur = blocks[json.index];
+          if (cur && cur.type === "text") cur.text = (cur.text ?? "") + json.delta.text;
+          await send("token", { text: json.delta.text });
+        } else if (json.delta?.type === "input_json_delta" && json.delta.partial_json) {
+          toolJsonBuffers[json.index] =
+            (toolJsonBuffers[json.index] ?? "") + json.delta.partial_json;
         }
+      } else if (json.type === "content_block_stop" && typeof json.index === "number") {
+        const block = blocks[json.index];
+        const buf = toolJsonBuffers[json.index];
+        if (block && block.type === "tool_use" && buf !== undefined) {
+          try {
+            block.input = JSON.parse(buf);
+          } catch {
+            block.input = {};
+          }
+        }
+      } else if (json.type === "message_delta" && json.delta?.stop_reason) {
+        stopReason = json.delta.stop_reason;
       }
-    } else if (json.type === "message_delta" && json.delta?.stop_reason) {
-      stopReason = json.delta.stop_reason;
-    }
-  });
+    });
 
-  return { blocks: blocks.filter(Boolean), stopReason };
+    return { blocks: blocks.filter(Boolean), stopReason };
+  };
 }
 
 // --- SSE helpers ----------------------------------------------------------
@@ -719,7 +852,7 @@ function safeJson<T>(s: string): T | null {
   }
 }
 
-function defaultChatModel(provider: AiChatConfig["provider"]): string {
+function defaultChatModel(provider: "workers-ai" | "openai-compatible" | "anthropic"): string {
   switch (provider) {
     case "workers-ai":
       return "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
