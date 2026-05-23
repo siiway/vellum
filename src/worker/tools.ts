@@ -10,6 +10,7 @@
 
 import type { Env } from "./env";
 import type { RepoConfig, VellumConfig } from "../shared/types";
+import { localeSourcePrefix } from "../shared/types";
 import { fetchSourceFile, fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
 import { markdownToPlain } from "./summarize";
 
@@ -235,10 +236,18 @@ async function fetchPage(args: Record<string, unknown>, tctx: ToolContext): Prom
   }
 
   const locale = pickLocale(args.locale, tctx);
-  const localePrefix = tctx.site.site.locales.find((l) => l.code === locale)?.prefix ?? "";
+  // URL-side prefix (BCP47 form like "en-US", "zh-CN") for building user-
+  // facing links; source-side prefix (empty for the default locale, short
+  // `code` for others — see `localeSourcePrefix`) for locating the actual
+  // markdown file. The two are decoupled by design.
+  const localeConfig = tctx.site.site.locales.find((l) => l.code === locale);
+  const localeUrlPrefix = localeConfig?.prefix ?? "";
+  const localeSrcPrefix = localeConfig
+    ? localeSourcePrefix(localeConfig, tctx.site.site.defaultLocale)
+    : "";
   const branch = repoRef(repo);
 
-  const source = await firstMatch(tctx.env, tctx.ctx, repo, branch, localePrefix, pagePath);
+  const source = await firstMatch(tctx.env, tctx.ctx, repo, branch, localeSrcPrefix, pagePath);
   if (!source) {
     return {
       content: { error: `Page not found: ${repoSlug}/${pagePath}` },
@@ -257,7 +266,7 @@ async function fetchPage(args: Record<string, unknown>, tctx: ToolContext): Prom
       page: pagePath,
       locale,
       title: title ?? deriveTitle(pagePath),
-      url: buildPageUrl(repoSlug, pagePath, localePrefix),
+      url: buildPageUrl(repoSlug, pagePath, localeUrlPrefix),
       text: trimmed,
     },
     summary: `Fetched ${repoSlug}/${pagePath}`,
@@ -293,12 +302,18 @@ async function listPages(args: Record<string, unknown>, tctx: ToolContext): Prom
   }
 
   const locale = pickLocale(args.locale, tctx);
-  const localePrefix = tctx.site.site.locales.find((l) => l.code === locale)?.prefix ?? "";
+  // Tree paths follow the on-disk layout, so we filter with the source-side
+  // prefix (empty for default locale, short `code` for others), not the
+  // BCP47 URL prefix.
+  const localeConfig = tctx.site.site.locales.find((l) => l.code === locale);
+  const localeSrcPrefix = localeConfig
+    ? localeSourcePrefix(localeConfig, tctx.site.site.defaultLocale)
+    : "";
   const branch = repoRef(repo);
 
   const tree = await fetchSourceTree(tctx.env, repo, branch, { ctx: tctx.ctx });
   const docsPrefix = docsRootPrefix(repo.docsRoot);
-  const locPrefix = localePrefix ? `${localePrefix}/` : "";
+  const locPrefix = localeSrcPrefix ? `${localeSrcPrefix}/` : "";
 
   const pages = tree
     .filter((e) => e.type === "blob" && e.path.endsWith(".md"))
@@ -307,7 +322,7 @@ async function listPages(args: Record<string, unknown>, tctx: ToolContext): Prom
     )
     .map((p) => p.replace(/\.md$/, ""))
     // Strip the locale prefix and the README/index special cases.
-    .filter((p) => (locPrefix ? p.startsWith(locPrefix) : !hasLocalePrefix(p, tctx.site)))
+    .filter((p) => (locPrefix ? p.startsWith(locPrefix) : !hasLocaleSrcPrefix(p, tctx.site)))
     .map((p) => (locPrefix && p.startsWith(locPrefix) ? p.slice(locPrefix.length) : p))
     .filter((p) => p && !p.endsWith("/_includes") && !p.startsWith("_"))
     .slice(0, 200);
@@ -337,8 +352,14 @@ function pickLocale(argValue: unknown, tctx: ToolContext): string {
   return tctx.defaultLocale;
 }
 
-function hasLocalePrefix(path: string, site: VellumConfig): boolean {
-  return site.site.locales.some((l) => l.prefix && path.startsWith(`${l.prefix}/`));
+// Match against the source-side layout (subdir named after each non-default
+// locale's short `code`) — used to exclude translated pages when the caller
+// asked for the default locale.
+function hasLocaleSrcPrefix(path: string, site: VellumConfig): boolean {
+  return site.site.locales.some((l) => {
+    const src = localeSourcePrefix(l, site.site.defaultLocale);
+    return src && path.startsWith(`${src}/`);
+  });
 }
 
 function deriveTitle(pagePath: string): string {
