@@ -24,7 +24,10 @@
       "description": "Site-level top navigation. Each repo can also declare its own nav (vellum.json `nav` or VitePress themeConfig.nav) which takes precedence inside that repo."
     }
   },
-  "required": ["site", "repos"],
+  "required": [
+    "site",
+    "repos"
+  ],
   "additionalProperties": false,
   "definitions": {
     "SiteConfig": {
@@ -78,9 +81,22 @@
             "$ref": "#/definitions/SocialLink"
           },
           "description": "Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: \"<svg ...>\" }`."
+        },
+        "aiSummary": {
+          "$ref": "#/definitions/AiSummaryConfig",
+          "description": "Microsoft Learn-style \"AI Summary\" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file."
+        },
+        "aiChat": {
+          "$ref": "#/definitions/AiChatConfig",
+          "description": "\"Ask AI\" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary."
         }
       },
-      "required": ["title", "homepageRepo", "defaultLocale", "locales"],
+      "required": [
+        "title",
+        "homepageRepo",
+        "defaultLocale",
+        "locales"
+      ],
       "additionalProperties": false
     },
     "LocaleConfig": {
@@ -99,7 +115,11 @@
           "description": "URL segment for this locale (e.g. \"zh\" → /repo/zh/...). Empty string means the locale lives at the root of each repo."
         }
       },
-      "required": ["code", "label", "prefix"],
+      "required": [
+        "code",
+        "label",
+        "prefix"
+      ],
       "additionalProperties": false
     },
     "SocialLink": {
@@ -117,7 +137,9 @@
                   "type": "string"
                 }
               },
-              "required": ["svg"],
+              "required": [
+                "svg"
+              ],
               "additionalProperties": false
             }
           ]
@@ -129,7 +151,10 @@
           "type": "string"
         }
       },
-      "required": ["icon", "link"],
+      "required": [
+        "icon",
+        "link"
+      ],
       "additionalProperties": false
     },
     "SocialIconName": {
@@ -155,6 +180,79 @@
         "telegram"
       ]
     },
+    "AiSummaryConfig": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "workers-ai",
+            "openai-compatible",
+            "anthropic"
+          ],
+          "description": "\"workers-ai\" uses the env.AI binding (Cloudflare Workers AI; no API key needed). \"openai-compatible\" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …) using VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL. \"anthropic\" calls the Anthropic Messages API with VELLUM_AI_API_KEY."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier passed verbatim to the provider. Defaults: \"@cf/meta/llama-3.3-70b-instruct-fp8-fast\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic)."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL override for openai-compatible providers, e.g. \"https://openrouter.ai/api/v1\". The VELLUM_AI_BASE_URL env var takes precedence when set.",
+          "format": "uri-reference"
+        },
+        "turnstileSiteKey": {
+          "type": "string",
+          "description": "Cloudflare Turnstile site key. When set, the AI Summary button mounts an invisible Turnstile widget and the worker verifies the token before calling the model. Pairs with the VELLUM_TURNSTILE_SECRET worker secret."
+        },
+        "cacheTtlSeconds": {
+          "type": "number",
+          "description": "How long to retain a generated summary in KV before regenerating it. Defaults to 604800 (7 days).",
+          "minimum": 60
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "AiChatConfig": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "workers-ai",
+            "openai-compatible",
+            "anthropic"
+          ],
+          "description": "Same matrix as AiSummaryConfig.provider. Note that tool calling (used by the chat agent to fetch docs) is most reliably supported by \"openai-compatible\" and \"anthropic\"; \"workers-ai\" works with a smaller model menu."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model id. Defaults: \"@cf/meta/llama-3.3-70b-instruct-fp8-fast\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic). A stronger reasoning model is often worth the extra cost here."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL override for openai-compatible providers.",
+          "format": "uri-reference"
+        },
+        "turnstileSiteKey": {
+          "type": "string",
+          "description": "Cloudflare Turnstile site key. When set, the visitor solves one invisible challenge per chat session and the worker issues a 60-minute signed session token that subsequent messages present. Pairs with VELLUM_TURNSTILE_SECRET."
+        },
+        "maxIterations": {
+          "type": "number",
+          "description": "Maximum agent loop iterations (model-call → tool-call rounds) per user message. Defaults to 6.",
+          "minimum": 1,
+          "maximum": 12
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
     "RepoConfig": {
       "type": "object",
       "properties": {
@@ -165,7 +263,10 @@
         },
         "source": {
           "type": "string",
-          "enum": ["github", "local"],
+          "enum": [
+            "github",
+            "local"
+          ],
           "description": "Where the markdown lives. \"github\" (default) reads from raw.githubusercontent.com; \"local\" reads from local-docs/{slug}/ bundled into the worker's ASSETS at build time.",
           "default": "github"
         },
@@ -229,7 +330,11 @@
           "description": "Per-repo override for site.socialLinks. Shown in the NavBar while the reader is inside this repo. The repo's own vellum.json#socialLinks or VitePress themeConfig.socialLinks take higher priority when present."
         }
       },
-      "required": ["slug", "docsRoot", "displayName"],
+      "required": [
+        "slug",
+        "docsRoot",
+        "displayName"
+      ],
       "additionalProperties": false,
       "allOf": [
         {
@@ -237,7 +342,9 @@
             "anyOf": [
               {
                 "not": {
-                  "required": ["source"]
+                  "required": [
+                    "source"
+                  ]
                 }
               },
               {
@@ -250,7 +357,11 @@
             ]
           },
           "then": {
-            "required": ["owner", "repo", "branch"]
+            "required": [
+              "owner",
+              "repo",
+              "branch"
+            ]
           }
         }
       ]
@@ -271,7 +382,10 @@
           "description": "True for the version selected when no explicit version is encoded in the URL."
         }
       },
-      "required": ["label", "branch"],
+      "required": [
+        "label",
+        "branch"
+      ],
       "additionalProperties": false
     },
     "NavItem": {
@@ -298,14 +412,20 @@
           "format": "regex"
         }
       },
-      "required": ["text"],
+      "required": [
+        "text"
+      ],
       "additionalProperties": false,
       "oneOf": [
         {
-          "required": ["link"]
+          "required": [
+            "link"
+          ]
         },
         {
-          "required": ["items"]
+          "required": [
+            "items"
+          ]
         }
       ]
     }

@@ -22,6 +22,7 @@ import {
 } from "@fluentui/react-icons";
 import { useVellum } from "../context";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
+import { AskAiButton } from "./AskAI";
 
 const useStyles = makeStyles({
   root: {
@@ -151,9 +152,10 @@ const useStyles = makeStyles({
 
 export interface NavBarProps {
   onOpenSearch: () => void;
+  onOpenAskAi?: () => void;
 }
 
-export function NavBar({ onOpenSearch }: NavBarProps) {
+export function NavBar({ onOpenSearch, onOpenAskAi }: NavBarProps) {
   const styles = useStyles();
   const { data, theme, setTheme, navigate, t } = useVellum();
   const { site } = data.config;
@@ -258,6 +260,7 @@ export function NavBar({ onOpenSearch }: NavBarProps) {
           <span style={{ flex: 1, textAlign: "left" }}>{t("ui.search")}</span>
           <span className={styles.kbd}>Ctrl K</span>
         </Button>
+        {onOpenAskAi && <AskAiButton onClick={onOpenAskAi} />}
         <LocalePicker />
         <SocialLinks />
         <Tooltip

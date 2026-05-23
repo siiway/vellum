@@ -7,6 +7,29 @@ export interface Env {
   VELLUM_WEBHOOK_SECRET?: string;
   VELLUM_CACHE_TTL_SECONDS?: string;
   VELLUM_HTML_TTL_SECONDS?: string;
+  // AI Summary (Microsoft Learn-style). The provider and model are selected
+  // in vellum.config.json (site.aiSummary); credentials and the optional AI
+  // binding live here so they can be scoped per-environment via wrangler
+  // secrets without leaking into the public repo.
+  //
+  // - AI: Workers AI binding. Bound by wrangler when `[ai]` is set in
+  //   wrangler.jsonc. Only consulted when provider === "workers-ai".
+  // - VELLUM_AI_API_KEY: bearer / x-api-key for openai-compatible and
+  //   anthropic providers. Sent as a wrangler secret in production.
+  // - VELLUM_AI_BASE_URL: optional base URL override for openai-compatible
+  //   providers; falls back to aiSummary.baseUrl, then to OpenAI's URL.
+  // - VELLUM_TURNSTILE_SECRET: paired with aiSummary.turnstileSiteKey; when
+  //   present, the summarize endpoint verifies the client token before
+  //   touching the model.
+  // - VELLUM_SESSION_SECRET: HMAC key used to sign Ask-AI session tokens.
+  //   Random 32+ byte string; rotate to invalidate every active chat
+  //   session. When missing, the worker falls back to a per-process
+  //   ephemeral key — fine for single-isolate dev, broken at edge scale.
+  AI?: { run: (model: string, input: unknown) => Promise<unknown> };
+  VELLUM_AI_API_KEY?: string;
+  VELLUM_AI_BASE_URL?: string;
+  VELLUM_TURNSTILE_SECRET?: string;
+  VELLUM_SESSION_SECRET?: string;
 }
 
 export function ttlSeconds(env: Env, key: "raw" | "html"): number {

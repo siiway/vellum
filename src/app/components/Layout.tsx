@@ -12,6 +12,8 @@ import { VueIslands } from "./VueIslands";
 import { SearchPage } from "./SearchPage";
 import { HomeLayout } from "./HomeLayout";
 import { MSLearnHome } from "./MSLearnHome";
+import { AISummary } from "./AISummary";
+import { AskAI } from "./AskAI";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
 // (Ctrl+K / "/"), so its chunk is never SSRed and the Suspense boundary lives
@@ -77,6 +79,7 @@ export function Layout() {
   const styles = useStyles();
   const { data, t } = useVellum();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [askAiOpen, setAskAiOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -102,7 +105,14 @@ export function Layout() {
   return (
     <div className={styles.shell}>
       <LoadingBar />
-      <NavBar onOpenSearch={() => setSearchOpen(true)} />
+      <NavBar
+        onOpenSearch={() => setSearchOpen(true)}
+        // Hide the Ask AI button on landing-page layouts (home, ms-learn) —
+        // those pages are summaries / hero content, not where readers ask
+        // detailed questions. NavBar drops the button when this is
+        // undefined.
+        onOpenAskAi={isHome || isMsLearn ? undefined : () => setAskAiOpen(true)}
+      />
       {isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state
         // (?q=, ?repo=) and uses /api/search?repo=* under the hood. Imported
@@ -135,6 +145,7 @@ export function Layout() {
                   )}
                 </header>
               )}
+              <AISummary />
               <MarkdownAst ast={page.ast} />
               <PageFooter meta={page.meta} siteFooter={config.site.footer} />
             </article>
@@ -147,6 +158,7 @@ export function Layout() {
           <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </Suspense>
       )}
+      <AskAI open={askAiOpen} onOpenChange={setAskAiOpen} />
       <VueIslands />
     </div>
   );

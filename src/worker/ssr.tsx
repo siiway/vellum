@@ -44,6 +44,14 @@ export async function renderPage(
     .map((src) => `<script type="module" src="${src}" defer></script>`)
     .join("");
 
+  // Cloudflare Turnstile loader. Only included when the AI Summary feature is
+  // configured WITH a sitekey — the script costs ~30KB and is useless without
+  // one. `render=explicit` keeps it inert until AISummary.tsx calls render().
+  const turnstileSiteKey = payload.config.site.aiSummary?.turnstileSiteKey;
+  const turnstileTag = turnstileSiteKey
+    ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" data-vellum-turnstile="1" async defer></script>`
+    : "";
+
   const { site } = payload.config;
   const themeColor = site.themeColor ?? "#0078d4";
 
@@ -146,6 +154,7 @@ ${seoHead}
   <style id="vellum-base">${baseCss}</style>
   ${styleHtml}
   ${cssLinks}
+  ${turnstileTag}
 </head>
 <body>
   <div id="vellum-root">${html}</div>

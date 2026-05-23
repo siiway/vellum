@@ -19,7 +19,19 @@
 		// "VELLUM_WEBHOOK_SECRET": "",
 		"VELLUM_CACHE_TTL_SECONDS": "300",
 		"VELLUM_HTML_TTL_SECONDS": "60"
+		// AI Summary credentials: VELLUM_AI_API_KEY, VELLUM_AI_BASE_URL, and
+		// VELLUM_TURNSTILE_SECRET are intentionally NOT listed here. Configure
+		// them via `wrangler secret put` so they don't leak into the public
+		// repo. The Workers AI binding below is only consulted when the
+		// configured provider is "workers-ai".
 	},
+	// Workers AI binding. Safe to leave defined even when the configured AI
+	// Summary provider is openai-compatible / anthropic; the worker only
+	// references env.AI when provider === "workers-ai". Comment the block out
+	// if your account doesn't have Workers AI enabled.
+	// "ai": {
+	//     "binding": "AI"
+	// },
 	"routes": [
 		{
 			"pattern": "docs.siiway.org",

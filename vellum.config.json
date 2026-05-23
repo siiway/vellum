@@ -13,7 +13,17 @@
       { "code": "en", "label": "English", "prefix": "" },
       { "code": "zh", "label": "中文", "prefix": "zh" }
     ],
-    "socialLinks": [{ "icon": "github", "link": "https://github.com/siiway" }]
+    "socialLinks": [{ "icon": "github", "link": "https://github.com/siiway" }],
+    "aiSummary": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "provider": "openai-compatible",
+      "model": "z-ai/glm-4.5-air:free"
+    },
+    "aiChat": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "provider": "openai-compatible",
+      "model": "z-ai/glm-4.5-air:free"
+    }
   },
   "repos": [
     {

@@ -112,6 +112,70 @@ export interface SiteConfig {
   // Icon-only links rendered in the NavBar after the locale picker and before
   // the theme toggle. Matches VitePress's themeConfig.socialLinks.
   socialLinks?: SocialLink[];
+  // Microsoft Learn-style AI Summary button rendered below the page title on
+  // doc pages. The worker proxies to the configured provider, streams tokens
+  // back over SSE, and caches the final summary in KV per (repo, branch,
+  // locale, page). Omit the whole block to disable the feature site-wide.
+  aiSummary?: AiSummaryConfig;
+  // "Ask AI about this docs" chat. Floating button + drawer that lets
+  // visitors chat with an LLM that has tools to search and fetch the docs.
+  // Same provider plumbing as aiSummary; configured independently so a
+  // deployment can enable one without the other (e.g. summaries on, chat
+  // off until you've reviewed bills).
+  aiChat?: AiChatConfig;
+}
+
+export interface AiSummaryConfig {
+  // Which provider the worker should route through. Provider-specific secrets
+  // (API keys) come from worker env vars, not this file.
+  //   - "workers-ai": Cloudflare Workers AI binding (env.AI). No API key needed.
+  //   - "openai-compatible": Anything that speaks OpenAI's /v1/chat/completions
+  //     — OpenAI itself, OpenRouter, Together, Groq, a local llama.cpp, etc.
+  //     Uses VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL.
+  //   - "anthropic": Anthropic's Messages API. Uses VELLUM_AI_API_KEY.
+  provider: "workers-ai" | "openai-compatible" | "anthropic";
+  // Model identifier passed to the provider. For workers-ai this is the
+  // model id (e.g. "@cf/meta/llama-3.3-70b-instruct-fp8-fast"). For
+  // openai-compatible / anthropic it's whatever the provider's API expects
+  // (e.g. "openai/gpt-4o-mini" via OpenRouter, "claude-haiku-4-5").
+  model?: string;
+  // Base URL override for openai-compatible providers — lets you point at
+  // OpenRouter ("https://openrouter.ai/api/v1"), a self-hosted gateway, etc.
+  // When omitted the worker uses VELLUM_AI_BASE_URL, then OpenAI's URL.
+  baseUrl?: string;
+  // Cloudflare Turnstile site key. When set, the AI Summary button mounts an
+  // invisible Turnstile widget, the client passes the token to /api/summarize,
+  // and the worker verifies it against siteverify before calling the model.
+  // Pairs with the VELLUM_TURNSTILE_SECRET env secret. Omit to disable
+  // captcha (useful for local dev and trusted-network deploys).
+  turnstileSiteKey?: string;
+  // KV TTL for the cached summary in seconds. Defaults to 7 days. The webhook
+  // doesn't currently bust these — a docs edit invalidates the rendered HTML
+  // but the old summary survives until the TTL expires.
+  cacheTtlSeconds?: number;
+}
+
+export interface AiChatConfig {
+  // Same set as AiSummaryConfig.provider — see there for the matrix. Note
+  // that tool calling is only reliably supported by openai-compatible and
+  // anthropic providers; "workers-ai" works but with a smaller tool-use
+  // model menu (Llama 3.3 70B Fast is the default).
+  provider: "workers-ai" | "openai-compatible" | "anthropic";
+  // Model id. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+  // (workers-ai), "openai/gpt-4o-mini" (openai-compatible),
+  // "claude-haiku-4-5" (anthropic). Use a stronger model than for summaries
+  // if you can afford it — chat answers benefit from more reasoning.
+  model?: string;
+  baseUrl?: string;
+  // Cloudflare Turnstile site key. When set, the visitor solves one
+  // (invisible) challenge per chat session; the worker issues a short-lived
+  // signed session token that subsequent messages present in the
+  // Authorization header. Pairs with VELLUM_TURNSTILE_SECRET.
+  turnstileSiteKey?: string;
+  // Maximum agentic loop iterations per user message before the worker
+  // returns the partial response. Defaults to 6 — enough for "search →
+  // fetch one or two pages → answer" while bounding cost.
+  maxIterations?: number;
 }
 
 export interface VellumConfig {

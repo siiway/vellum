@@ -62,6 +62,34 @@ const en: MessageMap = {
   "ui.home.actions.getStarted": "Get started",
   "ui.home.features": "Features",
   "ui.home.learnMore": "Learn more",
+
+  "ui.aiSummary.button": "AI Summary",
+  "ui.aiSummary.title": "Summary by AI",
+  "ui.aiSummary.loading": "Reading the page…",
+  "ui.aiSummary.regenerate": "Regenerate",
+  "ui.aiSummary.close": "Close summary",
+  "ui.aiSummary.cached": "cached",
+  "ui.aiSummary.disclaimer":
+    "AI-generated content may be incorrect. Verify important details against the page.",
+
+  "ui.askAi.button": "Ask AI",
+  "ui.askAi.title": "Ask AI about this docs",
+  "ui.askAi.close": "Close chat",
+  "ui.askAi.scope": "Scope",
+  "ui.askAi.scope.currentRepo": "This repo",
+  "ui.askAi.scope.site": "Whole site",
+  "ui.askAi.empty.title": "Ask anything about these docs.",
+  "ui.askAi.empty.body": "The AI can search and read the docs to answer.",
+  "ui.askAi.placeholder": "Ask a question…",
+  "ui.askAi.send": "Send",
+  "ui.askAi.disclaimer":
+    "AI answers may be incorrect. Verify important details against the linked pages.",
+  "ui.askAi.newChat": "New chat",
+  "ui.askAi.stop": "Stop generating",
+  "ui.askAi.history": "History",
+  "ui.askAi.clearHistory": "Clear all history",
+  "ui.askAi.clearHistory.confirm": "Clear every saved chat session? This can't be undone.",
+  "ui.askAi.cancel": "Cancel",
 };
 
 const zh: MessageMap = {
@@ -120,6 +148,32 @@ const zh: MessageMap = {
   "ui.home.actions.getStarted": "开始使用",
   "ui.home.features": "功能",
   "ui.home.learnMore": "了解更多",
+
+  "ui.aiSummary.button": "AI 摘要",
+  "ui.aiSummary.title": "AI 摘要",
+  "ui.aiSummary.loading": "正在阅读页面…",
+  "ui.aiSummary.regenerate": "重新生成",
+  "ui.aiSummary.close": "关闭摘要",
+  "ui.aiSummary.cached": "缓存",
+  "ui.aiSummary.disclaimer": "AI 生成的内容可能不准确，请以原文为准。",
+
+  "ui.askAi.button": "问问 AI",
+  "ui.askAi.title": "向 AI 提问关于这份文档",
+  "ui.askAi.close": "关闭对话",
+  "ui.askAi.scope": "范围",
+  "ui.askAi.scope.currentRepo": "当前仓库",
+  "ui.askAi.scope.site": "整个站点",
+  "ui.askAi.empty.title": "可以就这份文档提任何问题。",
+  "ui.askAi.empty.body": "AI 会自动搜索和阅读相关页面来回答。",
+  "ui.askAi.placeholder": "输入问题…",
+  "ui.askAi.send": "发送",
+  "ui.askAi.disclaimer": "AI 的回答可能有误，请以引用的页面为准。",
+  "ui.askAi.newChat": "新对话",
+  "ui.askAi.stop": "停止生成",
+  "ui.askAi.history": "历史会话",
+  "ui.askAi.clearHistory": "清除全部历史",
+  "ui.askAi.clearHistory.confirm": "确定要清除所有保存的对话吗？此操作无法撤销。",
+  "ui.askAi.cancel": "取消",
 };
 
 const dictionaries: Record<string, MessageMap> = { en, zh };

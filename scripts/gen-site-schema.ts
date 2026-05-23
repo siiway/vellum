@@ -77,6 +77,10 @@ const OVERRIDES: Record<string, OverrideTable> = {
       locales: "All supported locales. Order is preserved in the language picker.",
       socialLinks:
         'Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: "<svg ...>" }`.',
+      aiSummary:
+        'Microsoft Learn-style "AI Summary" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file.',
+      aiChat:
+        '"Ask AI" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary.',
     },
     propertyPatches: {
       themeColor: {
@@ -84,6 +88,41 @@ const OVERRIDES: Record<string, OverrideTable> = {
       },
       logo: { format: "uri-reference" },
       favicon: { format: "uri-reference" },
+    },
+  },
+  AiSummaryConfig: {
+    descriptions: {
+      provider:
+        '"workers-ai" uses the env.AI binding (Cloudflare Workers AI; no API key needed). "openai-compatible" calls any OpenAI-shaped Chat Completions endpoint (OpenAI itself, OpenRouter, Together, Groq, llama.cpp, …) using VELLUM_AI_API_KEY and VELLUM_AI_BASE_URL. "anthropic" calls the Anthropic Messages API with VELLUM_AI_API_KEY.',
+      model:
+        'Model identifier passed verbatim to the provider. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic).',
+      baseUrl:
+        'Base URL override for openai-compatible providers, e.g. "https://openrouter.ai/api/v1". The VELLUM_AI_BASE_URL env var takes precedence when set.',
+      turnstileSiteKey:
+        "Cloudflare Turnstile site key. When set, the AI Summary button mounts an invisible Turnstile widget and the worker verifies the token before calling the model. Pairs with the VELLUM_TURNSTILE_SECRET worker secret.",
+      cacheTtlSeconds:
+        "How long to retain a generated summary in KV before regenerating it. Defaults to 604800 (7 days).",
+    },
+    propertyPatches: {
+      baseUrl: { format: "uri-reference" },
+      cacheTtlSeconds: { minimum: 60 },
+    },
+  },
+  AiChatConfig: {
+    descriptions: {
+      provider:
+        'Same matrix as AiSummaryConfig.provider. Note that tool calling (used by the chat agent to fetch docs) is most reliably supported by "openai-compatible" and "anthropic"; "workers-ai" works with a smaller model menu.',
+      model:
+        'Model id. Defaults: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic). A stronger reasoning model is often worth the extra cost here.',
+      baseUrl: "Base URL override for openai-compatible providers.",
+      turnstileSiteKey:
+        "Cloudflare Turnstile site key. When set, the visitor solves one invisible challenge per chat session and the worker issues a 60-minute signed session token that subsequent messages present. Pairs with VELLUM_TURNSTILE_SECRET.",
+      maxIterations:
+        "Maximum agent loop iterations (model-call → tool-call rounds) per user message. Defaults to 6.",
+    },
+    propertyPatches: {
+      baseUrl: { format: "uri-reference" },
+      maxIterations: { minimum: 1, maximum: 12 },
     },
   },
   LocaleConfig: {

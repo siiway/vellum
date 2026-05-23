@@ -55,6 +55,108 @@ a Microsoft Learn-style landing page (see [Layouts](./layouts)). The bundled
 config does exactly this — the landing page lives in `local-docs/homepage/`.
 :::
 
+## AI Summary
+
+Mirrors Microsoft Learn's "AI Summary" button. When `site.aiSummary` is set,
+every doc page shows a small pill button below the title; clicking it streams
+a 2–4 paragraph summary into an expandable card.
+
+```json
+"site": {
+  "aiSummary": {
+    "provider": "openai-compatible",
+    "model": "openai/gpt-4o-mini",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "turnstileSiteKey": "0x4AAA...",
+    "cacheTtlSeconds": 604800
+  }
+}
+```
+
+| Field              |              Required               | Notes                                                                                                       |
+| ------------------ | :---------------------------------: | ----------------------------------------------------------------------------------------------------------- |
+| `provider`         |                  ✓                  | `"workers-ai"`, `"openai-compatible"`, or `"anthropic"`.                                                    |
+| `model`            |                                     | Model id. Defaults are Llama 3.3 70B Fast / gpt-4o-mini / Haiku 4.5 respectively.                           |
+| `baseUrl`          |                                     | OpenAI-compatible base URL (OpenRouter, Together, a self-hosted gateway). `VELLUM_AI_BASE_URL` overrides.   |
+| `turnstileSiteKey` |                                     | Cloudflare Turnstile site key. When set, the button challenges the visitor before calling the model.       |
+| `cacheTtlSeconds`  |                                     | Time a generated summary lives in KV. Defaults to 7 days.                                                   |
+
+Credentials live in worker env vars, not the config file:
+
+- `VELLUM_AI_API_KEY` — bearer / x-api-key for `openai-compatible` and
+  `anthropic` providers. `workers-ai` doesn't need one.
+- `VELLUM_AI_BASE_URL` — overrides `aiSummary.baseUrl`. Useful when the same
+  config ships to multiple environments.
+- `VELLUM_TURNSTILE_SECRET` — paired with `turnstileSiteKey`. Set both or
+  neither; half-configured Turnstile fails closed.
+
+For `workers-ai`, the AI binding is declared in `wrangler.jsonc` (`"ai": { "binding": "AI" }`).
+
+## Ask AI
+
+A chat drawer triggered from the NavBar. The visitor types a question; the
+AI runs an agent loop with docs tools and streams the answer back. Configure
+with `site.aiChat`:
+
+```json
+"site": {
+  "aiChat": {
+    "provider": "openai-compatible",
+    "model": "openai/gpt-4o-mini",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "turnstileSiteKey": "0x4AAA...",
+    "maxIterations": 6
+  }
+}
+```
+
+| Field              | Required | Notes                                                                                                |
+| ------------------ | :------: | ---------------------------------------------------------------------------------------------------- |
+| `provider`         |    ✓     | Same matrix as `aiSummary.provider`. Tool calling is most reliable with `openai-compatible` and `anthropic`. |
+| `model`            |          | Model id passed verbatim to the provider.                                                            |
+| `baseUrl`          |          | Override for openai-compatible providers.                                                            |
+| `turnstileSiteKey` |          | Cloudflare Turnstile site key. One invisible challenge per chat session; the worker mints a 60-minute signed token. |
+| `maxIterations`    |          | Maximum agent tool-call rounds per user message. Defaults to 6.                                      |
+
+The AI has these tools and uses them on its own:
+
+- `search_docs(query, repo?, locale?)` — full-text search; up to 10 hits.
+- `fetch_page(repo, page, locale?)` — read a specific page as plain text.
+- `list_repos()` — enumerate the repos on this site.
+- `list_pages(repo, locale?)` — list every page in a repo.
+
+Credentials reuse the same env vars as the summary feature
+(`VELLUM_AI_API_KEY`, `VELLUM_AI_BASE_URL`, `VELLUM_TURNSTILE_SECRET`). One
+extra secret unique to chat:
+
+- `VELLUM_SESSION_SECRET` — HMAC key (32+ bytes) used to sign the chat
+  session tokens issued by `/api/ai/session`. Set with `wrangler secret put`
+  in production; rotate to invalidate every active session.
+
+### MCP server
+
+The same docs tools are exposed at **`/api/mcp`** as a JSON-RPC 2.0
+endpoint speaking the [Model Context Protocol](https://modelcontextprotocol.io).
+External MCP clients (Claude Desktop, ChatGPT Connectors, mcp-inspector,
+custom agents) can connect to this URL and call the tools directly — no
+API key required, since a docs site is already public.
+
+To wire it into Claude Desktop, add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "vellum-docs": {
+      "url": "https://docs.example.com/api/mcp"
+    }
+  }
+}
+```
+
+The endpoint is read-only: it implements `initialize`, `tools/list`,
+`tools/call`, and `ping`. There are no resources, prompts, or sampling
+calls.
+
 ## RepoConfig
 
 A repo is a slice of documentation — one section in the URL space

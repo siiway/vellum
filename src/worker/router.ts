@@ -30,6 +30,10 @@ import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
 import { handleWebhook } from "./webhook";
 import { handleSearch } from "./search";
+import { handleSummarize } from "./summarize";
+import { handleAsk } from "./ask";
+import { handleMcp } from "./mcp";
+import { handleAiSession } from "./session";
 import { handleVueComponentRequest, loadVueComponents } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
 import { t as translate } from "../shared/i18n";
@@ -47,6 +51,11 @@ export async function dispatch(
   // API surface.
   if (path === "/api/webhook" && request.method === "POST") return handleWebhook(request, env, ctx);
   if (path === "/api/search") return handleSearch(request, env, ctx, SITE);
+  if (path === "/api/summarize") return handleSummarize(request, env, ctx, SITE);
+  if (path === "/api/ask") return handleAsk(request, env, ctx, SITE);
+  if (path === "/api/ai/session")
+    return handleAiSession(request, env, SITE.site.aiChat?.turnstileSiteKey);
+  if (path === "/api/mcp") return handleMcp(request, env, ctx, SITE);
   if (path === "/api/vue") return handleVueComponentRequest(request, env, ctx, SITE);
   if (path === "/api/health") return Response.json({ ok: true, version: "0.1.0" });
 
