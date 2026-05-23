@@ -167,13 +167,20 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     // With the locale-first URL shape, repoBase STARTS with `/{localePrefix}/`,
     // so author-written `/zh/foo` should resolve under the same repo by
     // dropping the leading `/zh` and prepending repoBase.
-    if (
-      localePrefix &&
-      repoBase.startsWith(`/${localePrefix}/`) &&
-      (path === `/${localePrefix}` || path.startsWith(`/${localePrefix}/`))
-    ) {
-      const stripped = path.slice(`/${localePrefix}`.length) || "/";
-      return `${repoBase}${stripped}${suffix}`.replace(/\/+/g, "/");
+    // Check both the URL prefix (e.g. "zh-CN") and the locale code (e.g.
+    // "zh") — authors in source files use the code in docs-root-relative
+    // links because source directories are named by code, not by URL prefix.
+    const localeCandidates = [localePrefix];
+    if (c.localeCode && c.localeCode !== localePrefix) localeCandidates.push(c.localeCode);
+    for (const lp of localeCandidates) {
+      if (
+        lp &&
+        repoBase.startsWith(`/${localePrefix}/`) &&
+        (path === `/${lp}` || path.startsWith(`/${lp}/`))
+      ) {
+        const stripped = path.slice(`/${lp}`.length) || "/";
+        return `${repoBase}${stripped}${suffix}`.replace(/\/+/g, "/");
+      }
     }
     // Absolute path inside the current repo's URL space - prepend the repo base.
     return `${repoBase}${path}${suffix}`.replace(/\/+/g, "/");
