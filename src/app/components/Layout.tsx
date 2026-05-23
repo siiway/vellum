@@ -26,6 +26,7 @@ import { AISummary } from "./AISummary";
 import { AskAI } from "./AskAI";
 import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 import { LanguagesPage } from "./LanguagesPage";
+import { TranslationProgressBanner } from "./TranslationProgressBanner";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
 // (Ctrl+K / "/"), so its chunk is never SSRed and the Suspense boundary lives
@@ -224,6 +225,7 @@ export function Layout() {
         </Drawer>
       )}
       <AskAI open={askAiOpen} onOpenChange={setAskAiOpen} />
+      <TranslationProgressBanner />
       <VueIslands />
     </div>
   );

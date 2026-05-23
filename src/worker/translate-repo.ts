@@ -5,6 +5,11 @@
 // docs root, prioritize index + sidebar files, then translate each page
 // sequentially. Each completed page emits an SSE event with the current count
 // and total.
+//
+// Job state is persisted in D1 (kind = "translate-job") so any browser tab
+// can poll progress via GET /api/translate-repo?repo=…&locale=…. Cancel is
+// gated on a random token returned in the SSE `start` event and stored by
+// the initiator in localStorage.
 
 import type { Env } from "./env";
 import type { RepoConfig, VellumConfig, LocaleConfig } from "../shared/types";
@@ -12,17 +17,72 @@ import { fetchSourceTree, fetchSourceFile, repoRef, docsRootPrefix } from "./sou
 import { translate, isMtTarget } from "./translate";
 import { loadSidebar } from "./sidebar";
 
-interface TranslateRepoRequest {
+// --- D1 job helpers ---------------------------------------------------------
+
+interface TranslateJob {
+  cancelToken: string;
+  done: number;
+  total: number;
+  current: string;
+  phase: string; // "sidebar" | "page"
+  status: string; // "running" | "complete" | "cancelled" | "error"
   repoSlug: string;
   locale: string;
+  errorMessage?: string;
 }
 
-function parseRequest(url: URL): TranslateRepoRequest | null {
-  const repoSlug = url.searchParams.get("repo");
-  const locale = url.searchParams.get("locale");
-  if (!repoSlug || !locale) return null;
-  return { repoSlug, locale };
+function jobKey(repoSlug: string, locale: string): string {
+  return `${repoSlug}:${locale}`;
 }
+
+async function readJob(
+  db: D1Database,
+  repoSlug: string,
+  locale: string,
+): Promise<TranslateJob | null> {
+  try {
+    const row = await db
+      .prepare(
+        "SELECT content FROM translations WHERE kind = 'translate-job' AND key = ?1 AND locale = ?2",
+      )
+      .bind(jobKey(repoSlug, locale), locale)
+      .first<{ content: string }>();
+    if (!row) return null;
+    return JSON.parse(row.content) as TranslateJob;
+  } catch {
+    return null;
+  }
+}
+
+async function writeJob(
+  db: D1Database,
+  repoSlug: string,
+  locale: string,
+  job: TranslateJob,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO translations (kind, key, locale, source_hash, content, model, refreshed_at)
+       VALUES ('translate-job', ?1, ?2, '', ?3, NULL, ?4)
+       ON CONFLICT(kind, key, locale) DO UPDATE SET
+         content = excluded.content,
+         refreshed_at = excluded.refreshed_at`,
+    )
+    .bind(jobKey(repoSlug, locale), locale, JSON.stringify(job), Date.now())
+    .run();
+}
+
+function generateToken(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i]!.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+// --- Router entry -----------------------------------------------------------
 
 export async function handleTranslateRepo(
   request: Request,
@@ -30,24 +90,91 @@ export async function handleTranslateRepo(
   ctx: ExecutionContext,
   site: VellumConfig,
 ): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (request.method === "GET") return handleStatus(url, env);
+  if (request.method === "DELETE") return handleCancel(request, url, env);
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const url = new URL(request.url);
-  const params = parseRequest(url);
-  if (!params) {
+  return handleStart(url, env, ctx, site);
+}
+
+// --- GET: poll job status ---------------------------------------------------
+
+async function handleStatus(url: URL, env: Env): Promise<Response> {
+  const repoSlug = url.searchParams.get("repo");
+  const locale = url.searchParams.get("locale");
+  if (!repoSlug || !locale) {
+    return Response.json({ error: "Missing repo or locale" }, { status: 400 });
+  }
+
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (!db) return Response.json({ status: "no-db" });
+
+  const job = await readJob(db, repoSlug, locale);
+  if (!job) return Response.json({ status: "idle" });
+
+  return Response.json({
+    status: job.status,
+    done: job.done,
+    total: job.total,
+    current: job.current,
+    phase: job.phase,
+    repoSlug: job.repoSlug,
+    locale: job.locale,
+    errorMessage: job.errorMessage,
+  });
+}
+
+// --- DELETE: cancel a running job -------------------------------------------
+
+async function handleCancel(request: Request, url: URL, env: Env): Promise<Response> {
+  const repoSlug = url.searchParams.get("repo");
+  const locale = url.searchParams.get("locale");
+  const token = request.headers.get("x-cancel-token");
+
+  if (!repoSlug || !locale || !token) {
+    return Response.json({ error: "Missing repo, locale, or cancel token" }, { status: 400 });
+  }
+
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (!db) return Response.json({ error: "No database" }, { status: 500 });
+
+  const job = await readJob(db, repoSlug, locale);
+  if (!job) return Response.json({ error: "No active job" }, { status: 404 });
+  if (job.cancelToken !== token) {
+    return Response.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
+  job.status = "cancelled";
+  await writeJob(db, repoSlug, locale, job);
+  return Response.json({ ok: true });
+}
+
+// --- POST: start a new translation ------------------------------------------
+
+async function handleStart(
+  url: URL,
+  env: Env,
+  ctx: ExecutionContext,
+  site: VellumConfig,
+): Promise<Response> {
+  const repoSlug = url.searchParams.get("repo");
+  const locale = url.searchParams.get("locale");
+  if (!repoSlug || !locale) {
     return Response.json({ error: "Missing repo or locale parameter" }, { status: 400 });
   }
 
-  const repo = site.repos.find((r) => r.slug === params.repoSlug);
+  const repo = site.repos.find((r) => r.slug === repoSlug);
   if (!repo) {
-    return Response.json({ error: `Unknown repo: ${params.repoSlug}` }, { status: 404 });
+    return Response.json({ error: `Unknown repo: ${repoSlug}` }, { status: 404 });
   }
 
-  if (!isMtTarget(site, params.locale)) {
+  if (!isMtTarget(site, locale)) {
     return Response.json(
-      { error: `Locale ${params.locale} is not a machine-translation target` },
+      { error: `Locale ${locale} is not a machine-translation target` },
       { status: 400 },
     );
   }
@@ -70,7 +197,6 @@ export async function handleTranslateRepo(
       );
     });
 
-  // Deduplicate (index.md and README.md may both resolve to "index")
   const pageSet = new Set<string>();
   const pages: string[] = [];
   for (const p of mdFiles) {
@@ -81,13 +207,15 @@ export async function handleTranslateRepo(
     }
   }
 
-  // Priority sort: index and sidebar-related files first
   const priorityPages = sortByPriority(pages);
   const total = priorityPages.length;
 
   if (total === 0) {
     return Response.json({ error: "No translatable pages found" }, { status: 404 });
   }
+
+  const cancelToken = generateToken();
+  const db = env.VELLUM_TRANSLATION_DB;
 
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream();
@@ -101,33 +229,51 @@ export async function handleTranslateRepo(
   ctx.waitUntil(
     (async () => {
       try {
-        await sendEvent("start", { total, repo: params.repoSlug, locale: params.locale });
-
-        // Translate sidebar labels first (single bundled call)
-        await sendEvent("progress", {
+        // Write initial job state to D1
+        const job: TranslateJob = {
+          cancelToken,
           done: 0,
           total,
           current: "_sidebar",
           phase: "sidebar",
-        });
+          status: "running",
+          repoSlug,
+          locale,
+        };
+        if (db) await writeJob(db, repoSlug, locale, job);
+
+        await sendEvent("start", { total, repo: repoSlug, locale, cancelToken });
+
+        await sendEvent("progress", { done: 0, total, current: "_sidebar", phase: "sidebar" });
 
         try {
-          await translateSidebarForRepo(env, ctx, site, repo, branch, params.locale);
+          await translateSidebarForRepo(env, ctx, site, repo, branch, locale);
         } catch (err) {
           console.warn(
             `[vellum][translate-repo] sidebar translation failed: ${(err as Error).message}`,
           );
         }
 
-        // Translate each page
         let done = 0;
         for (const pagePath of priorityPages) {
-          await sendEvent("progress", {
-            done,
-            total,
-            current: pagePath,
-            phase: "page",
-          });
+          // Check for cancellation
+          if (db) {
+            const current = await readJob(db, repoSlug, locale);
+            if (current?.status === "cancelled") {
+              await sendEvent("cancelled", { done, total });
+              break;
+            }
+          }
+
+          await sendEvent("progress", { done, total, current: pagePath, phase: "page" });
+
+          // Update D1 job state
+          if (db) {
+            job.done = done;
+            job.current = pagePath;
+            job.phase = "page";
+            await writeJob(db, repoSlug, locale, job);
+          }
 
           try {
             const source = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
@@ -137,8 +283,8 @@ export async function handleTranslateRepo(
                 ctx,
                 site,
                 kind: "page",
-                key: `${params.repoSlug}@${branch}:${pagePath}`,
-                locale: params.locale,
+                key: `${repoSlug}@${branch}:${pagePath}`,
+                locale,
                 source,
               });
             }
@@ -149,16 +295,34 @@ export async function handleTranslateRepo(
           }
 
           done++;
-          await sendEvent("progress", {
-            done,
-            total,
-            current: pagePath,
-            phase: "page",
-          });
+          await sendEvent("progress", { done, total, current: pagePath, phase: "page" });
         }
 
-        await sendEvent("complete", { done, total });
+        // Check final status
+        if (db) {
+          const final = await readJob(db, repoSlug, locale);
+          if (final?.status !== "cancelled") {
+            job.done = done;
+            job.status = "complete";
+            await writeJob(db, repoSlug, locale, job);
+            await sendEvent("complete", { done, total });
+          }
+        } else {
+          await sendEvent("complete", { done, total });
+        }
       } catch (err) {
+        if (db) {
+          try {
+            const job = await readJob(db, repoSlug, locale);
+            if (job) {
+              job.status = "error";
+              job.errorMessage = (err as Error).message;
+              await writeJob(db, repoSlug, locale, job);
+            }
+          } catch {
+            // ignore
+          }
+        }
         try {
           await sendEvent("error", { message: (err as Error).message });
         } catch {
@@ -183,6 +347,8 @@ export async function handleTranslateRepo(
   });
 }
 
+// --- Helpers ----------------------------------------------------------------
+
 function sortByPriority(pages: string[]): string[] {
   const priority: string[] = [];
   const rest: string[] = [];
@@ -201,7 +367,6 @@ function sortByPriority(pages: string[]): string[] {
     }
   }
 
-  // Within priority pages, put root index first
   priority.sort((a, b) => {
     if (a === "index") return -1;
     if (b === "index") return 1;

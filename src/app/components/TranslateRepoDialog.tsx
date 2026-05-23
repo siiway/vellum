@@ -19,6 +19,64 @@ import { useVellum } from "../context";
 import type { LocaleConfig, RepoConfig } from "../../shared/types";
 import type { MessageKey } from "../../shared/i18n";
 
+const LS_KEY = "vellum-translate-job";
+
+export interface TranslateJobState {
+  phase: "idle" | "translating" | "complete" | "cancelled" | "error";
+  done: number;
+  total: number;
+  currentFile: string;
+  currentPhase: string;
+  errorMessage?: string;
+  repoIndex: number;
+  repoCount: number;
+  currentRepoSlug: string;
+  locale: string;
+  cancelToken?: string;
+  startedAt?: number;
+}
+
+const INITIAL_STATE: TranslateJobState = {
+  phase: "idle",
+  done: 0,
+  total: 0,
+  currentFile: "",
+  currentPhase: "",
+  repoIndex: 0,
+  repoCount: 0,
+  currentRepoSlug: "",
+  locale: "",
+};
+
+export function readJobFromStorage(): TranslateJobState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as TranslateJobState;
+  } catch {
+    return null;
+  }
+}
+
+function writeJobToStorage(state: TranslateJobState) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  } catch {
+    // storage full or unavailable
+  }
+}
+
+export function clearJobFromStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 const useStyles = makeStyles({
   content: {
     display: "flex",
@@ -74,6 +132,12 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
     color: tokens.colorPaletteGreenForeground1,
   },
+  cancelled: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+    color: tokens.colorNeutralForeground2,
+  },
   error: {
     color: tokens.colorPaletteRedForeground1,
   },
@@ -86,59 +150,90 @@ interface Props {
   repos: RepoConfig[];
 }
 
-type Phase = "idle" | "translating" | "complete" | "error";
-
-interface TranslationState {
-  phase: Phase;
-  done: number;
-  total: number;
-  currentFile: string;
-  currentPhase: string;
-  errorMessage?: string;
-  repoIndex: number;
-  repoCount: number;
-  currentRepoSlug: string;
-}
-
 export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
   const styles = useStyles();
   const { t } = useVellum();
   const abortRef = useRef<AbortController | null>(null);
 
-  const [state, setState] = useState<TranslationState>({
-    phase: "idle",
-    done: 0,
-    total: 0,
-    currentFile: "",
-    currentPhase: "",
-    repoIndex: 0,
-    repoCount: repos.length,
-    currentRepoSlug: "",
+  const [state, setState] = useState<TranslateJobState>(() => {
+    const stored = readJobFromStorage();
+    if (stored && stored.locale === locale.code && stored.phase === "translating") {
+      return stored;
+    }
+    return { ...INITIAL_STATE, locale: locale.code, repoCount: repos.length };
   });
+
+  const updateState = useCallback((updater: (prev: TranslateJobState) => TranslateJobState) => {
+    setState((prev) => {
+      const next = updater(prev);
+      writeJobToStorage(next);
+      return next;
+    });
+  }, []);
+
+  const pollStatusRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startPolling = useCallback(
+    (repoSlug: string, loc: string) => {
+      if (pollStatusRef.current) clearInterval(pollStatusRef.current);
+      pollStatusRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/api/translate-repo?repo=${encodeURIComponent(repoSlug)}&locale=${encodeURIComponent(loc)}`,
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as Record<string, unknown>;
+          if (
+            data.status === "complete" ||
+            data.status === "cancelled" ||
+            data.status === "error"
+          ) {
+            if (pollStatusRef.current) {
+              clearInterval(pollStatusRef.current);
+              pollStatusRef.current = null;
+            }
+            updateState((prev) => ({
+              ...prev,
+              phase: data.status as TranslateJobState["phase"],
+              done: (data.done as number) ?? prev.done,
+              total: (data.total as number) ?? prev.total,
+              errorMessage: data.errorMessage as string | undefined,
+            }));
+          } else if (data.status === "running") {
+            updateState((prev) => ({
+              ...prev,
+              done: (data.done as number) ?? prev.done,
+              total: (data.total as number) ?? prev.total,
+              currentFile: (data.current as string) ?? prev.currentFile,
+              currentPhase: (data.phase as string) ?? prev.currentPhase,
+            }));
+          }
+        } catch {
+          // network error, keep polling
+        }
+      }, 2000);
+    },
+    [updateState],
+  );
 
   const startTranslation = useCallback(async () => {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    setState({
+    updateState(() => ({
+      ...INITIAL_STATE,
       phase: "translating",
-      done: 0,
-      total: 0,
-      currentFile: "",
-      currentPhase: "sidebar",
-      repoIndex: 0,
+      locale: locale.code,
       repoCount: repos.length,
-      currentRepoSlug: "",
-    });
-
-    let globalDone = 0;
-    let globalTotal = 0;
+      currentPhase: "sidebar",
+      startedAt: Date.now(),
+    }));
 
     for (let ri = 0; ri < repos.length; ri++) {
       if (ac.signal.aborted) return;
       const repo = repos[ri]!;
 
-      setState((prev) => ({
+      updateState((prev) => ({
         ...prev,
         repoIndex: ri,
         currentRepoSlug: repo.slug,
@@ -181,19 +276,40 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
             } else if (line.startsWith("data: ") && eventType) {
               try {
                 const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
-                handleSSEEvent(
-                  eventType,
-                  data,
-                  ri,
-                  repos.length,
-                  globalDone,
-                  globalTotal,
-                  setState,
-                  (d, t) => {
-                    globalDone = d;
-                    globalTotal = t;
-                  },
-                );
+                if (eventType === "start") {
+                  const cancelToken = data.cancelToken as string | undefined;
+                  updateState((prev) => ({
+                    ...prev,
+                    total: data.total as number,
+                    done: 0,
+                    cancelToken: cancelToken ?? prev.cancelToken,
+                  }));
+                } else if (eventType === "progress") {
+                  updateState((prev) => ({
+                    ...prev,
+                    done: data.done as number,
+                    total: data.total as number,
+                    currentFile: data.current as string,
+                    currentPhase: data.phase as string,
+                  }));
+                } else if (eventType === "complete") {
+                  if (ri === repos.length - 1) {
+                    updateState((prev) => ({
+                      ...prev,
+                      done: data.done as number,
+                      total: data.total as number,
+                      phase: "complete",
+                    }));
+                  }
+                } else if (eventType === "cancelled") {
+                  updateState((prev) => ({ ...prev, phase: "cancelled" }));
+                } else if (eventType === "error") {
+                  updateState((prev) => ({
+                    ...prev,
+                    phase: "error",
+                    errorMessage: data.message as string,
+                  }));
+                }
               } catch {
                 // malformed JSON
               }
@@ -210,42 +326,78 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
     }
 
     if (!ac.signal.aborted) {
-      setState((prev) => ({
+      updateState((prev) => ({
         ...prev,
-        phase: "complete",
+        phase: prev.phase === "cancelled" ? "cancelled" : "complete",
         done: prev.total,
       }));
     }
-  }, [repos, locale.code]);
+  }, [repos, locale.code, updateState]);
 
+  // On open: if there's already a running job for this locale that we didn't
+  // start (no SSE connection), poll the server for status updates.
   useEffect(() => {
-    if (open && state.phase === "idle") {
+    if (!open) return;
+    if (state.phase === "translating" && !abortRef.current) {
+      // We're viewing a job we didn't start (or reconnecting after nav).
+      // Poll the server for progress.
+      if (state.currentRepoSlug) {
+        startPolling(state.currentRepoSlug, locale.code);
+      }
+    } else if (state.phase === "idle") {
       void startTranslation();
     }
-  }, [open, state.phase, startTranslation]);
+    return () => {
+      if (pollStatusRef.current) {
+        clearInterval(pollStatusRef.current);
+        pollStatusRef.current = null;
+      }
+    };
+  }, [open, state.phase, locale.code, startPolling, startTranslation, state.currentRepoSlug]);
 
   useEffect(() => {
     if (!open) {
-      abortRef.current?.abort();
-      setState({
-        phase: "idle",
-        done: 0,
-        total: 0,
-        currentFile: "",
-        currentPhase: "",
-        repoIndex: 0,
-        repoCount: repos.length,
-        currentRepoSlug: "",
-      });
+      // Don't abort or clear state — the job continues server-side.
+      // Just stop polling.
+      if (pollStatusRef.current) {
+        clearInterval(pollStatusRef.current);
+        pollStatusRef.current = null;
+      }
     }
-  }, [open, repos.length]);
+  }, [open]);
 
   const percent = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0;
 
-  const handleClose = () => {
+  const handleCancel = async () => {
+    const stored = readJobFromStorage();
+    if (!stored?.cancelToken || !state.currentRepoSlug) return;
+
+    try {
+      await fetch(
+        `/api/translate-repo?repo=${encodeURIComponent(state.currentRepoSlug)}&locale=${encodeURIComponent(locale.code)}`,
+        {
+          method: "DELETE",
+          headers: { "x-cancel-token": stored.cancelToken },
+        },
+      );
+    } catch {
+      // best-effort
+    }
     abortRef.current?.abort();
+    updateState((prev) => ({ ...prev, phase: "cancelled" }));
+  };
+
+  const handleClose = () => {
+    // Don't abort — let the job continue. Just close the dialog.
     onClose();
   };
+
+  const handleDone = () => {
+    clearJobFromStorage();
+    onClose();
+  };
+
+  const ownsJob = !!state.cancelToken;
 
   return (
     <Dialog
@@ -311,6 +463,15 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
               </div>
             )}
 
+            {state.phase === "cancelled" && (
+              <div className={styles.cancelled}>
+                <Dismiss24Regular />
+                <Body1Strong>
+                  {t("ui.translateRepo.cancelled" as MessageKey, "Translation cancelled.")}
+                </Body1Strong>
+              </div>
+            )}
+
             {state.phase === "error" && (
               <div className={styles.error}>
                 <Body1>{state.errorMessage}</Body1>
@@ -319,90 +480,52 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
           </DialogContent>
           <DialogActions>
             {state.phase === "translating" ? (
-              <Button appearance="secondary" icon={<Dismiss24Regular />} onClick={handleClose}>
-                {t("ui.askAi.cancel" as MessageKey, "Cancel")}
-              </Button>
+              <>
+                <Button appearance="secondary" onClick={handleClose}>
+                  {t("ui.search.close" as MessageKey, "Close")}
+                </Button>
+                {ownsJob && (
+                  <Button
+                    appearance="secondary"
+                    icon={<Dismiss24Regular />}
+                    onClick={() => void handleCancel()}
+                  >
+                    {t("ui.askAi.cancel" as MessageKey, "Cancel")}
+                  </Button>
+                )}
+              </>
             ) : (
-              <Button
-                appearance="primary"
-                icon={state.phase === "complete" ? <Checkmark24Regular /> : undefined}
-                onClick={handleClose}
-              >
-                {state.phase === "complete"
-                  ? t("ui.translateRepo.done" as MessageKey, "Done")
-                  : t("ui.search.close" as MessageKey, "Close")}
-              </Button>
-            )}
-            {state.phase === "complete" && (
-              <Button
-                appearance="secondary"
-                icon={<ArrowSync24Regular />}
-                onClick={() => {
-                  setState((prev) => ({ ...prev, phase: "idle" }));
-                }}
-              >
-                {t("ui.translateRepo.retranslate" as MessageKey, "Retranslate")}
-              </Button>
+              <>
+                <Button
+                  appearance="primary"
+                  icon={state.phase === "complete" ? <Checkmark24Regular /> : undefined}
+                  onClick={handleDone}
+                >
+                  {state.phase === "complete"
+                    ? t("ui.translateRepo.done" as MessageKey, "Done")
+                    : t("ui.search.close" as MessageKey, "Close")}
+                </Button>
+                {(state.phase === "complete" || state.phase === "cancelled") && ownsJob && (
+                  <Button
+                    appearance="secondary"
+                    icon={<ArrowSync24Regular />}
+                    onClick={() => {
+                      clearJobFromStorage();
+                      updateState(() => ({
+                        ...INITIAL_STATE,
+                        locale: locale.code,
+                        repoCount: repos.length,
+                      }));
+                    }}
+                  >
+                    {t("ui.translateRepo.retranslate" as MessageKey, "Retranslate")}
+                  </Button>
+                )}
+              </>
             )}
           </DialogActions>
         </DialogBody>
       </DialogSurface>
     </Dialog>
   );
-}
-
-function handleSSEEvent(
-  event: string,
-  data: Record<string, unknown>,
-  repoIndex: number,
-  repoCount: number,
-  _globalDone: number,
-  _globalTotal: number,
-  setState: React.Dispatch<React.SetStateAction<TranslationState>>,
-  updateGlobals: (done: number, total: number) => void,
-) {
-  if (event === "start") {
-    const total = data.total as number;
-    updateGlobals(0, total);
-    setState((prev) => ({
-      ...prev,
-      total,
-      done: 0,
-      phase: "translating",
-      repoIndex,
-      repoCount,
-    }));
-  } else if (event === "progress") {
-    const done = data.done as number;
-    const total = data.total as number;
-    const current = data.current as string;
-    const phase = data.phase as string;
-    updateGlobals(done, total);
-    setState((prev) => ({
-      ...prev,
-      done,
-      total,
-      currentFile: current,
-      currentPhase: phase,
-      phase: "translating",
-    }));
-  } else if (event === "complete") {
-    const done = data.done as number;
-    const total = data.total as number;
-    updateGlobals(done, total);
-    if (repoIndex === repoCount - 1) {
-      setState((prev) => ({
-        ...prev,
-        done,
-        total,
-        phase: "complete",
-      }));
-    }
-  } else if (event === "error") {
-    setState((prev) => ({
-      ...prev,
-      phase: "error",
-      errorMessage: data.message as string,
-    }));
-  }
 }

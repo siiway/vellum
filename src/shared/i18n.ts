@@ -69,6 +69,7 @@ const en: MessageMap = {
   "ui.translateRepo.phasePage": "Translating page:",
   "ui.translateRepo.pages": "pages",
   "ui.translateRepo.complete": "Translation complete!",
+  "ui.translateRepo.cancelled": "Translation cancelled.",
   "ui.translateRepo.done": "Done",
   "ui.translateRepo.retranslate": "Retranslate",
 
@@ -193,6 +194,7 @@ const zh: MessageMap = {
   "ui.translateRepo.phasePage": "正在翻译页面：",
   "ui.translateRepo.pages": "页",
   "ui.translateRepo.complete": "翻译完成！",
+  "ui.translateRepo.cancelled": "翻译已取消。",
   "ui.translateRepo.done": "完成",
   "ui.translateRepo.retranslate": "重新翻译",
 
