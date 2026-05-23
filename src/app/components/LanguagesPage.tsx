@@ -12,24 +12,27 @@
 // start with `/`, no `..`, no protocol prefix). Each card click swaps
 // locale without changing page.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Body1,
+  Button,
   Caption1,
   Card,
   Input,
   Subtitle1,
   Title1,
   Title2,
+  Tooltip,
   mergeClasses,
   tokens,
 } from "@fluentui/react-components";
-import { Search24Regular } from "@fluentui/react-icons";
+import { Search24Regular, Translate24Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { displayLocaleCode, localeContinent, type LocaleConfig } from "../../shared/types";
 import type { MessageKey } from "../../shared/i18n";
+import { TranslateRepoDialog } from "./TranslateRepoDialog";
 
 const useStyles = makeStyles({
   root: {
@@ -163,6 +166,12 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalS,
     minHeight: "24px",
   },
+  translateBtn: {
+    marginTop: tokens.spacingVerticalXS,
+    minWidth: 0,
+    padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`,
+    fontSize: tokens.fontSizeBase200,
+  },
   empty: {
     color: tokens.colorNeutralForeground2,
     marginTop: tokens.spacingVerticalXXL,
@@ -185,6 +194,7 @@ export function LanguagesPage() {
     [data.page.meta.translatedLocales],
   );
   const defaultLocale = data.config.site.defaultLocale;
+  const hasTranslateConfig = !!data.config.site.translate;
 
   const [target, setTarget] = useState<string>(() => readTargetFromUrl());
   useEffect(() => {
@@ -194,6 +204,13 @@ export function LanguagesPage() {
   }, []);
 
   const [filter, setFilter] = useState("");
+
+  const [translateLocale, setTranslateLocale] = useState<LocaleConfig | null>(null);
+  const onTranslateClick = useCallback((e: React.MouseEvent, locale: LocaleConfig) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTranslateLocale(locale);
+  }, []);
 
   // Bucket locales by continent. Each bucket is sorted by native label so
   // readers can scan alphabetically inside a section. Filter applies before
@@ -287,11 +304,35 @@ export function LanguagesPage() {
                   const href = urlFor(l);
                   const displayCode = displayLocaleCode(l);
 
-                  const badges: Array<{ label: string; appearance: "tint" | "outline"; color: "brand" | "informative" | "subtle" }> = [];
-                  if (isCurrent) badges.push({ label: t("ui.languages.current"), appearance: "tint", color: "brand" });
-                  if (isSource) badges.push({ label: t("ui.languages.source"), appearance: "outline", color: "informative" });
-                  else if (l.machineTranslated && isTranslated) badges.push({ label: t("ui.languages.machineTranslated"), appearance: "outline", color: "brand" });
-                  else if (l.machineTranslated && !isTranslated) badges.push({ label: t("ui.languages.notTranslatedYet"), appearance: "outline", color: "subtle" });
+                  const badges: Array<{
+                    label: string;
+                    appearance: "tint" | "outline";
+                    color: "brand" | "informative" | "subtle";
+                  }> = [];
+                  if (isCurrent)
+                    badges.push({
+                      label: t("ui.languages.current"),
+                      appearance: "tint",
+                      color: "brand",
+                    });
+                  if (isSource)
+                    badges.push({
+                      label: t("ui.languages.source"),
+                      appearance: "outline",
+                      color: "informative",
+                    });
+                  else if (l.machineTranslated && isTranslated)
+                    badges.push({
+                      label: t("ui.languages.machineTranslated"),
+                      appearance: "outline",
+                      color: "brand",
+                    });
+                  else if (l.machineTranslated && !isTranslated)
+                    badges.push({
+                      label: t("ui.languages.notTranslatedYet"),
+                      appearance: "outline",
+                      color: "subtle",
+                    });
 
                   return (
                     <a
@@ -308,13 +349,33 @@ export function LanguagesPage() {
                       >
                         <Subtitle1 className={styles.cardLabel}>{l.label}</Subtitle1>
                         <Caption1 className={styles.cardCode}>{displayCode}</Caption1>
-                        {badges.length > 0 ? (
+                        {badges.length > 0 ||
+                        (hasTranslateConfig && l.machineTranslated && !isSource) ? (
                           <div className={styles.badgeRow}>
                             {badges.map((b) => (
                               <Badge key={b.label} appearance={b.appearance} color={b.color}>
                                 {b.label}
                               </Badge>
                             ))}
+                            {hasTranslateConfig && l.machineTranslated && !isSource && (
+                              <Tooltip
+                                content={t(
+                                  "ui.languages.translateRepo" as MessageKey,
+                                  "Translate all pages in every repo to this language",
+                                )}
+                                relationship="label"
+                              >
+                                <Button
+                                  size="small"
+                                  appearance="subtle"
+                                  icon={<Translate24Regular />}
+                                  className={styles.translateBtn}
+                                  onClick={(e) => onTranslateClick(e, l)}
+                                >
+                                  {t("ui.languages.translateAll" as MessageKey, "Translate all")}
+                                </Button>
+                              </Tooltip>
+                            )}
                           </div>
                         ) : (
                           <div className={styles.badgeRowPlaceholder} aria-hidden="true" />
@@ -327,6 +388,15 @@ export function LanguagesPage() {
             </section>
           );
         })
+      )}
+
+      {translateLocale && (
+        <TranslateRepoDialog
+          open={!!translateLocale}
+          onClose={() => setTranslateLocale(null)}
+          locale={translateLocale}
+          repos={data.config.repos}
+        />
       )}
     </div>
   );

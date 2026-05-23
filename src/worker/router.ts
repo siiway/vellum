@@ -42,6 +42,7 @@ import {
   isMtTarget,
 } from "./translate";
 import { handleMcp } from "./mcp";
+import { handleTranslateRepo } from "./translate-repo";
 import { handleAiSession } from "./session";
 import { handleVueComponentRequest, loadVueComponents } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
@@ -70,6 +71,7 @@ export async function dispatch(
     return handleAiSession(request, env, SITE.site.aiChat?.turnstileSiteKey);
   if (path === "/api/mcp") return handleMcp(request, env, ctx, SITE);
   if (path === "/api/vue") return handleVueComponentRequest(request, env, ctx, SITE);
+  if (path === "/api/translate-repo") return handleTranslateRepo(request, env, ctx, SITE);
   if (path === "/api/health") return Response.json({ ok: true, version: "0.1.0" });
 
   // SEO infrastructure. robots.txt is static and origin-aware; sitemap.xml
