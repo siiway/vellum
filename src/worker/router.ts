@@ -829,14 +829,7 @@ async function renderRoute(
         machineTranslated,
         translationAttempted,
         translatedBy,
-        // Only compute the available-translations list when the MT pipeline
-        // touched this page — that's the only surface that uses it (the
-        // MachineTranslatedBanner). For hand-curated pages we skip the D1
-        // round-trip entirely.
-        translatedLocales:
-          machineTranslated || translationAttempted
-            ? await resolveTranslatedLocales(env, SITE, route)
-            : undefined,
+        translatedLocales: await resolveTranslatedLocales(env, SITE, route),
       },
     },
   };

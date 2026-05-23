@@ -453,13 +453,18 @@ function LocalePicker() {
     navigate(linkFor(localeCode));
   }
 
-  // Sort: current locale first, then default, then alphabetical by label.
-  // Keeps the most likely-clicked entries at the top of a long menu.
-  const sorted = [...data.config.site.locales].sort((a, b) => {
+  // Only show locales that have a translation for the current page.
+  const available = data.page.meta.translatedLocales;
+  const translated = available
+    ? data.config.site.locales.filter((l) => available.includes(l.code))
+    : data.config.site.locales;
+
+  // Sort: current locale first, then human-translated, then machine-
+  // translated. Within each tier, alphabetical by label.
+  const sorted = [...translated].sort((a, b) => {
     if (a.code === currentLocale) return -1;
     if (b.code === currentLocale) return 1;
-    if (a.code === data.config.site.defaultLocale) return -1;
-    if (b.code === data.config.site.defaultLocale) return 1;
+    if (a.machineTranslated !== b.machineTranslated) return a.machineTranslated ? 1 : -1;
     return a.label.localeCompare(b.label);
   });
   const overflow = sorted.length > LOCALE_DROPDOWN_LIMIT;
