@@ -115,6 +115,13 @@ Plus, on every push regardless of which files changed:
 | `sidebar:{slug}@{branch}:{locale}` × locales | Cached sidebar (in case it moved).         |
 | `tree:{owner}/{repo}@{branch}`               | Full repo tree (in case files were added). |
 
+If `site.translate` is configured, the worker also deletes every D1
+translation row whose key matches `{slug}@{branch}:*` — that covers
+`page`, `frontmatter`, `sidebar`, and `repo-nav` rows for the pushed
+repo. Top-level rows (`ui:v1`, `site:v1`) aren't repo-scoped; the
+hourly cron handles those on its own staleness schedule. See
+[Internationalisation → Machine translation → Refresh](./i18n#refresh).
+
 ::: note Cache API caveat
 KV invalidation is global; the per-edge Cache API is local to each PoP. The
 worker drops the matching entries from both, but other PoPs that haven't

@@ -3,10 +3,12 @@
 
 import type { Env } from "./env";
 import { invalidate } from "./cache";
+import { invalidateForRepo } from "./translate";
 import config from "../../vellum.config.json";
+import { expandLocalesFromTranslate } from "../shared/types";
 import type { VellumConfig } from "../shared/types";
 
-const SITE: VellumConfig = config as VellumConfig;
+const SITE: VellumConfig = expandLocalesFromTranslate(config as VellumConfig);
 
 interface PushPayload {
   ref: string;
@@ -81,6 +83,11 @@ export async function handleWebhook(
   keys.push(`tree:${repo.owner}/${repo.repo}@${branch}`);
 
   ctx.waitUntil(invalidate(env, keys));
+  // Bust translation rows for this repo + branch so the next read for any
+  // MT-target locale re-translates against the fresh source. Top-level
+  // kinds (ui, config) aren't repo-scoped — they re-translate themselves
+  // when their source hash changes, which happens on the next deploy.
+  ctx.waitUntil(invalidateForRepo(env, repo.slug, branch));
   return Response.json({ invalidated: keys.length });
 }
 

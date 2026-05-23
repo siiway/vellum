@@ -33,6 +33,7 @@ Subsequent edits invalidate the cache via a GitHub webhook.
 | **Mermaid**              | Rendered server-side via Kroki in both light and dark palettes.                                      |
 | **Math**                 | MathJax inline + display, server-rendered to SVG.                                                    |
 | **i18n**                 | Per-repo locales with URL prefixes (e.g. `/zh/...`). Site chrome is translated.                      |
+| **Machine translation**  | Auto-translate any locale on demand via OpenAI / Anthropic / Workers AI; cached in D1, busted on push. |
 | **Search**               | Per-repo dialog (Ctrl K) and full-page cross-repo search at `/search`.                               |
 | **Theming**              | Light / dark / system, cookie-preserved.                                                             |
 | **Components in MD**     | Drop FluentUI primitives (`<Button>`, `<Card>`, `<Spinner>`, …) directly into your `.md` files.      |

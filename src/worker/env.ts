@@ -30,6 +30,14 @@ export interface Env {
   VELLUM_AI_BASE_URL?: string;
   VELLUM_TURNSTILE_SECRET?: string;
   VELLUM_SESSION_SECRET?: string;
+  // D1 binding for the translation cache. Optional at runtime: when missing,
+  // the translation layer no-ops and locales declared only via
+  // `site.translate.targets` will fall back to the default-locale source
+  // until the binding is added. Create with
+  //   wrangler d1 create vellum-translations
+  // then point the database_id in wrangler.jsonc at the returned UUID and
+  // apply ./migrations/*.sql via `wrangler d1 migrations apply`.
+  VELLUM_TRANSLATION_DB?: D1Database;
 }
 
 export function ttlSeconds(env: Env, key: "raw" | "html"): number {

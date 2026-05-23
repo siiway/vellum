@@ -7,6 +7,7 @@ import { ArrowRight24Regular, Open24Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
+import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 
 type Theme = "brand" | "alt" | "sponsor";
 interface HeroAction {
@@ -319,6 +320,8 @@ export function HomeLayout() {
   return (
     <main className={styles.root}>
       <div className={styles.backdrop} aria-hidden="true" />
+
+      <MachineTranslatedBanner />
 
       <section className={styles.hero}>
         <div className={styles.heroTextCol}>

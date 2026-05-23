@@ -81,6 +81,8 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'Microsoft Learn-style "AI Summary" button rendered below the page title on doc pages. Omit the whole block to disable the feature. Credentials (API keys, Turnstile secret) live in worker env vars, not this file.',
       aiChat:
         '"Ask AI" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary.',
+      translate:
+        "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through the provider. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output. Omit to disable.",
       searchAliases:
         "Search synonyms. Each key is a term a reader might type; the value is the list of words the docs author probably used for the same concept. A reader searching for any of these terms also matches pages containing the others (alias hits score below primary hits). Merged on top of a built-in baseline (latex/math, auth/oauth, ws/websocket, …) so config only needs to spell out product-specific vocabulary.",
     },
@@ -133,6 +135,31 @@ const OVERRIDES: Record<string, OverrideTable> = {
       label: "Human-readable name shown in the language picker.",
       prefix:
         'URL segment for this locale (e.g. "zh" → /repo/zh/...). Empty string means the locale lives at the root of each repo.',
+      machineTranslated:
+        "Set automatically at config load when this locale comes from `site.translate.targets` rather than being declared explicitly. Authors should never set this by hand. UI uses it to badge translated pages and to skip the locale-subdir lookup.",
+    },
+  },
+  TranslateConfig: {
+    descriptions: {
+      provider:
+        'Same matrix as AiSummaryConfig.provider. "workers-ai" can use a dedicated MT model (e.g. @cf/meta/m2m100-1.2b); "openai-compatible" and "anthropic" route through a general chat model with a markdown-preserving system prompt.',
+      model:
+        'Model id. Defaults: "@cf/meta/m2m100-1.2b" (workers-ai), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5" (anthropic).',
+      baseUrl: "Base URL override for openai-compatible providers.",
+      targets:
+        'Locale codes to auto-translate into. Pass an array of BCP47-style codes (e.g. `["es", "fr", "ja", "zh-CN"]`) or the sentinel `"all"` to expand to every language in the IANA ISO 639-1 registry (~180 bare-language codes, sourced via the `iso-639-1` npm package). Region-coded variants like `zh-CN`/`pt-BR` aren\'t in the bare ISO 639-1 base set — list them explicitly. Each resolved code is merged into `site.locales` at load time with machineTranslated:true and a label resolved via ISO 639-1 / Intl.DisplayNames. Codes already declared in `site.locales` are skipped.',
+      refreshDays:
+        "How long a cached translation row is considered fresh. Defaults to 5. The hourly cron tick re-runs the provider on rows older than this. Webhooks bust rows immediately on push, so this is the background-drift interval.",
+      concurrency:
+        "Max in-flight translation calls per refresh tick. Defaults to 4. Tune against provider rate limits.",
+      batchSize:
+        "Per-tick row budget for the scheduled refresher. Defaults to 50. Caps CPU + outbound-fetch time per cron invocation.",
+    },
+    propertyPatches: {
+      baseUrl: { format: "uri-reference" },
+      refreshDays: { minimum: 1, maximum: 365 },
+      concurrency: { minimum: 1, maximum: 32 },
+      batchSize: { minimum: 1, maximum: 500 },
     },
   },
   RepoConfig: {

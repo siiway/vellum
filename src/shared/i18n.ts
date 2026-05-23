@@ -34,6 +34,30 @@ const en: MessageMap = {
   "ui.theme.toggleToLight": "Switch to light theme",
   "ui.theme.toggleToDark": "Switch to dark theme",
   "ui.locale.label": "Language",
+  "ui.locale.allLanguages": "All languages",
+  "ui.locale.moreLanguages": "More languages…",
+
+  "ui.translated.banner": "Translating, you can view this page in",
+  "ui.translated.notice":
+    "This page has been machine-translated from the source language. Translations may be imperfect.",
+  "ui.translated.viewOriginal": "View original",
+  "ui.translated.unavailableBanner": "Translation not ready yet",
+  "ui.translated.unavailableNotice":
+    "We're showing the original source while the translation is prepared. Try again in a moment, or pick a different language.",
+
+  "ui.languages.title": "All languages",
+  "ui.languages.subtitle": "Pick a language to view this site in.",
+  "ui.languages.machineTranslated": "Machine-translated",
+  "ui.languages.empty": "No languages are configured for this site.",
+  "ui.languages.current": "Current",
+  "ui.languages.continent.AS": "Asia",
+  "ui.languages.continent.EU": "Europe",
+  "ui.languages.continent.AF": "Africa",
+  "ui.languages.continent.NA": "North America",
+  "ui.languages.continent.SA": "South America",
+  "ui.languages.continent.OC": "Oceania",
+  "ui.languages.continent.AN": "Antarctica",
+  "ui.languages.continent.OTHER": "Other",
 
   "ui.outline": "On this page",
   "ui.prev": "Previous",
@@ -120,6 +144,29 @@ const zh: MessageMap = {
   "ui.theme.toggleToLight": "切换到浅色主题",
   "ui.theme.toggleToDark": "切换到深色主题",
   "ui.locale.label": "语言",
+  "ui.locale.allLanguages": "全部语言",
+  "ui.locale.moreLanguages": "更多语言…",
+
+  "ui.translated.banner": "正在翻译，你也可以用其他语言查看本页",
+  "ui.translated.notice": "本页由机器翻译自源语言，翻译可能不完全准确。",
+  "ui.translated.viewOriginal": "查看原文",
+  "ui.translated.unavailableBanner": "翻译暂未就绪",
+  "ui.translated.unavailableNotice":
+    "当前展示的是原文，翻译稍后会准备好。稍等片刻再试，或切换到其他语言。",
+
+  "ui.languages.title": "全部语言",
+  "ui.languages.subtitle": "选择一种语言来查看本站。",
+  "ui.languages.machineTranslated": "机器翻译",
+  "ui.languages.empty": "本站未配置任何语言。",
+  "ui.languages.current": "当前",
+  "ui.languages.continent.AS": "亚洲",
+  "ui.languages.continent.EU": "欧洲",
+  "ui.languages.continent.AF": "非洲",
+  "ui.languages.continent.NA": "北美洲",
+  "ui.languages.continent.SA": "南美洲",
+  "ui.languages.continent.OC": "大洋洲",
+  "ui.languages.continent.AN": "南极洲",
+  "ui.languages.continent.OTHER": "其他",
 
   "ui.outline": "目录",
   "ui.prev": "上一页",
@@ -180,9 +227,37 @@ const dictionaries: Record<string, MessageMap> = { en, zh };
 
 export type MessageKey = keyof typeof en;
 
+// Runtime-injected dictionaries. Populated server-side from
+// BootstrapPayload.uiStrings (which the worker fills via the translate
+// service) so MT-target locales render with translated chrome without a
+// code change. Wins over the bundled `dictionaries` map but loses to
+// hand-curated locales in that map — so adding "es" to translate.targets
+// gets you Spanish chrome immediately, and shipping a hand-curated
+// dictionaries.es later quietly takes priority.
+const runtimeDictionaries: Record<string, MessageMap> = {};
+
+export function registerUiStrings(locale: string, strings: Record<string, string>): void {
+  runtimeDictionaries[locale] = strings;
+}
+
+// The English baseline. Exported so the worker can read the full keyset
+// when batching the dictionary through the translation service.
+export const baseUiStrings: MessageMap = en;
+
 export function t(locale: LocaleCode, key: MessageKey, fallback?: string): string {
-  const dict = dictionaries[locale] ?? en;
-  return (dict as MessageMap)[key] ?? (en as MessageMap)[key] ?? fallback ?? (key as string);
+  // Resolution order:
+  //   1. Hand-curated dictionary for this locale (en / zh / future hand
+  //      translations) — author content always wins.
+  //   2. Runtime-injected dictionary (from the worker's translate service).
+  //   3. English baseline.
+  //   4. Caller-supplied fallback.
+  //   5. The key itself (for unbundled locales with no runtime entry, this
+  //      surfaces the lookup miss clearly during development).
+  const curated = dictionaries[locale];
+  if (curated && curated[key]) return curated[key];
+  const runtime = runtimeDictionaries[locale];
+  if (runtime && runtime[key]) return runtime[key];
+  return (en as MessageMap)[key] ?? fallback ?? (key as string);
 }
 
 // Format helper: t("ui.foo.bar {name}", { name: "x" }).

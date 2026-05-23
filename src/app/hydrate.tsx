@@ -4,6 +4,7 @@ import { hydrateRoot, createRoot } from "react-dom/client";
 import { RendererProvider, createDOMRenderer, SSRProvider } from "@fluentui/react-components";
 import { App } from "./App";
 import type { BootstrapPayload } from "../shared/types";
+import { registerUiStrings } from "../shared/i18n";
 
 function bootstrap(): BootstrapPayload | null {
   if (typeof window === "undefined") return null;
@@ -23,6 +24,14 @@ function bootstrap(): BootstrapPayload | null {
 
 const data = bootstrap();
 const container = document.getElementById("vellum-root");
+
+// Register the worker-supplied UI dictionary (filled by the translate
+// service for MT-target locales) so client-side `t()` resolves to the
+// translated string instead of falling back to English. No-op when the
+// payload didn't include one (default locale, hand-curated locales).
+if (data?.uiStrings) {
+  registerUiStrings(data.route.localeCode, data.uiStrings);
+}
 
 if (data && container) {
   const renderer = createDOMRenderer(document);

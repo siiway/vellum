@@ -48,6 +48,9 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `favicon`       |          | URL of the favicon.                                                                |
 | `themeColor`    |          | `<meta name="theme-color">` hex value, e.g. `#0078d4`.                             |
 | `footer`        |          | Footer text rendered below every page.                                             |
+| `aiSummary`     |          | Microsoft Learn-style summary button per page. See [AI Summary](#ai-summary).      |
+| `aiChat`        |          | Ask-AI chat drawer. See [Ask AI](#ask-ai).                                         |
+| `translate`     |          | Machine translation. See [Machine translation](#machine-translation).              |
 
 ::: tip One homepage, many sources
 Set `homepageRepo` to a local-source repo with `layout: ms-learn` if you want
@@ -157,6 +160,50 @@ The endpoint is read-only: it implements `initialize`, `tools/list`,
 `tools/call`, and `ping`. There are no resources, prompts, or sampling
 calls.
 
+## Machine translation
+
+`site.translate` enables machine translation of page bodies, sidebars,
+repo nav, frontmatter, the UI dictionary, and `vellum.config.json`
+strings. Translations are cached in a D1 database, refreshed on webhook
+push, and pruned on an hourly cron tick when older than `refreshDays`.
+
+```json
+"site": {
+  "translate": {
+    "provider": "openai-compatible",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "model": "openai/gpt-4o-mini",
+    "targets": ["zh-CN", "zh-TW", "ja", "ko", "es", "pt-BR"],
+    "refreshDays": 5
+  }
+}
+```
+
+| Field         | Required | Notes                                                                                                                  |
+| ------------- | :------: | ---------------------------------------------------------------------------------------------------------------------- |
+| `provider`    |    ✓     | `"workers-ai"`, `"openai-compatible"`, or `"anthropic"`. Same matrix as `aiSummary`.                                  |
+| `model`       |          | Model id. Defaults: Llama 3.3 70B Fast / gpt-4o-mini / Haiku 4.5.                                                      |
+| `baseUrl`     |          | OpenAI-compatible base URL. `VELLUM_AI_BASE_URL` overrides.                                                            |
+| `targets`     |    ✓     | Array of BCP-47 codes (e.g. `["zh-CN", "pt-BR"]`), or the sentinel `"all"` to expand to every IANA ISO 639-1 code.    |
+| `refreshDays` |          | How long a cached translation row is fresh. Defaults to 5. The hourly cron prunes older rows for lazy re-translation. |
+| `batchSize`   |          | Max rows pruned per cron tick. Defaults to 50.                                                                         |
+
+Credentials reuse the same env vars as `aiSummary` / `aiChat`
+(`VELLUM_AI_API_KEY`, `VELLUM_AI_BASE_URL`). The new piece is the D1
+database that backs the cache:
+
+- `VELLUM_TRANSLATION_DB` — D1 binding declared in `wrangler.jsonc`.
+  Create with `wrangler d1 create vellum-translations`, paste the
+  returned UUID into the binding, then
+  `wrangler d1 migrations apply vellum-translations --remote`.
+
+The binding is optional at runtime — without it the translation layer
+no-ops and MT-target locales fall back to the default-locale source.
+
+See [Internationalisation → Machine translation](./i18n#machine-translation)
+for the full story: what's translated, how the prompt preserves markdown
+syntax, refresh behaviour, and cost shape.
+
 ## RepoConfig
 
 A repo is a slice of documentation — one section in the URL space
@@ -233,6 +280,21 @@ Set these in `wrangler.jsonc#vars` (or `wrangler secret put` for secrets):
 
 KV is bound separately in `wrangler.jsonc#kv_namespaces`. Without it, the
 worker falls back to the per-edge Cache API alone.
+
+## Bindings
+
+Beyond env vars, the worker has these Cloudflare bindings:
+
+| Binding                  |                Resource                 | Required for                                                                            |
+| ------------------------ | :-------------------------------------: | --------------------------------------------------------------------------------------- |
+| `ASSETS`                 | `[assets]`                              | Static client JS / CSS. Always required.                                                |
+| `VELLUM_CACHE`           | `[[kv_namespaces]]`                     | Cross-region durable cache. Optional — fallback to per-edge Cache API alone.            |
+| `VELLUM_TRANSLATION_DB`  | `[[d1_databases]]`                      | Machine-translation cache. Optional — MT no-ops without it.                             |
+| `AI`                     | `[ai]`                                  | Workers AI binding. Only when `provider: "workers-ai"` is set on any AI feature.        |
+
+Cron triggers are declared under `wrangler.jsonc#triggers.crons`. The
+default is `"0 * * * *"` (top of every hour) — used by the translation
+refresher to prune stale rows.
 
 ## Regenerating the schema
 

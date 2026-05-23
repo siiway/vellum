@@ -12,12 +12,22 @@ import { App } from "../app/App";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import type { Env } from "./env";
 import { getClientAssets } from "./assets";
+import { registerUiStrings } from "../shared/i18n";
 
 export async function renderPage(
   env: Env,
   payload: BootstrapPayload,
   request: Request,
 ): Promise<string> {
+  // Register the translated UI dictionary for this request's locale BEFORE
+  // running renderToString so the server-side `t()` resolves to the
+  // translated string. Module-level state is fine here: the dictionaries
+  // are keyed by locale, so concurrent requests for different locales
+  // don't conflict, and same-locale requests just rewrite the dict with
+  // the same content (translate.ts caches via D1).
+  if (payload.uiStrings && payload.route.localeCode) {
+    registerUiStrings(payload.route.localeCode, payload.uiStrings);
+  }
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -470,14 +480,21 @@ function collectTags(fm: Record<string, unknown>): string[] {
 // Locale-code → BCP-47 mapping. Our config uses bare ISO 639-1 codes ("en",
 // "zh"). For HTML lang= and hreflang= we'd ideally use a full tag like
 // "en-US" or "zh-CN" — but only when the author hasn't already given us one.
-// Reads VellumConfig in case we later let authors override per-locale.
+//
+// Expansion uses CLDR's likely-subtags data via `Intl.Locale.maximize()`
+// (built into the JS runtime — same Unicode-curated dataset every modern
+// system uses, no hand-maintained alias table). `maximize()` returns
+// language + script + region; we keep language + region and drop the
+// script subtag, which HTML/hreflang readers don't expect. Codes the
+// runtime can't parse fall through unchanged.
 function toBcp47(code: string, _config: VellumConfig): string {
   if (code.includes("-")) return code;
-  const aliases: Record<string, string> = {
-    zh: "zh-CN",
-    pt: "pt-BR",
-  };
-  return aliases[code] ?? code;
+  try {
+    const max = new Intl.Locale(code).maximize();
+    return max.region ? `${max.language}-${max.region}` : max.language;
+  } catch {
+    return code;
+  }
 }
 
 // og:locale wants underscore, not dash ("en_US" not "en-US"). Same mapping.

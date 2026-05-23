@@ -401,6 +401,12 @@ function isActiveNav(item: { link?: string; activeMatch?: string }, canonicalUrl
   return stripped === current;
 }
 
+// When the site has more than this many locales the picker truncates and
+// surfaces an "All languages" link to the dedicated /{prefix}/languages
+// page. Picked so the menu never grows past ~12 rows on a typical screen
+// — beyond that the dropdown becomes a scroll-heavy menu of dubious utility.
+const LOCALE_DROPDOWN_LIMIT = 10;
+
 function LocalePicker() {
   const { data, navigate, t } = useVellum();
   if (data.config.site.locales.length <= 1) return null;
@@ -423,6 +429,17 @@ function LocalePicker() {
     return `${prefix}/${repoSlug}/${pagePath}`.replace(/\/+/g, "/").replace(/\/$/, "");
   }
 
+  // Link to /{currentPrefix}/languages, threading the current page through
+  // ?page= so a click on a tile lands on the same page in the new locale
+  // rather than the locale's home.
+  function languagesPageUrl(): string {
+    const prefix = data.config.site.locales.find((l) => l.code === currentLocale)?.prefix;
+    const base = prefix ? `/${prefix}/languages` : "/languages";
+    const target = pagePath === "index" ? `/${repoSlug}` : `/${repoSlug}/${pagePath}`;
+    const cleaned = target.replace(/\/+/g, "/");
+    return `${base}?page=${encodeURIComponent(cleaned)}`;
+  }
+
   function chooseLocale(localeCode: string) {
     // Persist the explicit choice so the `/` entry-point redirect (which
     // reads this cookie before Accept-Language) honours it on future visits.
@@ -436,6 +453,18 @@ function LocalePicker() {
     navigate(linkFor(localeCode));
   }
 
+  // Sort: current locale first, then default, then alphabetical by label.
+  // Keeps the most likely-clicked entries at the top of a long menu.
+  const sorted = [...data.config.site.locales].sort((a, b) => {
+    if (a.code === currentLocale) return -1;
+    if (b.code === currentLocale) return 1;
+    if (a.code === data.config.site.defaultLocale) return -1;
+    if (b.code === data.config.site.defaultLocale) return 1;
+    return a.label.localeCompare(b.label);
+  });
+  const overflow = sorted.length > LOCALE_DROPDOWN_LIMIT;
+  const shown = overflow ? sorted.slice(0, LOCALE_DROPDOWN_LIMIT) : sorted;
+
   return (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
@@ -443,7 +472,7 @@ function LocalePicker() {
       </MenuTrigger>
       <MenuPopover>
         <MenuList>
-          {data.config.site.locales.map((l) => (
+          {shown.map((l) => (
             <MenuItem
               key={l.code}
               onClick={() => chooseLocale(l.code)}
@@ -452,6 +481,11 @@ function LocalePicker() {
               {l.label}
             </MenuItem>
           ))}
+          {overflow && (
+            <MenuItem onClick={() => navigate(languagesPageUrl())}>
+              {t("ui.locale.allLanguages")} ({sorted.length})
+            </MenuItem>
+          )}
         </MenuList>
       </MenuPopover>
     </Menu>

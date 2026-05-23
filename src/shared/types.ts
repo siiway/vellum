@@ -1,5 +1,9 @@
 // Shared types used by both the Worker (SSR) and the browser (hydration).
 
+import ISO6391 from "iso-639-1";
+import { countries, continents } from "countries-list";
+import cldrAvailable from "cldr-core/availableLocales.json";
+
 export interface LocaleConfig {
   code: string;
   label: string;
@@ -7,15 +11,220 @@ export interface LocaleConfig {
   // and building canonical URLs. Decoupled from the source-file layout —
   // see `localeSourcePrefix` below.
   prefix: string;
+  // When true, this locale was synthesized from `site.translate.targets`
+  // rather than declared explicitly. The UI uses this to badge translated
+  // pages and to skip source-file lookups under a locale subdirectory the
+  // repo doesn't actually ship. Set automatically at config load time —
+  // authors should never set this by hand.
+  machineTranslated?: boolean;
+}
+
+// Canonicalize a locale code into its BCP47 region-coded form. Uses CLDR's
+// likely-subtags data via `Intl.Locale.maximize()` (`zh` → `zh-CN`,
+// `pt` → `pt-BR`, `en` → `en-US`). Codes that are already region-coded
+// pass through unchanged. Codes the runtime can't parse fall through too.
+//
+// Used at config load to normalize entries in `translate.targets` so the
+// merged `site.locales` always uses the region-coded form internally,
+// while authors can still type bare codes for backward compatibility.
+export function canonicalLocaleCode(code: string): string {
+  if (!code) return code;
+  if (code.includes("-")) return code;
+  try {
+    const max = new Intl.Locale(code).maximize();
+    return max.region ? `${max.language}-${max.region}` : max.language;
+  } catch {
+    return code;
+  }
+}
+
+// Preferred display form for a locale's identifier. Returns the prefix
+// (which is already BCP47 for author-declared locales like
+// `{ code: "zh", prefix: "zh-CN" }`) or the canonical of the code.
+// Used in card subtitles / picker tooltips so readers see `zh-CN`, not
+// the internal bare `zh`.
+export function displayLocaleCode(locale: LocaleConfig): string {
+  if (locale.prefix && locale.prefix.includes("-")) return locale.prefix;
+  return canonicalLocaleCode(locale.code);
+}
+
+// Map a locale to a continent code (one of "AS", "EU", "AF", "NA", "SA",
+// "OC", "AN") using its CLDR-likely region. Returns null when neither the
+// runtime nor the country data can produce a region. Continent data comes
+// from the `countries-list` npm package — externally maintained, not
+// hardcoded in this codebase.
+type ContinentCode = "AF" | "AN" | "AS" | "EU" | "NA" | "OC" | "SA";
+
+export function localeContinent(code: string): ContinentCode | null {
+  let region: string | undefined;
+  try {
+    region = new Intl.Locale(code).maximize().region ?? undefined;
+  } catch {
+    return null;
+  }
+  if (!region) return null;
+  const country = (countries as Record<string, { continent?: string }>)[region];
+  return (country?.continent as ContinentCode | undefined) ?? null;
+}
+
+// Continent display name in English ("Asia", "Europe", …). Sourced from
+// `countries-list`'s exported map; we keep the package as the source of
+// truth rather than maintaining our own list.
+export function continentName(code: ContinentCode | "OTHER"): string {
+  if (code === "OTHER") return "Other";
+  return (continents as Record<string, string>)[code] ?? code;
+}
+
+// Resolve a locale's display label. Resolution order:
+//   1. `iso-639-1`'s native-name table for the bare-language code — IANA-
+//      curated, ~180 entries (zh → 中文, ja → 日本語, …). Region-coded
+//      BCP47 codes fall to step 2 via their primary subtag.
+//   2. `Intl.DisplayNames` in the locale's own writing system, so a
+//      region-coded code like `pt-BR` reads as "português (Brasil)" rather
+//      than the bare-language fallback.
+//   3. The code itself, as a last resort for codes neither package nor
+//      runtime recognizes.
+//
+// No hardcoded label table in this codebase — the data comes from
+// IANA / ISO 639-1 and the ICU data shipped with the JS runtime.
+export function localeLabel(code: string): string {
+  if (!code) return code;
+  // Try Intl.DisplayNames first for region-coded codes — with
+  // `languageDisplay: "dialect"` it produces idiomatic native names
+  // like "简体中文", "português brasileiro", "American English" instead
+  // of the technical "Chinese (Hans, CN)" form.
+  if (code.includes("-")) {
+    try {
+      const dn = new Intl.DisplayNames([code], {
+        type: "language",
+        languageDisplay: "dialect",
+      });
+      const name = dn.of(code);
+      if (name && name !== code) return name;
+    } catch {
+      // Fall through to the bare-language lookup.
+    }
+  }
+  // Bare-language code (or region-coded with no Intl support): ask ISO 639-1.
+  const primary = code.split("-")[0]!;
+  const native = ISO6391.getNativeName(primary);
+  if (native) return native;
+  // Final fallback: ask Intl.DisplayNames with the bare code.
+  try {
+    const dn = new Intl.DisplayNames([code], { type: "language" });
+    const name = dn.of(code);
+    if (name && name !== code) return name;
+  } catch {
+    // ignore
+  }
+  return code;
+}
+
+// Enumerate the canonical locale set when `site.translate.targets === "all"`.
+//
+// Source: Unicode CLDR's full availableLocales list (~766 entries, from the
+// `cldr-core` npm package), piped through `Intl.Locale.minimize()` to
+// collapse script-tagged variants into the shortest equivalent BCP47 form.
+// That turns CLDR's `zh-Hant-HK` into `zh-HK`, `zh-Hant` into `zh-TW`,
+// and `pt-BR` into the bare `pt` (which expandLocalesFromTranslate then
+// canonicalizes back to `pt-BR` via likely-subtags). The result is a clean
+// list of every meaningful BCP47 locale variant readers might use:
+// `zh-CN`, `zh-TW`, `zh-HK`, `pt-PT`, `en-GB`, `es-MX`, `fr-CA`, etc.
+//
+// Falls back to the iso-639-1 bare-language list if CLDR data ever fails
+// to load — keeps the feature degrading gracefully.
+export function allRuntimeLocales(): string[] {
+  const raw = (cldrAvailable as { availableLocales?: { full?: string[] } })?.availableLocales?.full;
+  if (!Array.isArray(raw) || !raw.length) return ISO6391.getAllCodes();
+  const seen = new Set<string>();
+  for (const code of raw) {
+    if (!code) continue;
+    let canonical = code;
+    try {
+      canonical = new Intl.Locale(code).minimize().toString();
+    } catch {
+      // Locale tag the runtime can't parse — surface the CLDR form so it
+      // still ends up in the picker.
+    }
+    seen.add(canonical);
+  }
+  return [...seen].sort();
+}
+
+// Resolve `translate.targets` to an explicit code list. The literal sentinel
+// "all" expands to whatever `Intl.supportedValuesOf("language")` reports
+// (about 600 codes on modern V8) — no hardcoded list, the JS runtime is
+// the source of truth. A user-supplied array is returned verbatim so
+// authors can mix region-coded variants (`zh-CN`, `pt-BR`) with bare codes
+// (`ja`, `ko`) however they like.
+//
+// Exported so tooling (the cron, the locale-picker preview, anyone
+// curious about what would actually get translated) can ask without
+// re-implementing the rules.
+export function resolveTranslateTargets(translate: TranslateConfig | undefined): string[] {
+  if (!translate) return [];
+  if (translate.targets === "all") return allRuntimeLocales();
+  return [...(translate.targets ?? [])];
+}
+
+// Resolve a VellumConfig by merging `site.translate.targets` into
+// `site.locales`. Author-declared locales win on conflict — their label,
+// prefix, and `machineTranslated:false` survive even when the code also
+// appears in `targets`.
+//
+// Each target code is canonicalized via `canonicalLocaleCode()` (so a bare
+// `"zh"` in targets becomes a `zh-CN` locale entry) and skipped when:
+//   - the canonical or bare form is already a declared locale `code`;
+//   - the canonical form is already a declared locale `prefix` (catches
+//     e.g. existing `{ code: "zh", prefix: "zh-CN" }` colliding with a
+//     `targets: ["zh-CN"]` entry).
+//
+// New entries get the canonical form as both `code` and `prefix`, so URLs
+// for machine-translated locales are always region-coded (`/zh-CN/...`).
+//
+// Pure function: returns a new VellumConfig, doesn't mutate the input.
+// Idempotent: calling twice yields the same result.
+export function expandLocalesFromTranslate(config: VellumConfig): VellumConfig {
+  const translate = config.site.translate;
+  const targets = resolveTranslateTargets(translate);
+  if (!targets.length) return config;
+
+  const knownCodes = new Set(config.site.locales.map((l) => l.code));
+  const knownPrefixes = new Set(
+    config.site.locales.map((l) => l.prefix).filter((p): p is string => !!p),
+  );
+  const merged: LocaleConfig[] = config.site.locales.map((l) => ({ ...l }));
+
+  for (const raw of targets) {
+    const canonical = canonicalLocaleCode(raw);
+    if (knownCodes.has(raw) || knownCodes.has(canonical)) continue;
+    if (knownPrefixes.has(canonical)) continue;
+    merged.push({
+      code: canonical,
+      label: localeLabel(canonical),
+      prefix: canonical,
+      machineTranslated: true,
+    });
+    knownCodes.add(canonical);
+    knownPrefixes.add(canonical);
+  }
+
+  return {
+    ...config,
+    site: { ...config.site, locales: merged },
+  };
 }
 
 // Where this locale's source markdown lives, relative to the repo's docsRoot.
 // The default locale's content sits at the docs root with no subdirectory;
 // every other locale lives under a subdir named after its short `code`
 // (e.g. `docs/zh/`, `docs/ja/`) — the long-standing repo convention,
-// preserved even when URLs use a richer BCP47 prefix like `zh-CN`. This
-// keeps existing repo layouts working when authors tighten up their
-// `prefix` to a region-coded form.
+// preserved even when URLs use a richer BCP47 prefix like `zh-CN`.
+//
+// Machine-translated locales still get checked under their code subdir
+// first so a hand-translated file shipped in the repo wins ("fill gaps
+// only"). When that path returns nothing, the router falls back to the
+// default-locale source and runs it through the translation service.
 export function localeSourcePrefix(locale: LocaleConfig, defaultLocaleCode: string): string {
   return locale.code === defaultLocaleCode ? "" : locale.code;
 }
@@ -142,6 +351,15 @@ export interface SiteConfig {
   // deployment can enable one without the other (e.g. summaries on, chat
   // off until you've reviewed bills).
   aiChat?: AiChatConfig;
+  // Machine translation. When configured, the worker fills in every locale
+  // listed in `targets` (auto-merged into `locales`) by running source
+  // markdown, sidebar/nav labels, frontmatter strings, UI labels, and
+  // repo display strings through the provider. Translations are cached in
+  // the D1 binding `VELLUM_TRANSLATION_DB` and refreshed on webhook (per
+  // repo) or after `refreshDays` (hourly cron tick). Hand-translated files
+  // shipped in a repo's locale subdir always win over the machine output.
+  // Omit the whole block to disable translation site-wide.
+  translate?: TranslateConfig;
   // Search synonyms. Each key is a canonical or shorthand term; values are
   // the words the docs author is likely to have used for the same concept.
   // A reader searching for any of these terms will also match pages that
@@ -180,6 +398,53 @@ export interface AiSummaryConfig {
   // doesn't currently bust these — a docs edit invalidates the rendered HTML
   // but the old summary survives until the TTL expires.
   cacheTtlSeconds?: number;
+}
+
+export interface TranslateConfig {
+  // Same provider matrix as aiSummary / aiChat. Picks a smaller / cheaper
+  // model than chat by default — translation is high-volume, batch-friendly,
+  // and doesn't reward reasoning the way Q&A does.
+  provider: "workers-ai" | "openai-compatible" | "anthropic";
+  // Model id. Defaults: "@cf/meta/m2m100-1.2b" (workers-ai dedicated MT
+  // model), "openai/gpt-4o-mini" (openai-compatible), "claude-haiku-4-5"
+  // (anthropic).
+  model?: string;
+  // Base URL for openai-compatible providers; falls back to
+  // VELLUM_AI_BASE_URL then OpenAI's URL. Reuses the same VELLUM_AI_API_KEY
+  // secret as aiSummary / aiChat.
+  baseUrl?: string;
+  // Locale codes to auto-translate into. Pass an explicit list (e.g.
+  // `["es", "fr", "ja", "zh-CN"]`) or the sentinel `"all"` to expand to
+  // every language in the IANA-maintained ISO 639-1 registry (~180
+  // bare-language codes, sourced via the `iso-639-1` npm package).
+  //
+  // Region-coded BCP47 variants like `zh-CN`, `pt-BR`, `es-MX` aren't in
+  // the ISO 639-1 base set — list them explicitly when you want the
+  // region-specific output. Mixed lists work: `["zh-CN", "zh-TW", "ja"]`
+  // gives you Simplified+Traditional Chinese plus bare Japanese.
+  //
+  // Each resolved entry is merged into `site.locales` at config load with
+  // `machineTranslated: true`, a label resolved by `localeLabel()` (ISO
+  // 639-1 native name for bare-language codes, `Intl.DisplayNames` for
+  // region-coded variants), and a URL prefix equal to the code — so
+  // `"zh-CN"` produces `/zh-CN/...` URLs. Codes that already appear in
+  // `site.locales` are skipped: author-declared locales win and keep
+  // their hand-curated label / prefix.
+  targets: string[] | "all";
+  // How long a cached translation row is considered fresh. The hourly cron
+  // tick re-runs the provider on rows older than this. Defaults to 5 days.
+  // The webhook handler busts rows for a repo as soon as that repo pushes,
+  // so this is the "background drift" interval, not the staleness ceiling
+  // for actively-edited docs.
+  refreshDays?: number;
+  // Max in-flight translation calls per refresh tick. Defaults to 4. Tune
+  // this against the provider's rate limits — Workers AI is happy with 8+,
+  // OpenRouter rate-limits aggressively at the free tier.
+  concurrency?: number;
+  // Per-tick row budget for the scheduled refresher. Defaults to 50. Caps
+  // CPU + outbound-fetch time per cron invocation so the Worker stays well
+  // inside its 30s limit even when the table is huge.
+  batchSize?: number;
 }
 
 export interface AiChatConfig {
@@ -245,6 +510,29 @@ export interface PageMeta {
   lastUpdated?: { iso: string; author?: string; sha: string } | null;
   prev?: { text: string; link: string } | null;
   next?: { text: string; link: string } | null;
+  // True when this page's body was machine-translated from the default-
+  // locale source rather than fetched as a hand-curated file. UI can surface
+  // a "machine translation" badge.
+  machineTranslated?: boolean;
+  // True when the MT pipeline was triggered for this page (the requested
+  // locale is an MT target and we found a default-locale source to feed
+  // through the translator). When `translationAttempted` is true but
+  // `machineTranslated` is false, the provider call no-op'd (no API key,
+  // provider error, fall-back-to-source path) — the banner surfaces that
+  // state separately so readers can tell "translation unavailable" from
+  // "you are looking at a hand-curated locale".
+  translationAttempted?: boolean;
+  // Locale codes (from `site.locales`) the reader can switch to and find
+  // this same page rendered. Includes:
+  //   - the default locale (the source the translator translates from);
+  //   - every hand-curated non-default locale declared in `site.locales`
+  //     (we trust the author has shipped the page);
+  //   - every machine-translated locale that already has a cached row
+  //     for this page in the translation D1 (so links resolve immediately
+  //     to a cached translation rather than triggering a fresh model call).
+  // The MachineTranslatedBanner filters its inline list against this so
+  // readers only see locales they can actually navigate to.
+  translatedLocales?: string[];
 }
 
 // Forward declaration so types.ts doesn't have to import the markdown module.
@@ -300,6 +588,13 @@ export interface BootstrapPayload {
   initialTheme: "light" | "dark";
   // When set, the shell renders an ErrorPage instead of the doc body.
   error?: ErrorState;
+  // Per-locale translation of the static UI dictionary (see src/shared/i18n.ts).
+  // Populated server-side only when `site.translate` is configured and the
+  // requested locale doesn't have a hand-curated dictionary entry. The client
+  // `t()` consults this before falling back to the bundled dictionary, which
+  // lets newly-added MT-target locales render with translated chrome without
+  // a code change. Keys map onto the same `ui.*` namespace used by i18n.ts.
+  uiStrings?: Record<string, string>;
 }
 
 declare global {

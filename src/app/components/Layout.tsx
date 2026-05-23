@@ -24,6 +24,8 @@ import { HomeLayout } from "./HomeLayout";
 import { MSLearnHome } from "./MSLearnHome";
 import { AISummary } from "./AISummary";
 import { AskAI } from "./AskAI";
+import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
+import { LanguagesPage } from "./LanguagesPage";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
 // (Ctrl+K / "/"), so its chunk is never SSRed and the Suspense boundary lives
@@ -119,6 +121,7 @@ export function Layout() {
   const isHome = layoutKind === "home";
   const isSearch = layoutKind === "search";
   const isMsLearn = layoutKind === "ms-learn";
+  const isLanguages = layoutKind === "languages";
 
   return (
     <div className={styles.shell}>
@@ -129,12 +132,21 @@ export function Layout() {
         // those pages are summaries / hero content, not where readers ask
         // detailed questions. NavBar drops the button when this is
         // undefined.
-        onOpenAskAi={isHome || isMsLearn ? undefined : () => setAskAiOpen(true)}
+        onOpenAskAi={isHome || isMsLearn || isLanguages ? undefined : () => setAskAiOpen(true)}
         // Only the doc layout has a sidebar; hide the hamburger on
-        // home/search/ms-learn so users don't get an empty Drawer.
-        onOpenSidebar={!isHome && !isSearch && !isMsLearn ? () => setSidebarOpen(true) : undefined}
+        // home/search/ms-learn/languages so users don't get an empty Drawer.
+        onOpenSidebar={
+          !isHome && !isSearch && !isMsLearn && !isLanguages
+            ? () => setSidebarOpen(true)
+            : undefined
+        }
       />
-      {isSearch ? (
+      {isLanguages ? (
+        // Full-page locale chooser. Used when many locales (typically when
+        // `translate.targets: "all"` is set) make the NavBar dropdown
+        // unwieldy. The router serves this at /{prefix}/languages.
+        <LanguagesPage />
+      ) : isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state
         // (?q=, ?repo=) and uses /api/search?repo=* under the hood. Imported
         // eagerly (not lazy) so any SSR error surfaces in the worker logs.
@@ -166,6 +178,7 @@ export function Layout() {
                   )}
                 </header>
               )}
+              <MachineTranslatedBanner />
               <AISummary />
               <MarkdownAst ast={page.ast} />
               <PageFooter meta={page.meta} siteFooter={config.site.footer} />

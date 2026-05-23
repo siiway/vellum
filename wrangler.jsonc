@@ -47,5 +47,30 @@
 			"binding": "VELLUM_CACHE",
 			"id": "8999733736ff415c844f1c8fc00c3042"
 		}
-	]
+	],
+	// D1 database for machine-translated copies of pages, sidebars, repo nav,
+	// frontmatter, UI strings, and per-repo config text. Created with:
+	//   wrangler d1 create vellum-translations
+	// Run migrations from ./migrations with `wrangler d1 migrations apply
+	// vellum-translations --remote`. The binding is optional at runtime —
+	// when missing, the translation layer no-ops and locales fall back to
+	// the default-locale source files unchanged.
+	"d1_databases": [
+		{
+			"binding": "VELLUM_TRANSLATION_DB",
+			"database_name": "vellum-translations",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Cron trigger for the translation refresh job. Wakes hourly; each tick
+	// pulls rows from the translations table whose age exceeds
+	// site.translate.refreshDays and re-runs the provider on a small batch.
+	// Capping the per-tick batch keeps a single invocation well inside Worker
+	// CPU limits even when the table holds tens of thousands of rows.
+	"triggers": {
+		"crons": [
+			"0 * * * *"
+		]
+	}
 }

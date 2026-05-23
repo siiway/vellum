@@ -90,6 +90,10 @@
           "$ref": "#/definitions/AiChatConfig",
           "description": "\"Ask AI\" chat drawer. Floating button bottom-right opens a chat panel; the model can call docs tools (search_docs, fetch_page, list_repos, list_pages) to answer questions across the site. Omit the whole block to disable. Shares provider credentials with aiSummary."
         },
+        "translate": {
+          "$ref": "#/definitions/TranslateConfig",
+          "description": "Machine translation. When configured, the worker fills in every locale listed in `targets` by running source markdown, sidebar labels, frontmatter strings, UI labels, and repo display strings through the provider. Translations are cached in the VELLUM_TRANSLATION_DB D1 binding and refreshed on webhook (per repo) or after `refreshDays` (hourly cron). Hand-translated files in a repo's locale subdir always win over the machine output. Omit to disable."
+        },
         "searchAliases": {
           "type": "object",
           "additionalProperties": {
@@ -123,6 +127,10 @@
         "prefix": {
           "type": "string",
           "description": "URL segment for this locale (e.g. \"zh\" → /repo/zh/...). Empty string means the locale lives at the root of each repo."
+        },
+        "machineTranslated": {
+          "type": "boolean",
+          "description": "Set automatically at config load when this locale comes from `site.translate.targets` rather than being declared explicitly. Authors should never set this by hand. UI uses it to badge translated pages and to skip the locale-subdir lookup."
         }
       },
       "required": [
@@ -260,6 +268,67 @@
       },
       "required": [
         "provider"
+      ],
+      "additionalProperties": false
+    },
+    "TranslateConfig": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "workers-ai",
+            "openai-compatible",
+            "anthropic"
+          ],
+          "description": "Same matrix as AiSummaryConfig.provider. \"workers-ai\" can use a dedicated MT model (e.g. @cf/meta/m2m100-1.2b); \"openai-compatible\" and \"anthropic\" route through a general chat model with a markdown-preserving system prompt."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model id. Defaults: \"@cf/meta/m2m100-1.2b\" (workers-ai), \"openai/gpt-4o-mini\" (openai-compatible), \"claude-haiku-4-5\" (anthropic)."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Base URL override for openai-compatible providers.",
+          "format": "uri-reference"
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string",
+              "const": "all"
+            }
+          ],
+          "description": "Locale codes to auto-translate into. Pass an array of BCP47-style codes (e.g. `[\"es\", \"fr\", \"ja\", \"zh-CN\"]`) or the sentinel `\"all\"` to expand to every language in the IANA ISO 639-1 registry (~180 bare-language codes, sourced via the `iso-639-1` npm package). Region-coded variants like `zh-CN`/`pt-BR` aren't in the bare ISO 639-1 base set — list them explicitly. Each resolved code is merged into `site.locales` at load time with machineTranslated:true and a label resolved via ISO 639-1 / Intl.DisplayNames. Codes already declared in `site.locales` are skipped."
+        },
+        "refreshDays": {
+          "type": "number",
+          "description": "How long a cached translation row is considered fresh. Defaults to 5. The hourly cron tick re-runs the provider on rows older than this. Webhooks bust rows immediately on push, so this is the background-drift interval.",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "concurrency": {
+          "type": "number",
+          "description": "Max in-flight translation calls per refresh tick. Defaults to 4. Tune against provider rate limits.",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "batchSize": {
+          "type": "number",
+          "description": "Per-tick row budget for the scheduled refresher. Defaults to 50. Caps CPU + outbound-fetch time per cron invocation.",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "provider",
+        "targets"
       ],
       "additionalProperties": false
     },

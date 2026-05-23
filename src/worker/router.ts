@@ -10,7 +10,7 @@ import type {
   RouteContext,
   VellumConfig,
 } from "../shared/types";
-import { localeSourcePrefix } from "../shared/types";
+import { expandLocalesFromTranslate, localeSourcePrefix } from "../shared/types";
 import config from "../../vellum.config.json";
 import {
   fetchSourceFile,
@@ -34,13 +34,24 @@ import { handleWebhook } from "./webhook";
 import { handleSearch } from "./search";
 import { handleSummarize } from "./summarize";
 import { handleAsk } from "./ask";
+import {
+  translate as mtTranslate,
+  translateSiteConfig,
+  translateUiStrings,
+  listTranslatedLocalesForPage,
+  isMtTarget,
+} from "./translate";
 import { handleMcp } from "./mcp";
 import { handleAiSession } from "./session";
 import { handleVueComponentRequest, loadVueComponents } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
-import { t as translate } from "../shared/i18n";
+import { baseUiStrings, t as translate } from "../shared/i18n";
 
-const SITE: VellumConfig = config as VellumConfig;
+// Merge `site.translate.targets` into `site.locales` so the rest of the worker
+// — router, sidebar, search, sitemap — treats machine-translated locales as
+// first-class. Author-declared locales win on conflict; new entries get a
+// label from BUILTIN_LOCALE_LABELS (or the code) and machineTranslated:true.
+const SITE: VellumConfig = expandLocalesFromTranslate(config as VellumConfig);
 
 export async function dispatch(
   request: Request,
@@ -148,6 +159,15 @@ export async function dispatch(
   const searchRoute = matchSearchRoute(path);
   if (searchRoute) {
     return renderSearchPage(env, ctx, request, searchRoute);
+  }
+
+  // Full-page locale chooser. `/{localePrefix}/languages` is the canonical
+  // shape. The page is empty chrome — the LanguagesPage component reads
+  // `?page=` from the URL on the client and builds locale-prefixed links
+  // from the site config in the bootstrap payload.
+  const languagesRoute = matchLanguagesRoute(path);
+  if (languagesRoute) {
+    return renderLanguagesPage(env, ctx, request, languagesRoute);
   }
 
   const route = resolveRoute(path);
@@ -319,9 +339,10 @@ function addLocalePrefixToPath(pathname: string, prefix: string): string {
   const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/").filter(Boolean);
   if (parts.length === 0) return `/${prefix}`;
   const first = parts[0]!;
-  // Reserved: keep search/api/sitemap/etc. routed to themselves under the
-  // new prefix. `api` is already short-circuited; this is belt-and-braces.
-  const reserved = first === "search" || first === "api";
+  // Reserved: keep search/languages/api/sitemap/etc. routed to themselves
+  // under the new prefix. `api` is already short-circuited; this is
+  // belt-and-braces.
+  const reserved = first === "search" || first === "languages" || first === "api";
   const isRepo = SITE.repos.some((r) => r.slug === first);
   if (reserved || isRepo) {
     return `/${prefix}/${parts.join("/")}`;
@@ -364,7 +385,7 @@ function detectHomepageShortcut(pathname: string): string | null {
 
   if (!rest.length || !rest[0]) return null;
   // Reserved virtual routes — never rewrite these into the homepage repo.
-  if (rest[0] === "search" || rest[0] === "api") return null;
+  if (rest[0] === "search" || rest[0] === "languages" || rest[0] === "api") return null;
 
   // Bail when the first non-locale segment IS a real repo slug — normal
   // resolveRoute will handle it.
@@ -529,6 +550,8 @@ async function renderRoute(
 
   let source: string | null = null;
   let matchedPath: string | null = null;
+  let machineTranslated = false;
+  let translationAttempted = false;
   for (const c of candidates) {
     const s = await fetchSourceFile(env, route.repo, route.version.branch, c, {
       ctx,
@@ -537,6 +560,49 @@ async function renderRoute(
       source = s;
       matchedPath = c;
       break;
+    }
+  }
+
+  // Machine-translation fallback. When the requested locale is listed in
+  // `site.translate.targets` and no hand-translated file was found, fetch
+  // the default-locale source and run it through the translator. The
+  // result is cached in D1 by (repoSlug@branch:pagePath, locale) so the
+  // next read for the same page returns the cached row in one DB hop.
+  //
+  // mtTranslate falls back to the source string when the provider call
+  // fails (no API key, network error, rate limit, …) — we compare the
+  // returned content against the source to detect that path. Either way
+  // we render the content we have (better than 404'ing the reader),
+  // but only set `machineTranslated` when the returned text is actually
+  // a translation. That keeps the "machine-translated" banner honest:
+  // it shows up when the reader is actually seeing translated content,
+  // and stays hidden when they're seeing the un-translated source under
+  // their requested URL.
+  if (!source && isMtTarget(SITE, route.localeCode)) {
+    const defaultCandidates = pageCandidates(route.repo, "", route.pagePath);
+    for (const c of defaultCandidates) {
+      const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
+      if (s) {
+        translationAttempted = true;
+        const translated = await mtTranslate({
+          env,
+          ctx,
+          site: SITE,
+          kind: "page",
+          key: `${route.repoSlug}@${route.version.branch}:${route.pagePath}`,
+          locale: route.localeCode,
+          source: s,
+        });
+        source = translated;
+        matchedPath = c;
+        machineTranslated = !!translated && translated !== s;
+        if (!machineTranslated) {
+          console.warn(
+            `[vellum][router] MT no-op for ${route.repoSlug}@${route.version.branch}:${route.pagePath} locale=${route.localeCode}; serving source unchanged`,
+          );
+        }
+        break;
+      }
     }
   }
 
@@ -628,6 +694,7 @@ async function renderRoute(
       localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
       SITE.site.defaultLocale,
       ctx,
+      SITE,
     ),
     loadRepoNav(
       env,
@@ -636,6 +703,7 @@ async function renderRoute(
       localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
       SITE.site.defaultLocale,
       ctx,
+      SITE,
     ),
     loadVueComponents(env, route.repo, route.version.branch, ctx),
     loadRepoSocialLinks(env, route.repo, route.version.branch, ctx),
@@ -665,16 +733,31 @@ async function renderRoute(
 
   // `initialTheme` already computed above for the cache key — reused here.
 
+  // Translate site config strings (tagline, repo displayName/description,
+  // nav text) for machine-translated locales so the NavBar, brand crumb,
+  // and home-page repo cards render in the reader's locale. site.title and
+  // site.footer are intentionally not translated.
+  // Translated UI dictionary baked into the bootstrap payload so the client
+  // `t()` resolves shell strings (search labels, AI Summary chrome, etc.)
+  // into the requested locale without a code change.
+  const [localizedSite, uiStrings] = await Promise.all([
+    translateSiteConfig(env, ctx, SITE, route.localeCode),
+    translateUiStrings(env, ctx, SITE, route.localeCode, baseUiStrings as Record<string, string>),
+  ]);
+
   // Title resolution:
   //   frontmatter.title > first h1 > hero.name (for `layout: home` pages) > repo display name (for index) > derived from path
   const heroName =
     rendered.frontmatter && typeof (rendered.frontmatter as any).hero === "object"
       ? ((rendered.frontmatter as any).hero?.name as string | undefined)
       : undefined;
+  // For the index page, fall back to the translated repo displayName so the
+  // `<title>` and hero match the rest of the localized chrome.
+  const localizedRepo = localizedSite.repos.find((r) => r.slug === route.repoSlug) ?? route.repo;
   const finalTitle =
     rendered.title ||
     heroName ||
-    (route.pagePath === "index" ? route.repo.displayName : titleFromPath(route.pagePath));
+    (route.pagePath === "index" ? localizedRepo.displayName : titleFromPath(route.pagePath));
 
   // Description: frontmatter.description > frontmatter.hero.tagline > repo.description
   const heroTagline =
@@ -684,13 +767,14 @@ async function renderRoute(
   const finalDescription =
     rendered.description ||
     heroTagline ||
-    (route.pagePath === "index" ? route.repo.description : undefined);
+    (route.pagePath === "index" ? localizedRepo.description : undefined);
 
   const payload: BootstrapPayload = {
-    config: SITE,
+    config: localizedSite,
     route,
     sidebar,
     repoNav,
+    uiStrings,
     repoSocialLinks,
     repoComponents,
     initialTheme,
@@ -705,6 +789,16 @@ async function renderRoute(
         lastUpdated,
         prev,
         next,
+        machineTranslated,
+        translationAttempted,
+        // Only compute the available-translations list when the MT pipeline
+        // touched this page — that's the only surface that uses it (the
+        // MachineTranslatedBanner). For hand-curated pages we skip the D1
+        // round-trip entirely.
+        translatedLocales:
+          machineTranslated || translationAttempted
+            ? await resolveTranslatedLocales(env, SITE, route)
+            : undefined,
       },
     },
   };
@@ -748,6 +842,36 @@ function htmlHeaders(env: Env): HeadersInit {
     vary: "Accept, Cookie",
     "x-vellum": "edge-ssr",
   };
+}
+
+// Build the list of locales that can resolve this page right now:
+//   - The default locale (always — that's where the source lives).
+//   - Every hand-curated non-default locale declared in `site.locales`.
+//     We assume the author has shipped the page; if they didn't, the link
+//     simply 404s — same outcome as the picker without this filter.
+//   - Every machine-translated locale that has a cached row in D1 for this
+//     specific page key. This skips MT locales that have never been
+//     visited (and thus would trigger a fresh model call instead of
+//     resolving instantly).
+//
+// Used to populate `PageMeta.translatedLocales`, consumed by the
+// MachineTranslatedBanner so its inline "view this page in" list only
+// advertises locales the reader can actually navigate to.
+async function resolveTranslatedLocales(
+  env: Env,
+  site: VellumConfig,
+  route: RouteContext,
+): Promise<string[]> {
+  const handCurated = site.site.locales.filter((l) => !l.machineTranslated).map((l) => l.code);
+  const cached = await listTranslatedLocalesForPage(
+    env,
+    route.repoSlug,
+    route.version.branch,
+    route.pagePath,
+  );
+  // De-dupe — the default locale is in handCurated; cached entries don't
+  // include it since the source is the source, not a translation row.
+  return [...new Set([...handCurated, ...cached])];
 }
 
 function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {
@@ -1016,6 +1140,103 @@ async function renderSearchPage(
       // querystring on the client side, so cache hits would mask nothing useful.
       "cache-control": "no-store",
       "x-vellum": "edge-search",
+    },
+  });
+}
+
+// Matches `/languages` and `/{localePrefix}/languages`. Same shape as the
+// search route; we return the resolved locale code so the page renders in
+// the reader's language.
+function matchLanguagesRoute(
+  pathname: string,
+): { localeCode: string; canonicalUrl: string } | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
+  if (parts.length === 1 && parts[0] === "languages") {
+    return { localeCode: SITE.site.defaultLocale, canonicalUrl: "/languages" };
+  }
+  if (parts.length === 2 && parts[1] === "languages") {
+    const locale = SITE.site.locales.find((l) => l.prefix && l.prefix === parts[0]);
+    if (locale) {
+      return {
+        localeCode: locale.code,
+        canonicalUrl: `/${locale.prefix}/languages`,
+      };
+    }
+  }
+  return null;
+}
+
+async function renderLanguagesPage(
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+  match: { localeCode: string; canonicalUrl: string },
+): Promise<Response> {
+  const url = new URL(request.url);
+  const wantsJson = url.searchParams.get("_data") === "1";
+  const initialTheme = pickTheme(request);
+
+  // Stub repo/route exactly like the search page: the FluentUI shell + NavBar
+  // need a route context to render against, but the LanguagesPage component
+  // builds its own URLs from the bootstrap config and the `?page=` query.
+  const stubRepo = SITE.repos[0]!;
+  const stubVersion =
+    stubRepo.versions?.find((v) => v.default) ??
+    ({ label: stubRepo.branch, branch: stubRepo.branch } as RouteContext["version"]);
+
+  // Per-locale title/description so the SSR <title> reads in the right language.
+  const [localizedSite, uiStrings] = await Promise.all([
+    translateSiteConfig(env, ctx, SITE, match.localeCode),
+    translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
+  ]);
+
+  const title = translate(match.localeCode, "ui.languages.title");
+  const description = translate(match.localeCode, "ui.languages.subtitle");
+
+  const payload: BootstrapPayload = {
+    config: localizedSite,
+    route: {
+      repoSlug: stubRepo.slug,
+      repo: stubRepo,
+      version: stubVersion,
+      localeCode: match.localeCode,
+      pagePath: "languages",
+      canonicalUrl: match.canonicalUrl,
+    },
+    sidebar: [],
+    initialTheme,
+    uiStrings,
+    page: {
+      ast: { blocks: [] },
+      meta: {
+        title,
+        description,
+        // Layout switch consumed by Layout.tsx.
+        frontmatter: { layout: "languages" },
+        outline: [],
+      },
+    },
+  };
+
+  if (wantsJson) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        vary: "Accept",
+        "x-vellum": "edge-languages-json",
+      },
+    });
+  }
+
+  const html = await renderPage(env, payload, request);
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-vellum": "edge-languages",
     },
   });
 }

@@ -17,13 +17,21 @@
     "aiSummary": {
       "baseUrl": "https://openrouter.ai/api/v1",
       "provider": "openai-compatible",
-      "model": "z-ai/glm-4.5-air:free"
+      "model": "z-ai/glm-4.5-air:free",
+      "turnstileSiteKey": "0x4AAAAAADU1DRoEmuej6eJL"
     },
     "aiChat": {
       "baseUrl": "https://openrouter.ai/api/v1",
       "provider": "openai-compatible",
       "model": "z-ai/glm-4.5-air:free",
-      "maxIterations": 12
+      "maxIterations": 12,
+      "turnstileSiteKey": "0x4AAAAAADU1DRoEmuej6eJL"
+    },
+    "translate": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "provider": "openai-compatible",
+      "model": "z-ai/glm-4.5-air:free",
+      "targets": [ ]
     }
   },
   "repos": [
