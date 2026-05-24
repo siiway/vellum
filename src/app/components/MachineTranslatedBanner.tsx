@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Caption1,
@@ -5,56 +6,30 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  ProgressBar,
   mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import { Translate24Regular, Warning24Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
-
-// Status banner shown above the article body any time the machine-translation
-// pipeline touched the current page render. Two states:
-//
-//   - `machineTranslated: true` — the worker actually produced a translation
-//     and the reader is looking at it. We show the "AI translated" notice
-//     plus an inline list of other locales the page is available in.
-//
-//   - `translationAttempted: true && !machineTranslated` — MT was triggered
-//     but the provider call no-op'd (no API key, network error, rate limit).
-//     The reader is seeing the source content under their requested URL.
-//     We surface a separate "translation not ready" banner so the reader
-//     knows the page isn't actually in their locale yet.
-//
-// Both layouts cap the inline locale list at INLINE_LIMIT and surface a
-// link to /{prefix}/languages when there are more.
+import { fetchJobStatus, type TranslateJobState } from "./TranslateRepoDialog";
 
 const INLINE_LIMIT = 6;
 
 const useStyles = makeStyles({
   wrapper: {
-    // Symmetric block margin so the banner doesn't kiss whatever sits above
-    // it (the hero / page title / outline). Inline margin keeps the banner
-    // off the viewport edges on layouts whose `<main>` has no horizontal
-    // padding (MSLearnHome). Doc + Home layouts already pad their content,
-    // so this extra inset reads as a slight indent rather than a clash.
     marginBlock: tokens.spacingVerticalXXL,
     marginInline: tokens.spacingHorizontalL,
   },
   bar: {
     width: "100%",
-    // FluentUI's MessageBar ships with a tight default padding that crowds
-    // the icon against the title and squashes a multi-row body. Bump the
-    // internal padding so the title / locale chips / notice each have
-    // breathing room from the bar's border.
     paddingBlock: tokens.spacingVerticalM,
     paddingInline: tokens.spacingHorizontalL,
   },
   body: {
     display: "flex",
     flexDirection: "column",
-    // Each child (title, links, notice) gets a vertical gap rather than
-    // sitting on top of each other. M lines up with the bar's internal
-    // padding so the rhythm reads consistently top-to-bottom.
     gap: tokens.spacingVerticalS,
   },
   links: {
@@ -70,14 +45,28 @@ const useStyles = makeStyles({
   notice: {
     color: tokens.colorNeutralForeground3,
   },
-  // Row that pairs the "Translated by" label with a Badge wrapping the
-  // upstream id. Inline-flex so the badge sits on the same baseline as
-  // the label text, with a small gap so they don't crowd each other.
   modelRow: {
     display: "inline-flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalXS,
     color: tokens.colorNeutralForeground3,
+  },
+  progressSection: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXXS,
+  },
+  progressLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    color: tokens.colorNeutralForeground3,
+  },
+  progressPercent: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorBrandForeground1,
   },
 });
 
@@ -86,16 +75,10 @@ export function MachineTranslatedBanner() {
   const { data, t, navigate } = useVellum();
   const meta = data.page.meta;
 
-  // Don't render unless the MT pipeline touched this page.
   if (!meta.machineTranslated && !meta.translationAttempted) return null;
 
   const locales = data.config.site.locales;
   const currentLocale = data.route.localeCode;
-  // Only surface locales that can actually resolve this same page — that's
-  // the set the router populated into translatedLocales (default + hand-
-  // curated + MT locales with a cached row in D1). When the field is
-  // missing fall back to "everything except current" so older payloads
-  // still render something useful.
   const available = meta.translatedLocales;
   const allowed = available ? new Set(available) : null;
   const others = locales
@@ -147,6 +130,13 @@ export function MachineTranslatedBanner() {
       <MessageBar intent={intent} className={styles.bar} icon={icon}>
         <MessageBarBody className={styles.body}>
           <MessageBarTitle>{title}</MessageBarTitle>
+          {isFallback && (
+            <TranslationProgress
+              repoSlug={data.route.repoSlug}
+              locale={currentLocale}
+              styles={styles}
+            />
+          )}
           {others.length > 0 && (
             <div className={styles.links}>
               {inline.map((l, i) => {
@@ -179,10 +169,6 @@ export function MachineTranslatedBanner() {
           <Caption1 className={styles.notice}>{notice}</Caption1>
           {meta.translatedBy &&
             (() => {
-              // Split the localized "Translated by {model}" string at the
-              // placeholder so we can embed a FluentUI Badge in place of
-              // the model id — gives the upstream identifier a chip-style
-              // affordance that reads at a glance.
               const template = t("ui.translated.byModel");
               const [before, after] = template.split("{model}");
               return (
@@ -197,6 +183,77 @@ export function MachineTranslatedBanner() {
             })()}
         </MessageBarBody>
       </MessageBar>
+    </div>
+  );
+}
+
+function TranslationProgress({
+  repoSlug,
+  locale,
+  styles,
+}: {
+  repoSlug: string;
+  locale: string;
+  styles: Record<string, string>;
+}) {
+  const { t } = useVellum();
+  const [job, setJob] = useState<TranslateJobState | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const poll = async () => {
+      const status = await fetchJobStatus(repoSlug, locale);
+      if (!mounted) return;
+      setJob(status);
+      if (status && status.phase !== "translating" && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+    void poll();
+    pollRef.current = setInterval(poll, 2000);
+    return () => {
+      mounted = false;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [repoSlug, locale]);
+
+  if (!job || job.phase !== "translating") return null;
+
+  const percent = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+
+  return (
+    <div className={styles.progressSection}>
+      <div className={styles.progressLabel}>
+        <Caption1>
+          {job.done}/{job.total} {t("ui.translateRepo.pages")}
+          {job.currentPhase === "page" && job.currentFile ? ` · ${job.currentFile}` : ""}
+        </Caption1>
+        <Caption1 className={styles.progressPercent}>{percent}%</Caption1>
+      </div>
+      <ProgressBar
+        value={job.done}
+        max={Math.max(job.total, 1)}
+        shape="rounded"
+        thickness="medium"
+      />
+      {job.providerModel && (
+        <div className={styles.modelRow}>
+          <Caption1>{t("ui.translateRepo.tryingProvider")}</Caption1>
+          <Badge appearance="outline" size="small">
+            {job.providerModel}
+          </Badge>
+          {job.apiKeyHint && (
+            <Caption1>
+              {t("ui.translateRepo.keyHint")} {job.apiKeyHint}
+            </Caption1>
+          )}
+        </div>
+      )}
     </div>
   );
 }
