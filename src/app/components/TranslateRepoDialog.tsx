@@ -200,7 +200,7 @@ interface Props {
 
 export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
   const styles = useStyles();
-  const { t } = useVellum();
+  const { data, t } = useVellum();
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -259,10 +259,13 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
       }));
 
       try {
-        const res = await fetch(
-          `/api/translate-repo?repo=${encodeURIComponent(repo.slug)}&locale=${encodeURIComponent(locale.code)}`,
-          { method: "POST", signal: ac.signal },
-        );
+        let postUrl = `/api/translate-repo?repo=${encodeURIComponent(repo.slug)}&locale=${encodeURIComponent(locale.code)}`;
+        const turnstileKey = data.config.site.translate?.turnstileSiteKey;
+        if (turnstileKey) {
+          const token = await getTurnstileToken(turnstileKey);
+          if (token) postUrl += `&turnstileToken=${encodeURIComponent(token)}`;
+        }
+        const res = await fetch(postUrl, { method: "POST", signal: ac.signal });
 
         if (!res.ok) {
           const errBody = (await res.json().catch(() => ({ error: res.statusText }))) as {
@@ -351,7 +354,7 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
         done: prev.phase === "error" ? prev.done : prev.total,
       }));
     }
-  }, [repos, locale.code]);
+  }, [repos, locale.code, data.config.site.translate]);
 
   // On open: check D1 for an existing running job first, otherwise start new
   useEffect(() => {
@@ -542,4 +545,48 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
       </DialogSurface>
     </Dialog>
   );
+}
+
+// Invisible Turnstile challenge. Returns a one-use token or null on failure.
+async function getTurnstileToken(siteKey: string): Promise<string | null> {
+  try {
+    const w = window as unknown as {
+      turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => void };
+    };
+    if (!w.turnstile) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Turnstile"));
+        document.head.appendChild(script);
+      });
+    }
+    if (!w.turnstile) return null;
+    const el = document.createElement("div");
+    el.style.display = "none";
+    document.body.appendChild(el);
+    return new Promise<string | null>((resolve) => {
+      const timeout = setTimeout(() => {
+        el.remove();
+        resolve(null);
+      }, 10_000);
+      w.turnstile!.render(el, {
+        sitekey: siteKey,
+        callback: (token: string) => {
+          clearTimeout(timeout);
+          el.remove();
+          resolve(token);
+        },
+        "error-callback": () => {
+          clearTimeout(timeout);
+          el.remove();
+          resolve(null);
+        },
+      });
+    });
+  } catch {
+    return null;
+  }
 }

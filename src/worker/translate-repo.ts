@@ -193,7 +193,7 @@ export async function handleTranslateRepo(
     return new Response("Method not allowed", { status: 405 });
   }
 
-  return handleStart(url, env, ctx, site);
+  return handleStart(request, url, env, ctx, site);
 }
 
 // --- GET: poll job status ---------------------------------------------------
@@ -286,11 +286,41 @@ async function handleCancel(request: Request, url: URL, env: Env): Promise<Respo
 // --- POST: start a new translation ------------------------------------------
 
 async function handleStart(
+  request: Request,
   url: URL,
   env: Env,
   ctx: ExecutionContext,
   site: VellumConfig,
 ): Promise<Response> {
+  // D1 is required for bulk translation — translations must be stored.
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (!db) {
+    return Response.json(
+      { error: "Translation database (VELLUM_TRANSLATION_DB) is not configured." },
+      { status: 503 },
+    );
+  }
+
+  // Turnstile captcha gate. Skip when both sitekey and secret are absent.
+  const turnstileKey = site.site.translate?.turnstileSiteKey;
+  if (turnstileKey || env.VELLUM_TURNSTILE_SECRET) {
+    if (!turnstileKey || !env.VELLUM_TURNSTILE_SECRET) {
+      return Response.json({ error: "Turnstile is half-configured." }, { status: 500 });
+    }
+    const captchaToken = url.searchParams.get("turnstileToken");
+    if (!captchaToken) {
+      return Response.json({ error: "Missing captcha token." }, { status: 400 });
+    }
+    const ok = await verifyTurnstile(
+      env.VELLUM_TURNSTILE_SECRET,
+      captchaToken,
+      request.headers.get("cf-connecting-ip"),
+    );
+    if (!ok) {
+      return Response.json({ error: "Captcha verification failed." }, { status: 403 });
+    }
+  }
+
   const repoSlug = url.searchParams.get("repo");
   const locale = url.searchParams.get("locale");
   if (!repoSlug || !locale) {
@@ -310,8 +340,7 @@ async function handleStart(
   }
 
   // Guard against concurrent jobs for the same (repo, locale).
-  const db = env.VELLUM_TRANSLATION_DB;
-  if (db) {
+  {
     const existing = await readJob(db, repoSlug, locale);
     if (existing?.status === "running") {
       return Response.json(
@@ -366,7 +395,7 @@ async function handleStart(
           repoSlug,
           locale,
         };
-        if (db) await writeJob(db, repoSlug, locale, job);
+        await writeJob(db, repoSlug, locale, job);
 
         await sendEvent("start", { total, repo: repoSlug, locale, cancelToken });
         await sendEvent("progress", { done: 0, total, current: "_sidebar", phase: "sidebar" });
@@ -449,29 +478,25 @@ async function handleStart(
         }
 
         // Final D1 update
-        if (db) {
-          job.done = done;
-          job.providerModel = lastModel;
-          job.apiKeyHint = lastKeyHint;
-          job.status = stopped ? "cancelled" : "complete";
-          await writeJob(db, repoSlug, locale, job);
-        }
+        job.done = done;
+        job.providerModel = lastModel;
+        job.apiKeyHint = lastKeyHint;
+        job.status = stopped ? "cancelled" : "complete";
+        await writeJob(db, repoSlug, locale, job);
 
         if (!stopped) {
           await sendEvent("complete", { done, total });
         }
       } catch (err) {
-        if (db) {
-          try {
-            const job = await readJob(db, repoSlug, locale);
-            if (job) {
-              job.status = "error";
-              job.errorMessage = (err as Error).message;
-              await writeJob(db, repoSlug, locale, job);
-            }
-          } catch {
-            // ignore
+        try {
+          const job = await readJob(db, repoSlug, locale);
+          if (job) {
+            job.status = "error";
+            job.errorMessage = (err as Error).message;
+            await writeJob(db, repoSlug, locale, job);
           }
+        } catch {
+          // ignore
         }
         try {
           await sendEvent("error", { message: (err as Error).message });
@@ -749,4 +774,26 @@ function extractInternalLinks(markdown: string, _repoSlug: string): string[] {
     links.add(href);
   }
   return [...links];
+}
+
+async function verifyTurnstile(
+  secret: string,
+  token: string,
+  remoteIp: string | null,
+): Promise<boolean> {
+  try {
+    const form = new URLSearchParams();
+    form.set("secret", secret);
+    form.set("response", token);
+    if (remoteIp) form.set("remoteip", remoteIp);
+    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) return false;
+    const json = (await res.json()) as { success?: boolean };
+    return json.success === true;
+  } catch {
+    return false;
+  }
 }
