@@ -18,7 +18,7 @@ import { Dismiss24Regular, Checkmark24Regular, ArrowSync24Regular } from "@fluen
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import type { LocaleConfig, RepoConfig } from "../../shared/types";
-import type { MessageKey } from "../../shared/i18n";
+import { type MessageKey, format } from "../../shared/i18n";
 
 // localStorage stores ONLY the cancel token — progress lives in D1.
 const LS_TOKEN_KEY = "vellum-translate-cancel-token";
@@ -347,8 +347,8 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
     if (!ac.signal.aborted) {
       setState((prev) => ({
         ...prev,
-        phase: prev.phase === "cancelled" ? "cancelled" : "complete",
-        done: prev.total,
+        phase: prev.phase === "cancelled" || prev.phase === "error" ? prev.phase : "complete",
+        done: prev.phase === "error" ? prev.done : prev.total,
       }));
     }
   }, [repos, locale.code]);
@@ -413,9 +413,7 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>
-            {t("ui.translateRepo.title" as MessageKey, `Translate to ${locale.label}`)}
-          </DialogTitle>
+          <DialogTitle>{format(t("ui.translateRepo.title"), { locale: locale.label })}</DialogTitle>
           <DialogContent className={styles.content}>
             {state.phase === "translating" && (
               <div className={styles.progressSection}>
