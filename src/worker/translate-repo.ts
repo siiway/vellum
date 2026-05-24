@@ -18,7 +18,7 @@
 // the initiator in localStorage.
 
 import type { Env } from "./env";
-import type { RepoConfig, VellumConfig, LocaleConfig } from "../shared/types";
+import type { RepoConfig, VellumConfig, LocaleConfig, RouteContext } from "../shared/types";
 import { fetchSourceTree, fetchSourceFile, repoRef, docsRootPrefix } from "./sources";
 import { translate, isMtTarget, readCachedTranslation } from "./translate";
 import { loadSidebar } from "./sidebar";
@@ -541,4 +541,142 @@ async function translateSidebarForRepo(
   const localeConfig = site.site.locales.find((l) => l.code === locale) as LocaleConfig | undefined;
   if (!localeConfig) return;
   await loadSidebar(env, repo, branch, localeConfig, site.site.defaultLocale, ctx, site);
+}
+
+// --- Smart background translation ------------------------------------------
+
+// Triggered by the router when a reader visits an MT page that isn't cached
+// yet. Translates pages in priority order so the reader's immediate context
+// is ready first:
+//   1. The current page
+//   2. Sidebar labels
+//   3. Pages linked from the current page's markdown
+//   4. Prev / next pages (adjacent in the sidebar)
+//   5. All remaining pages in the repo
+export async function triggerSmartTranslation(
+  env: Env,
+  ctx: ExecutionContext,
+  site: VellumConfig,
+  route: RouteContext,
+  currentPageSource: string,
+): Promise<void> {
+  const locale = route.localeCode;
+  const branch = route.version.branch;
+  const repo = route.repo;
+  const docsPrefix = docsRootPrefix(repo.docsRoot);
+  const concurrency = site.site.translate?.concurrency ?? 4;
+  const closestLocale = findClosestLocale(locale, site);
+  const tag = `[vellum][smart-translate] ${repo.slug}/${route.pagePath} → ${locale}`;
+
+  async function translatePage(pagePath: string, source?: string): Promise<void> {
+    const cached = await readCachedTranslation(
+      env,
+      "page",
+      `${repo.slug}@${branch}:${pagePath}`,
+      locale,
+    );
+    if (cached) return;
+
+    let src = source ?? null;
+    if (!src && closestLocale) {
+      src = await fetchVariantSource(env, closestLocale, repo.slug, branch, pagePath);
+    }
+    if (!src) {
+      src = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
+    }
+    if (!src) return;
+
+    await translate({
+      env,
+      ctx,
+      site,
+      kind: "page",
+      key: `${repo.slug}@${branch}:${pagePath}`,
+      locale,
+      source: src,
+    });
+  }
+
+  try {
+    // 1. Current page (highest priority — the reader is looking at it)
+    console.log(`${tag} phase 1: current page`);
+    await translatePage(route.pagePath, currentPageSource);
+
+    // 2. Sidebar labels
+    console.log(`${tag} phase 2: sidebar`);
+    try {
+      await translateSidebarForRepo(env, ctx, site, repo, branch, locale);
+    } catch {
+      // sidebar translation failure shouldn't block the rest
+    }
+
+    // 3. Pages linked from the current page's markdown
+    const linkedPages = extractInternalLinks(currentPageSource, repo.slug);
+    if (linkedPages.length) {
+      console.log(`${tag} phase 3: ${linkedPages.length} linked pages`);
+      await pooled(linkedPages, concurrency, async (pagePath) => {
+        try {
+          await translatePage(pagePath);
+        } catch {
+          // continue on failure
+        }
+      });
+    }
+
+    // 4. All remaining pages in the repo
+    console.log(`${tag} phase 4: remaining pages`);
+    const tree = await fetchSourceTree(env, repo, branch, { ctx });
+    const allPages = tree
+      .filter((e) => e.type === "blob" && e.path.endsWith(".md"))
+      .filter((e) => e.path.startsWith(docsPrefix) || !docsPrefix)
+      .map((e) => {
+        const rel =
+          docsPrefix && e.path.startsWith(docsPrefix) ? e.path.slice(docsPrefix.length) : e.path;
+        return (
+          rel
+            .replace(/\.md$/, "")
+            .replace(/\/index$/, "/")
+            .replace(/\/$/, "") || "index"
+        );
+      });
+
+    const translated = new Set([route.pagePath, ...linkedPages]);
+    const remaining = sortByPriority(allPages).filter((p) => !translated.has(p));
+
+    if (remaining.length) {
+      await pooled(remaining, concurrency, async (pagePath) => {
+        try {
+          await translatePage(pagePath);
+        } catch {
+          // continue on failure
+        }
+      });
+    }
+
+    console.log(`${tag} done`);
+  } catch (err) {
+    console.warn(`${tag} failed: ${(err as Error).message}`);
+  }
+}
+
+// Extract internal page links from markdown source. Matches:
+//   [text](./path)  [text](/path)  [text](path)
+// Skips external URLs, anchors, images, and code blocks.
+function extractInternalLinks(markdown: string, _repoSlug: string): string[] {
+  const links = new Set<string>();
+  const stripped = markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`]+`/g, "");
+  const re = /\[(?:[^\]]*)\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(stripped)) !== null) {
+    let href = m[1]!.split("#")[0]!.split("?")[0]!.trim();
+    if (!href || href.startsWith("http") || href.startsWith("mailto:")) continue;
+    if (href.startsWith("@")) continue;
+    href = href.replace(/^\.\//, "").replace(/\.md$/, "");
+    if (href.startsWith("/")) href = href.slice(1);
+    if (!href || href === "." || href === "..") continue;
+    const parts = href.split("/").filter(Boolean);
+    if (parts.some((p) => p === "..")) continue;
+    links.add(href);
+  }
+  return [...links];
 }

@@ -35,14 +35,14 @@ import { handleSearch } from "./search";
 import { handleSummarize } from "./summarize";
 import { handleAsk } from "./ask";
 import {
-  translate as mtTranslate,
   translateSiteConfig,
   translateUiStrings,
   listTranslatedLocalesForPage,
   isMtTarget,
+  readCachedTranslation,
 } from "./translate";
 import { handleMcp } from "./mcp";
-import { handleTranslateRepo } from "./translate-repo";
+import { handleTranslateRepo, triggerSmartTranslation } from "./translate-repo";
 import { handleAiSession } from "./session";
 import { handleVueComponentRequest, loadVueComponents } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
@@ -586,10 +586,6 @@ async function renderRoute(
   let matchedPath: string | null = null;
   let machineTranslated = false;
   let translationAttempted = false;
-  // `${ep.id}:${model}` label of the provider that produced the
-  // translation, surfaced on the banner so readers see which upstream
-  // rendered their page when a failover chain is configured.
-  let translatedBy: string | undefined;
   for (const c of candidates) {
     const s = await fetchSourceFile(env, route.repo, route.version.branch, c, {
       ctx,
@@ -602,44 +598,35 @@ async function renderRoute(
   }
 
   // Machine-translation fallback. When the requested locale is listed in
-  // `site.translate.targets` and no hand-translated file was found, fetch
-  // the default-locale source and run it through the translator. The
-  // result is cached in D1 by (repoSlug@branch:pagePath, locale) so the
-  // next read for the same page returns the cached row in one DB hop.
-  //
-  // mtTranslate falls back to the source string when the provider call
-  // fails (no API key, network error, rate limit, …) — we compare the
-  // returned content against the source to detect that path. Either way
-  // we render the content we have (better than 404'ing the reader),
-  // but only set `machineTranslated` when the returned text is actually
-  // a translation. That keeps the "machine-translated" banner honest:
-  // it shows up when the reader is actually seeing translated content,
-  // and stays hidden when they're seeing the un-translated source under
-  // their requested URL.
+  // `site.translate.targets` and no hand-translated file was found, check
+  // the D1 cache for a pre-translated version. Cache hit → serve it with
+  // machineTranslated:true. Cache miss → serve the default-locale source
+  // immediately (no blocking provider call) and kick off a background
+  // translation via triggerSmartTranslation(). The banner shows
+  // "Translating, you can view this page in …" while the provider runs;
+  // on the next visit the cache hit path serves the translation instantly.
   if (!source && isMtTarget(SITE, route.localeCode)) {
     const defaultCandidates = pageCandidates(route.repo, "", route.pagePath);
     for (const c of defaultCandidates) {
       const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
       if (s) {
         translationAttempted = true;
-        const result = await mtTranslate({
-          env,
-          ctx,
-          site: SITE,
-          kind: "page",
-          key: `${route.repoSlug}@${route.version.branch}:${route.pagePath}`,
-          locale: route.localeCode,
-          source: s,
-        });
-        source = result.content;
         matchedPath = c;
-        machineTranslated = !!result.content && result.content !== s;
-        if (machineTranslated) {
-          translatedBy = result.model;
+        const pageKey = `${route.repoSlug}@${route.version.branch}:${route.pagePath}`;
+
+        // Fast path: check D1 cache first (no provider call).
+        const cached = await readCachedTranslation(env, "page", pageKey, route.localeCode);
+        if (cached) {
+          source = cached;
+          machineTranslated = true;
         } else {
-          console.warn(
-            `[vellum][router] MT no-op for ${route.repoSlug}@${route.version.branch}:${route.pagePath} locale=${route.localeCode}; serving source unchanged`,
-          );
+          // Non-blocking: serve source immediately so the reader doesn't
+          // wait for the provider. The banner shows "Translating, you can
+          // view this page in [already-translated languages]". Background
+          // translation fills the cache for the next visit.
+          source = s;
+          machineTranslated = false;
+          ctx.waitUntil(triggerSmartTranslation(env, ctx, SITE, route, s));
         }
         break;
       }
@@ -831,7 +818,6 @@ async function renderRoute(
         next,
         machineTranslated,
         translationAttempted,
-        translatedBy,
         translatedLocales: await resolveTranslatedLocales(env, SITE, route),
       },
     },
