@@ -196,9 +196,10 @@ function TranslationProgress({
   locale: string;
   styles: Record<string, string>;
 }) {
-  const { t } = useVellum();
+  const { t, navigate } = useVellum();
   const [job, setJob] = useState<TranslateJobState | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reloadedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -206,9 +207,15 @@ function TranslationProgress({
       const status = await fetchJobStatus(repoSlug, locale);
       if (!mounted) return;
       setJob(status);
-      if (status && status.phase !== "translating" && pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      if (status && status.phase !== "translating") {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        if (status.phase === "complete" && !reloadedRef.current) {
+          reloadedRef.current = true;
+          navigate(window.location.href, { replace: true });
+        }
       }
     };
     void poll();
@@ -220,7 +227,7 @@ function TranslationProgress({
         pollRef.current = null;
       }
     };
-  }, [repoSlug, locale]);
+  }, [repoSlug, locale, navigate]);
 
   if (!job || job.phase !== "translating") return null;
 

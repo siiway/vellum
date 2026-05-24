@@ -199,14 +199,16 @@ export async function handleTranslateRepo(
 // --- GET: poll job status ---------------------------------------------------
 
 async function handleStatus(url: URL, env: Env): Promise<Response> {
-  const repoSlug = url.searchParams.get("repo");
-  const locale = url.searchParams.get("locale");
-  if (!repoSlug || !locale) {
-    return Response.json({ error: "Missing repo or locale" }, { status: 400 });
-  }
-
   const db = env.VELLUM_TRANSLATION_DB;
   if (!db) return Response.json({ status: "no-db" });
+
+  const repoSlug = url.searchParams.get("repo");
+  const locale = url.searchParams.get("locale");
+
+  // List all jobs when no repo/locale specified
+  if (!repoSlug || !locale) {
+    return listAllJobs(db);
+  }
 
   const job = await readJob(db, repoSlug, locale);
   if (!job) return Response.json({ status: "idle" });
@@ -223,6 +225,37 @@ async function handleStatus(url: URL, env: Env): Promise<Response> {
     providerModel: job.providerModel,
     apiKeyHint: job.apiKeyHint,
   });
+}
+
+async function listAllJobs(db: D1Database): Promise<Response> {
+  try {
+    const { results } = await db
+      .prepare(
+        "SELECT key, locale, content, refreshed_at FROM translations WHERE kind = 'translate-job' ORDER BY refreshed_at DESC",
+      )
+      .all<{ key: string; locale: string; content: string; refreshed_at: number }>();
+
+    const jobs = (results ?? []).map((row) => {
+      const job = JSON.parse(row.content) as TranslateJob;
+      return {
+        status: job.status,
+        done: job.done,
+        total: job.total,
+        current: job.current,
+        phase: job.phase,
+        repoSlug: job.repoSlug,
+        locale: job.locale,
+        errorMessage: job.errorMessage,
+        providerModel: job.providerModel,
+        apiKeyHint: job.apiKeyHint,
+        updatedAt: row.refreshed_at,
+      };
+    });
+
+    return Response.json({ jobs });
+  } catch {
+    return Response.json({ jobs: [] });
+  }
 }
 
 // --- DELETE: cancel a running job -------------------------------------------
@@ -378,6 +411,7 @@ async function handleStart(
                   key: `${repoSlug}@${branch}:${pagePath}`,
                   locale,
                   source,
+                  awaitWrite: true,
                 });
                 if (result.model) lastModel = result.model;
                 if (result.apiKeyHint) lastKeyHint = result.apiKeyHint;
@@ -626,6 +660,7 @@ export async function triggerSmartTranslation(
       key: `${repo.slug}@${branch}:${pagePath}`,
       locale,
       source: src,
+      awaitWrite: true,
     });
   }
 

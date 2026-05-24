@@ -26,6 +26,7 @@ import { AISummary } from "./AISummary";
 import { AskAI } from "./AskAI";
 import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 import { LanguagesPage } from "./LanguagesPage";
+import { TranslateTasksPage } from "./TranslateTasksPage";
 import { TranslationProgressBanner } from "./TranslationProgressBanner";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
@@ -123,6 +124,7 @@ export function Layout() {
   const isSearch = layoutKind === "search";
   const isMsLearn = layoutKind === "ms-learn";
   const isLanguages = layoutKind === "languages";
+  const isTranslateTasks = layoutKind === "translate-tasks";
 
   return (
     <div className={styles.shell}>
@@ -133,19 +135,20 @@ export function Layout() {
         // those pages are summaries / hero content, not where readers ask
         // detailed questions. NavBar drops the button when this is
         // undefined.
-        onOpenAskAi={isHome || isMsLearn || isLanguages ? undefined : () => setAskAiOpen(true)}
-        // Only the doc layout has a sidebar; hide the hamburger on
-        // home/search/ms-learn/languages so users don't get an empty Drawer.
+        onOpenAskAi={
+          isHome || isMsLearn || isLanguages || isTranslateTasks
+            ? undefined
+            : () => setAskAiOpen(true)
+        }
         onOpenSidebar={
-          !isHome && !isSearch && !isMsLearn && !isLanguages
+          !isHome && !isSearch && !isMsLearn && !isLanguages && !isTranslateTasks
             ? () => setSidebarOpen(true)
             : undefined
         }
       />
-      {isLanguages ? (
-        // Full-page locale chooser. Used when many locales (typically when
-        // `translate.targets: "all"` is set) make the NavBar dropdown
-        // unwieldy. The router serves this at /{prefix}/languages.
+      {isTranslateTasks ? (
+        <TranslateTasksPage />
+      ) : isLanguages ? (
         <LanguagesPage />
       ) : isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state

@@ -184,6 +184,11 @@ export async function dispatch(
     return renderLanguagesPage(env, ctx, request, languagesRoute);
   }
 
+  const translateTasksRoute = matchTranslateTasksRoute(path);
+  if (translateTasksRoute) {
+    return renderTranslateTasksPage(env, ctx, request, translateTasksRoute);
+  }
+
   const route = resolveRoute(path);
   if (!route) {
     // Bare page like `/getting-started` or `/zh/getting-started` — redirect
@@ -356,7 +361,8 @@ function addLocalePrefixToPath(pathname: string, prefix: string): string {
   // Reserved: keep search/languages/api/sitemap/etc. routed to themselves
   // under the new prefix. `api` is already short-circuited; this is
   // belt-and-braces.
-  const reserved = first === "search" || first === "languages" || first === "api";
+  const reserved =
+    first === "search" || first === "languages" || first === "translate-tasks" || first === "api";
   const isRepo = SITE.repos.some((r) => r.slug === first);
   if (reserved || isRepo) {
     return `/${prefix}/${parts.join("/")}`;
@@ -399,7 +405,13 @@ function detectHomepageShortcut(pathname: string): string | null {
 
   if (!rest.length || !rest[0]) return null;
   // Reserved virtual routes — never rewrite these into the homepage repo.
-  if (rest[0] === "search" || rest[0] === "languages" || rest[0] === "api") return null;
+  if (
+    rest[0] === "search" ||
+    rest[0] === "languages" ||
+    rest[0] === "translate-tasks" ||
+    rest[0] === "api"
+  )
+    return null;
 
   // Bail when the first non-locale segment IS a real repo slug — normal
   // resolveRoute will handle it.
@@ -1278,6 +1290,89 @@ async function renderLanguagesPage(
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-vellum": "edge-languages",
+    },
+  });
+}
+
+function matchTranslateTasksRoute(
+  pathname: string,
+): { localeCode: string; canonicalUrl: string } | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
+  if (parts.length === 1 && parts[0] === "translate-tasks") {
+    return { localeCode: SITE.site.defaultLocale, canonicalUrl: "/translate-tasks" };
+  }
+  if (parts.length === 2 && parts[1] === "translate-tasks") {
+    const locale = SITE.site.locales.find((l) => l.prefix && l.prefix === parts[0]);
+    if (locale) {
+      return {
+        localeCode: locale.code,
+        canonicalUrl: `/${locale.prefix}/translate-tasks`,
+      };
+    }
+  }
+  return null;
+}
+
+async function renderTranslateTasksPage(
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+  match: { localeCode: string; canonicalUrl: string },
+): Promise<Response> {
+  const url = new URL(request.url);
+  const wantsJson = url.searchParams.get("_data") === "1";
+  const initialTheme = pickTheme(request);
+
+  const stubRepo = SITE.repos[0]!;
+  const stubVersion =
+    stubRepo.versions?.find((v) => v.default) ??
+    ({ label: stubRepo.branch, branch: stubRepo.branch } as RouteContext["version"]);
+
+  const [localizedSite, uiStrings] = await Promise.all([
+    translateSiteConfig(env, ctx, SITE, match.localeCode),
+    translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
+  ]);
+
+  const title = translate(match.localeCode, "ui.translateTasks.title");
+
+  const payload: BootstrapPayload = {
+    config: localizedSite,
+    route: {
+      repoSlug: stubRepo.slug,
+      repo: stubRepo,
+      version: stubVersion,
+      localeCode: match.localeCode,
+      pagePath: "translate-tasks",
+      canonicalUrl: match.canonicalUrl,
+    },
+    sidebar: [],
+    initialTheme,
+    uiStrings,
+    page: {
+      ast: { blocks: [] },
+      meta: {
+        title,
+        frontmatter: { layout: "translate-tasks" },
+        outline: [],
+      },
+    },
+  };
+
+  if (wantsJson) {
+    return new Response(JSON.stringify(payload), {
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  const html = await renderPage(env, payload, request);
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
     },
   });
 }

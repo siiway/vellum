@@ -65,6 +65,10 @@ export interface TranslateArgs {
   key: string;
   locale: string;
   source: string;
+  // When true, the D1 cache write is awaited instead of fire-and-forget
+  // via ctx.waitUntil(). Use this in bulk translate paths where the
+  // worker lifetime after response is limited.
+  awaitWrite?: boolean;
 }
 
 // --- Public entrypoints ---------------------------------------------------
@@ -168,20 +172,23 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
     console.log(
       `${tag} provider ok model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
     );
-    // Write-through. waitUntil so callers don't block on the DB round-trip.
-    args.ctx.waitUntil(
-      writeRow(db, {
-        kind: args.kind,
-        key: args.key,
-        locale: args.locale,
-        source_hash: sourceHash,
-        content: result.content,
-        model: result.model,
-        refreshed_at: Date.now(),
-      })
-        .then(() => console.log(`${tag} cached`))
-        .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`)),
-    );
+    const writePromise = writeRow(db, {
+      kind: args.kind,
+      key: args.key,
+      locale: args.locale,
+      source_hash: sourceHash,
+      content: result.content,
+      model: result.model,
+      refreshed_at: Date.now(),
+    })
+      .then(() => console.log(`${tag} cached`))
+      .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`));
+
+    if (args.awaitWrite) {
+      await writePromise;
+    } else {
+      args.ctx.waitUntil(writePromise);
+    }
     return {
       content: result.content,
       model: result.model,
