@@ -45,7 +45,6 @@ interface SSEvent {
 
 const useStyles = makeStyles({
   wrapper: {
-    position: "relative",
     marginBottom: tokens.spacingVerticalXXL,
   },
   // Pill button takes its colours from `appearance="outline"` + the brand
@@ -114,14 +113,27 @@ const useStyles = makeStyles({
     color: tokens.colorPaletteRedForeground1,
   },
   turnstileSlot: {
-    position: "absolute",
-    bottom: tokens.spacingVerticalS,
-    left: "50%",
-    transform: "translateX(-50%)",
+    justifyContent: "center",
+    alignItems: "center",
     overflow: "hidden",
-    borderRadius: tokens.borderRadiusLarge,
-    boxShadow: tokens.shadow8,
-    zIndex: 1,
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    paddingBlock: tokens.spacingVerticalM,
+    paddingInline: tokens.spacingHorizontalM,
+    marginTop: tokens.spacingVerticalM,
+    animationName: {
+      from: { opacity: 0, transform: "translateY(-8px)" },
+      to: { opacity: 1, transform: "translateY(0)" },
+    },
+    animationDuration: "200ms",
+    animationTimingFunction: "ease-out",
+    "&[hidden]": {
+      display: "none",
+    },
+    "&:not([hidden])": {
+      display: "flex",
+    },
   },
 });
 
@@ -200,6 +212,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
       (ts) => {
         tsResolve = resolve;
         tsReject = reject;
+        host.hidden = false;
 
         if (tsWidgetHost === host) {
           ts.reset(host);
@@ -216,12 +229,13 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
         }
         ts.render(host, {
           sitekey: siteKey,
-          size: "compact",
+          size: "flexible",
           execution: "execute",
           appearance: "interaction-only",
           retry: "auto",
           action: "summarize",
           callback: (token: string) => {
+            host.hidden = true;
             if (tsResolve) {
               tsResolve(token);
               tsResolve = null;
@@ -229,6 +243,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "error-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha error."));
               tsResolve = null;
@@ -236,6 +251,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "expired-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha expired."));
               tsResolve = null;
@@ -243,6 +259,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "timeout-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha timed out."));
               tsResolve = null;
@@ -437,7 +454,7 @@ export function AISummary() {
         >
           {t("ui.aiSummary.button")}
         </Button>
-        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" />
+        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" hidden />
       </div>
     );
   }
@@ -532,7 +549,7 @@ export function AISummary() {
           </Caption1>
         </CardFooter>
       </Card>
-      <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" />
+      <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" hidden />
     </div>
   );
 }

@@ -427,11 +427,28 @@ const useStyles = makeStyles({
     minWidth: 0,
   },
   turnstileSlot: {
-    display: "flex",
     justifyContent: "center",
+    alignItems: "center",
     overflow: "hidden",
-    borderRadius: tokens.borderRadiusLarge,
-    marginBlock: tokens.spacingVerticalS,
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    paddingBlock: tokens.spacingVerticalM,
+    paddingInline: tokens.spacingHorizontalM,
+    marginInline: tokens.spacingHorizontalL,
+    marginBlock: tokens.spacingVerticalM,
+    animationName: {
+      from: { opacity: 0, transform: "translateY(-8px)" },
+      to: { opacity: 1, transform: "translateY(0)" },
+    },
+    animationDuration: "200ms",
+    animationTimingFunction: "ease-out",
+    "&[hidden]": {
+      display: "none",
+    },
+    "&:not([hidden])": {
+      display: "flex",
+    },
   },
 });
 
@@ -505,6 +522,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
       (ts) => {
         tsResolve = resolve;
         tsReject = reject;
+        host.hidden = false;
 
         if (tsWidgetHost === host) {
           ts.reset(host);
@@ -521,12 +539,13 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
         }
         ts.render(host, {
           sitekey: siteKey,
-          size: "compact",
+          size: "flexible",
           execution: "execute",
           appearance: "interaction-only",
           retry: "auto",
           action: "ask-ai",
           callback: (token: string) => {
+            host.hidden = true;
             if (tsResolve) {
               tsResolve(token);
               tsResolve = null;
@@ -534,6 +553,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "error-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha error."));
               tsResolve = null;
@@ -541,6 +561,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "expired-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha expired."));
               tsResolve = null;
@@ -548,6 +569,7 @@ function obtainTurnstileToken(siteKey: string, host: HTMLElement): Promise<strin
             }
           },
           "timeout-callback": () => {
+            host.hidden = true;
             if (tsReject) {
               tsReject(new Error("Captcha timed out."));
               tsResolve = null;
@@ -1084,7 +1106,7 @@ export function AskAI({
           </div>
         )}
 
-        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" />
+        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" hidden />
 
         <div className={styles.disclaimer}>
           <Caption1>{t("ui.askAi.disclaimer")}</Caption1>
