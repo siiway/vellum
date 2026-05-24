@@ -45,6 +45,7 @@ interface SSEvent {
 
 const useStyles = makeStyles({
   wrapper: {
+    position: "relative",
     marginBottom: tokens.spacingVerticalXXL,
   },
   // Pill button takes its colours from `appearance="outline"` + the brand
@@ -114,8 +115,13 @@ const useStyles = makeStyles({
   },
   turnstileSlot: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
+    bottom: tokens.spacingVerticalS,
+    left: "50%",
+    transform: "translateX(-50%)",
+    overflow: "hidden",
+    borderRadius: tokens.borderRadiusLarge,
+    boxShadow: tokens.shadow8,
+    zIndex: 1,
   },
 });
 

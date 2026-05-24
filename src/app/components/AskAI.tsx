@@ -427,9 +427,11 @@ const useStyles = makeStyles({
     minWidth: 0,
   },
   turnstileSlot: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
+    display: "flex",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderRadius: tokens.borderRadiusLarge,
+    marginBlock: tokens.spacingVerticalS,
   },
 });
 
@@ -1082,6 +1084,8 @@ export function AskAI({
           </div>
         )}
 
+        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" />
+
         <div className={styles.disclaimer}>
           <Caption1>{t("ui.askAi.disclaimer")}</Caption1>
         </div>
@@ -1106,8 +1110,6 @@ export function AskAI({
             aria-label={t("ui.askAi.send")}
           />
         </div>
-
-        <div ref={turnstileHostRef} className={styles.turnstileSlot} aria-hidden="true" />
       </DrawerBody>
     </Drawer>
   );
