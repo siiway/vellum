@@ -73,6 +73,8 @@ const en: MessageMap = {
   "ui.translateRepo.cancelled": "Translation cancelled.",
   "ui.translateRepo.done": "Done",
   "ui.translateRepo.retranslate": "Retranslate",
+  "ui.translateRepo.tryingProvider": "Trying AI provider",
+  "ui.translateRepo.keyHint": "key",
 
   "ui.outline": "On this page",
   "ui.prev": "Previous",
@@ -199,6 +201,8 @@ const zh: MessageMap = {
   "ui.translateRepo.cancelled": "翻译已取消。",
   "ui.translateRepo.done": "完成",
   "ui.translateRepo.retranslate": "重新翻译",
+  "ui.translateRepo.tryingProvider": "正在使用 AI 服务",
+  "ui.translateRepo.keyHint": "密钥",
 
   "ui.outline": "目录",
   "ui.prev": "上一页",

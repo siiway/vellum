@@ -35,6 +35,8 @@ interface TranslateJob {
   repoSlug: string;
   locale: string;
   errorMessage?: string;
+  providerModel?: string;
+  apiKeyHint?: string;
 }
 
 function jobKey(repoSlug: string, locale: string): string {
@@ -197,6 +199,8 @@ async function handleStatus(url: URL, env: Env): Promise<Response> {
     repoSlug: job.repoSlug,
     locale: job.locale,
     errorMessage: job.errorMessage,
+    providerModel: job.providerModel,
+    apiKeyHint: job.apiKeyHint,
   });
 }
 
@@ -328,6 +332,8 @@ async function handleStart(
         }
 
         let done = 0;
+        let lastModel: string | undefined;
+        let lastKeyHint: string | undefined;
 
         // Translate pages concurrently in batches
         for (let i = 0; i < priorityPages.length; i += concurrency) {
@@ -348,11 +354,12 @@ async function handleStart(
             total,
             current: batch.length > 1 ? `${batch[0]} (+${batch.length - 1} more)` : batch[0],
             phase: "page",
+            providerModel: lastModel,
+            apiKeyHint: lastKeyHint,
           });
 
           await pooled(batch, concurrency, async (pagePath) => {
             try {
-              // Try variant source first (e.g. zh-CN for zh-HK)
               let source: string | null = null;
               if (closestLocale) {
                 source = await fetchVariantSource(env, closestLocale, repoSlug, branch, pagePath);
@@ -362,12 +369,11 @@ async function handleStart(
                   );
                 }
               }
-              // Fall back to default locale source
               if (!source) {
                 source = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
               }
               if (source) {
-                await translate({
+                const result = await translate({
                   env,
                   ctx,
                   site,
@@ -376,6 +382,8 @@ async function handleStart(
                   locale,
                   source,
                 });
+                if (result.model) lastModel = result.model;
+                if (result.apiKeyHint) lastKeyHint = result.apiKeyHint;
               }
             } catch (err) {
               console.warn(
@@ -391,6 +399,8 @@ async function handleStart(
             job.done = done;
             job.current = batch[batch.length - 1]!;
             job.phase = "page";
+            job.providerModel = lastModel;
+            job.apiKeyHint = lastKeyHint;
             await writeJob(db, repoSlug, locale, job);
           }
 
@@ -399,6 +409,8 @@ async function handleStart(
             total,
             current: batch[batch.length - 1],
             phase: "page",
+            providerModel: lastModel,
+            apiKeyHint: lastKeyHint,
           });
         }
 

@@ -77,6 +77,7 @@ export interface TranslateArgs {
 export interface TranslateResult {
   content: string;
   model?: string;
+  apiKeyHint?: string;
   attempted: boolean;
 }
 
@@ -126,7 +127,12 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
       console.log(
         `${tag} provider ok (uncached) model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
       );
-      return { content: result.content, model: result.model, attempted: true };
+      return {
+        content: result.content,
+        model: result.model,
+        apiKeyHint: result.apiKeyHint,
+        attempted: true,
+      };
     } catch (err) {
       console.warn(`${tag} provider failed (uncached): ${(err as Error).message}`);
       return { content: args.source, attempted: true };
@@ -176,10 +182,13 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
         .then(() => console.log(`${tag} cached`))
         .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`)),
     );
-    return { content: result.content, model: result.model, attempted: true };
+    return {
+      content: result.content,
+      model: result.model,
+      apiKeyHint: result.apiKeyHint,
+      attempted: true,
+    };
   } catch (err) {
-    // Provider failure — fall back to source so the page still renders.
-    // The cron refresher will retry on its next pass.
     console.warn(`${tag} provider failed: ${(err as Error).message}`);
     if (cached) {
       console.log(`${tag} serving stale cache as fallback`);
@@ -552,10 +561,8 @@ async function sha256Hex(input: string): Promise<string> {
 
 interface ProviderResult {
   content: string;
-  // Identifier of the provider+model that ultimately produced the result.
-  // Recorded into the D1 row so the table reflects what's actually been
-  // cached when the failover picks a non-primary endpoint.
   model: string;
+  apiKeyHint: string;
 }
 
 async function runProvider(
@@ -573,11 +580,12 @@ async function runProvider(
   return runWithFailover(tag, endpoints, async (ep) => {
     const model = ep.model ?? defaultModelFor(ep.provider);
     const label = `${ep.id}:${model}`;
+    const hint = ep.apiKey ? `…${ep.apiKey.slice(-4)}` : "";
     let content: string;
     if (ep.provider === "workers-ai") content = await runWorkersAi(env, ep, model, system, user);
     else if (ep.provider === "anthropic") content = await runAnthropic(ep, model, system, user);
     else content = await runOpenAi(ep, model, system, user);
-    return { content, model: label };
+    return { content, model: label, apiKeyHint: hint };
   });
 }
 

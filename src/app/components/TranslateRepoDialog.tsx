@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Badge,
   Body1,
   Body1Strong,
   Button,
@@ -33,6 +34,8 @@ export interface TranslateJobState {
   repoCount: number;
   currentRepoSlug: string;
   locale: string;
+  providerModel?: string;
+  apiKeyHint?: string;
 }
 
 const INITIAL_STATE: TranslateJobState = {
@@ -102,6 +105,8 @@ export async function fetchJobStatus(
       repoCount: 1,
       currentRepoSlug: (data.repoSlug as string) ?? repoSlug,
       locale: (data.locale as string) ?? locale,
+      providerModel: (data.providerModel as string) ?? undefined,
+      apiKeyHint: (data.apiKeyHint as string) ?? undefined,
     };
   } catch {
     return null;
@@ -155,6 +160,18 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalL,
     marginTop: tokens.spacingVerticalS,
     color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  providerRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+    marginTop: tokens.spacingVerticalXS,
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  providerLabel: {
+    fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
   },
   complete: {
@@ -291,6 +308,8 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                     total: data.total as number,
                     currentFile: data.current as string,
                     currentPhase: data.phase as string,
+                    providerModel: (data.providerModel as string) ?? prev.providerModel,
+                    apiKeyHint: (data.apiKeyHint as string) ?? prev.apiKeyHint,
                   }));
                 } else if (eventType === "complete") {
                   if (ri === repos.length - 1) {
@@ -433,6 +452,21 @@ export function TranslateRepoDialog({ open, onClose, locale, repos }: Props) {
                     {t("ui.translateRepo.pages" as MessageKey, "pages")}
                   </span>
                 </div>
+                {state.providerModel && (
+                  <div className={styles.providerRow}>
+                    <Caption1>
+                      {t("ui.translateRepo.tryingProvider" as MessageKey, "Trying AI provider")}
+                    </Caption1>
+                    <Badge appearance="outline" size="small">
+                      <span className={styles.providerLabel}>{state.providerModel}</span>
+                    </Badge>
+                    {state.apiKeyHint && (
+                      <Caption1>
+                        {t("ui.translateRepo.keyHint" as MessageKey, "key")} {state.apiKeyHint}
+                      </Caption1>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
