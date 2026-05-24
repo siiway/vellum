@@ -200,11 +200,13 @@ const useStyles = makeStyles({
   heroSearchIcon: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
   heroSearchInput: {
     flex: 1,
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     borderTop: "0 !important" as any,
     borderLeft: "0 !important" as any,
     borderRight: "0 !important" as any,
     borderBottom: "0 !important" as any,
     backgroundColor: "transparent !important" as any,
+    /* eslint-enable @typescript-eslint/no-explicit-any */
     "& input": { fontSize: tokens.fontSizeBase400 },
   },
   heroActions: {

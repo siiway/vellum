@@ -27,13 +27,15 @@ import { lazy, type ComponentType } from "react";
 // Helper: produce a lazy reference to a single named export of FluentUI.
 // All lazy-imports share the "@fluentui/react-components" chunk, so the
 // extra-FluentUI cost is paid once per page, not per component.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function lazyFluent<K extends string>(name: K): ComponentType<any> {
   return lazy(async () => {
     const mod = await import("@fluentui/react-components");
-    return { default: (mod as any)[name] as ComponentType<any> };
+    return { default: (mod as unknown as Record<string, ComponentType<unknown>>)[name]! };
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const REACT_COMPONENTS: Record<string, ComponentType<any>> = {
   // Already in the main bundle — zero incremental cost.
   Button,

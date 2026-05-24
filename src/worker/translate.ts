@@ -65,6 +65,10 @@ export interface TranslateArgs {
   key: string;
   locale: string;
   source: string;
+  // When true, the D1 cache write is awaited instead of fire-and-forget
+  // via ctx.waitUntil(). Use this in bulk translate paths where the
+  // worker lifetime after response is limited.
+  awaitWrite?: boolean;
 }
 
 // --- Public entrypoints ---------------------------------------------------
@@ -77,6 +81,7 @@ export interface TranslateArgs {
 export interface TranslateResult {
   content: string;
   model?: string;
+  apiKeyHint?: string;
   attempted: boolean;
 }
 
@@ -126,7 +131,12 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
       console.log(
         `${tag} provider ok (uncached) model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
       );
-      return { content: result.content, model: result.model, attempted: true };
+      return {
+        content: result.content,
+        model: result.model,
+        apiKeyHint: result.apiKeyHint,
+        attempted: true,
+      };
     } catch (err) {
       console.warn(`${tag} provider failed (uncached): ${(err as Error).message}`);
       return { content: args.source, attempted: true };
@@ -162,24 +172,30 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
     console.log(
       `${tag} provider ok model=${result.model} bytes_in=${args.source.length} bytes_out=${result.content.length}`,
     );
-    // Write-through. waitUntil so callers don't block on the DB round-trip.
-    args.ctx.waitUntil(
-      writeRow(db, {
-        kind: args.kind,
-        key: args.key,
-        locale: args.locale,
-        source_hash: sourceHash,
-        content: result.content,
-        model: result.model,
-        refreshed_at: Date.now(),
-      })
-        .then(() => console.log(`${tag} cached`))
-        .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`)),
-    );
-    return { content: result.content, model: result.model, attempted: true };
+    const writePromise = writeRow(db, {
+      kind: args.kind,
+      key: args.key,
+      locale: args.locale,
+      source_hash: sourceHash,
+      content: result.content,
+      model: result.model,
+      refreshed_at: Date.now(),
+    })
+      .then(() => console.log(`${tag} cached`))
+      .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`));
+
+    if (args.awaitWrite) {
+      await writePromise;
+    } else {
+      args.ctx.waitUntil(writePromise);
+    }
+    return {
+      content: result.content,
+      model: result.model,
+      apiKeyHint: result.apiKeyHint,
+      attempted: true,
+    };
   } catch (err) {
-    // Provider failure — fall back to source so the page still renders.
-    // The cron refresher will retry on its next pass.
     console.warn(`${tag} provider failed: ${(err as Error).message}`);
     if (cached) {
       console.log(`${tag} serving stale cache as fallback`);
@@ -348,6 +364,22 @@ export function isMtTarget(site: VellumConfig, localeCode: string): boolean {
 // otherwise duplicate this lookup all over the place.
 export function findLocale(site: VellumConfig, code: string) {
   return site.site.locales.find((l) => l.code === code);
+}
+
+// Read a cached translation from D1. Returns the translated content string
+// or null when no cached row exists. Used by the bulk-translate endpoint to
+// look up existing translations for variant-source fallback (e.g. using
+// zh-CN content as the source for zh-HK instead of the default locale).
+export async function readCachedTranslation(
+  env: Env,
+  kind: TranslateKind,
+  key: string,
+  locale: string,
+): Promise<string | null> {
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (!db) return null;
+  const row = await readRow(db, kind, key, locale);
+  return row?.content ?? null;
 }
 
 // --- D1 row helpers -------------------------------------------------------
@@ -536,10 +568,8 @@ async function sha256Hex(input: string): Promise<string> {
 
 interface ProviderResult {
   content: string;
-  // Identifier of the provider+model that ultimately produced the result.
-  // Recorded into the D1 row so the table reflects what's actually been
-  // cached when the failover picks a non-primary endpoint.
   model: string;
+  apiKeyHint: string;
 }
 
 async function runProvider(
@@ -557,11 +587,12 @@ async function runProvider(
   return runWithFailover(tag, endpoints, async (ep) => {
     const model = ep.model ?? defaultModelFor(ep.provider);
     const label = `${ep.id}:${model}`;
+    const hint = ep.apiKey ? `…${ep.apiKey.slice(-4)}` : "";
     let content: string;
     if (ep.provider === "workers-ai") content = await runWorkersAi(env, ep, model, system, user);
     else if (ep.provider === "anthropic") content = await runAnthropic(ep, model, system, user);
     else content = await runOpenAi(ep, model, system, user);
-    return { content, model: label };
+    return { content, model: label, apiKeyHint: hint };
   });
 }
 

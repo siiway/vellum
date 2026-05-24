@@ -8,7 +8,6 @@
 
 import type { Env } from "./env";
 import type { VellumConfig } from "../shared/types";
-import { localeSourcePrefix } from "../shared/types";
 import { fetchSourceTree, docsRootPrefix, repoRef } from "./sources";
 import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
@@ -192,7 +191,7 @@ async function buildSitemapUrls(
     for (const [code, url] of perLocale) alternates[code] = url;
 
     const isHomepage = pageKey === homepageKey;
-    for (const [code, url] of perLocale) {
+    for (const [_code, url] of perLocale) {
       out.push({
         loc: url,
         alternates,

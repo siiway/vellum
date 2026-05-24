@@ -20,11 +20,11 @@ export function applyGithubAlerts(md: MarkdownIt): void {
       const kind = m[1]!.toLowerCase();
       const rest = m[2] ?? "";
       // Rewrite this blockquote into a callout div.
-      tokens[i]!.type = "html_block";
-      (tokens[i] as any).content =
-        `<div class="vellum-callout vellum-callout-${kind}" data-callout="${kind}"><p class="vellum-callout-title">${m[1]}</p>\n`;
-      (tokens[i] as any).block = true;
-      (tokens[i] as any).tag = "";
+      const openTok = tokens[i]!;
+      openTok.type = "html_block";
+      openTok.content = `<div class="vellum-callout vellum-callout-${kind}" data-callout="${kind}"><p class="vellum-callout-title">${m[1]}</p>\n`;
+      openTok.block = true;
+      openTok.tag = "";
       // Replace the leading inline content with the remainder.
       inline.content = rest;
       if (inline.children && inline.children.length) {
@@ -48,10 +48,11 @@ export function applyGithubAlerts(md: MarkdownIt): void {
         }
       }
       if (j < tokens.length) {
-        tokens[j]!.type = "html_block";
-        (tokens[j] as any).content = "</div>\n";
-        (tokens[j] as any).block = true;
-        (tokens[j] as any).tag = "";
+        const closeTok = tokens[j]!;
+        closeTok.type = "html_block";
+        closeTok.content = "</div>\n";
+        closeTok.block = true;
+        closeTok.tag = "";
       }
     }
     return false;

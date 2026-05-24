@@ -150,6 +150,7 @@ function useActiveHeading(slugs: string[]): [string | null, (slug: string) => vo
   const slugKey = slugs.join("|");
   useEffect(() => {
     setActive(slugs[0] ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slugKey]);
 
   useEffect(() => {
@@ -190,6 +191,7 @@ function useActiveHeading(slugs: string[]): [string | null, (slug: string) => vo
     );
     headings.forEach((h) => observer.observe(h));
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slugKey]);
 
   const snap = useCallback((slug: string) => {

@@ -72,11 +72,13 @@ const useStyles = makeStyles({
   },
   input: {
     flex: 1,
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     borderTop: "0 !important" as any,
     borderLeft: "0 !important" as any,
     borderRight: "0 !important" as any,
     borderBottom: "0 !important" as any,
     backgroundColor: "transparent !important" as any,
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   },
   closeBtn: {
     background: "transparent",

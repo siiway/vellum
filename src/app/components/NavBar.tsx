@@ -3,6 +3,7 @@ import {
   Image,
   Link,
   Menu,
+  MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
@@ -445,6 +446,7 @@ function LocalePicker() {
     // reads this cookie before Accept-Language) honours it on future visits.
     // 1 year matches the server-side Max-Age so cookie expiry agrees.
     try {
+      // eslint-disable-next-line react-hooks/immutability
       document.cookie = `vellum-locale=${encodeURIComponent(localeCode)}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
     } catch {
       // Some embedding contexts (sandboxed iframes) can throw on cookie writes;
@@ -488,11 +490,12 @@ function LocalePicker() {
               {l.label}
             </MenuItem>
           ))}
-          {overflow && (
-            <MenuItem onClick={() => navigate(languagesPageUrl())}>
-              {t("ui.locale.allLanguages")} ({sorted.length})
-            </MenuItem>
-          )}
+          {overflow && <MenuDivider />}
+          <MenuItem onClick={() => navigate(languagesPageUrl())}>
+            {overflow
+              ? `${t("ui.locale.allLanguages")} (${data.config.site.locales.length})`
+              : t("ui.locale.moreLanguages")}
+          </MenuItem>
         </MenuList>
       </MenuPopover>
     </Menu>

@@ -228,10 +228,11 @@ async function tryLoadVitePress(
     const groups = safeParseArray(block);
     if (Array.isArray(groups)) {
       for (const g of groups) {
-        if (g && typeof g === "object" && Array.isArray((g as any).items)) {
+        const rec = g as Record<string, unknown>;
+        if (g && typeof g === "object" && Array.isArray(rec.items)) {
           parsed.push({
-            text: (g as any).text ?? "",
-            items: (g as any).items as SidebarItem[],
+            text: (rec.text as string) ?? "",
+            items: rec.items as SidebarItem[],
           });
         }
       }
@@ -866,7 +867,7 @@ export async function loadRepoSocialLinks(
             typeof x === "object" &&
             "icon" in x &&
             "link" in x &&
-            typeof (x as any).link === "string",
+            typeof (x as Record<string, unknown>).link === "string",
         );
         if (cleaned.length) {
           await writeCache(env, key, cleaned, ttlSeconds(env, "raw"), ctx);

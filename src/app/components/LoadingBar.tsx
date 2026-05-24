@@ -51,6 +51,7 @@ export function LoadingBar() {
       setProgress(p);
     }, 200);
     return () => clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNavigating]);
 
   return (

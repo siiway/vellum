@@ -495,6 +495,11 @@ export interface TranslateConfig {
   // CPU + outbound-fetch time per cron invocation so the Worker stays well
   // inside its 30s limit even when the table is huge.
   batchSize?: number;
+  // Cloudflare Turnstile site key. When set, the "Translate all" button
+  // mounts an invisible Turnstile widget and passes the token to
+  // POST /api/translate-repo. The worker verifies it before starting
+  // the job. Pairs with VELLUM_TURNSTILE_SECRET. Omit to disable captcha.
+  turnstileSiteKey?: string;
 }
 
 export interface AiChatConfig {

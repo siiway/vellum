@@ -76,7 +76,7 @@ function parseYaml(raw: string): XrefMap | null {
   try {
     const lines = raw.split(/\r?\n/);
     let inRefs = false;
-    let current: Partial<XrefEntry> | null = null;
+    let current: Record<string, string> | null = null;
     const entries: XrefEntry[] = [];
     const flush = () => {
       if (current && current.uid && current.href) {
@@ -103,12 +103,12 @@ function parseYaml(raw: string): XrefMap | null {
         const rest = itemStart[2]!;
         if (rest) {
           const kv = parseKeyValue(rest);
-          if (kv) (current as any)[kv.key] = kv.value;
+          if (kv) current[kv.key] = kv.value;
         }
         continue;
       }
       const kv = parseKeyValue(line.trim());
-      if (kv && current) (current as any)[kv.key] = kv.value;
+      if (kv && current) current[kv.key] = kv.value;
     }
     flush();
     if (!entries.length) return null;

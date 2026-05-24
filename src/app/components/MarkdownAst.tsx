@@ -238,10 +238,12 @@ const useStyles = makeStyles({
       // (12px) gave a noticeable empty band above/below the first/last line.
       paddingBlock: tokens.spacingVerticalS,
       paddingInline: tokens.spacingHorizontalL,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       backgroundColor: "transparent !important" as any,
     },
     "& code": {
       fontFamily: `'Cascadia Code', 'JetBrains Mono', 'Fira Code', ${tokens.fontFamilyMonospace}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       backgroundColor: "transparent !important" as any,
       fontVariantLigatures: "common-ligatures contextual",
     },
@@ -565,6 +567,7 @@ function HtmlBlock({ value }: { value: string }) {
 const parserOptions: HTMLReactParserOptions = {
   // htmlparser2 lowercases tags by default; we need the original casing to
   // tell `<Button>` (React) from `<button>` (HTML).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   htmlparser2: { lowerCaseTags: false, lowerCaseAttributeNames: false } as any,
   replace(node) {
     if (!(node instanceof DomElement)) return undefined;

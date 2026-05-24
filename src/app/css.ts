@@ -6,6 +6,7 @@
 
 import { makeStyles as makeStylesRaw } from "@fluentui/react-components";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRules = Record<string, any>;
 type AnyStyles = Record<string, AnyRules>;
 

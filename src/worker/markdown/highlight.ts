@@ -13,7 +13,9 @@ import {
   type HighlighterGeneric,
   type BundledLanguage,
   type BundledTheme,
+  type ShikiTransformer,
 } from "shiki";
+import type { Element } from "hast";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import {
   transformerNotationDiff,
@@ -377,7 +379,7 @@ export async function highlightCode(code: string, info: string): Promise<string>
         // Vellum-specific transforms: layer on the highlight-lines we parsed
         // from the fence info AND tag <pre> with our line-numbers class.
         {
-          line(node: any, line: number) {
+          line(node: Element, line: number) {
             if (meta.highlightLines.has(line)) {
               this.addClassToHast(node, "vellum-line-highlight");
             }
@@ -385,14 +387,14 @@ export async function highlightCode(code: string, info: string): Promise<string>
               (node.properties as Record<string, string>)["data-line"] = String(line);
             }
           },
-          pre(node: any) {
+          pre(node: Element) {
             const props = node.properties as Record<string, string>;
             const cls = (props.class as string | undefined) ?? "";
             props.class =
               `${cls} vellum-code${meta.showLineNumbers ? " has-line-numbers" : ""}`.trim();
           },
         },
-      ] as any,
+      ] as ShikiTransformer[],
     });
   } catch (e) {
     console.error("[vellum] shiki failure", {

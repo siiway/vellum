@@ -278,6 +278,7 @@ function scrollToHash(slug: string) {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useVellum(): VellumContextValue {
   const v = useContext(Ctx);
   if (!v) throw new Error("VellumProvider missing");

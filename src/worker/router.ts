@@ -35,13 +35,14 @@ import { handleSearch } from "./search";
 import { handleSummarize } from "./summarize";
 import { handleAsk } from "./ask";
 import {
-  translate as mtTranslate,
   translateSiteConfig,
   translateUiStrings,
   listTranslatedLocalesForPage,
   isMtTarget,
+  readCachedTranslation,
 } from "./translate";
 import { handleMcp } from "./mcp";
+import { handleTranslateRepo, triggerSmartTranslation } from "./translate-repo";
 import { handleAiSession } from "./session";
 import { handleVueComponentRequest, loadVueComponents } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
@@ -70,6 +71,7 @@ export async function dispatch(
     return handleAiSession(request, env, SITE.site.aiChat?.turnstileSiteKey);
   if (path === "/api/mcp") return handleMcp(request, env, ctx, SITE);
   if (path === "/api/vue") return handleVueComponentRequest(request, env, ctx, SITE);
+  if (path === "/api/translate-repo") return handleTranslateRepo(request, env, ctx, SITE);
   if (path === "/api/health") return Response.json({ ok: true, version: "0.1.0" });
 
   // SEO infrastructure. robots.txt is static and origin-aware; sitemap.xml
@@ -180,6 +182,11 @@ export async function dispatch(
   const languagesRoute = matchLanguagesRoute(path);
   if (languagesRoute) {
     return renderLanguagesPage(env, ctx, request, languagesRoute);
+  }
+
+  const translateTasksRoute = matchTranslateTasksRoute(path);
+  if (translateTasksRoute) {
+    return renderTranslateTasksPage(env, ctx, request, translateTasksRoute);
   }
 
   const route = resolveRoute(path);
@@ -354,7 +361,8 @@ function addLocalePrefixToPath(pathname: string, prefix: string): string {
   // Reserved: keep search/languages/api/sitemap/etc. routed to themselves
   // under the new prefix. `api` is already short-circuited; this is
   // belt-and-braces.
-  const reserved = first === "search" || first === "languages" || first === "api";
+  const reserved =
+    first === "search" || first === "languages" || first === "translate-tasks" || first === "api";
   const isRepo = SITE.repos.some((r) => r.slug === first);
   if (reserved || isRepo) {
     return `/${prefix}/${parts.join("/")}`;
@@ -397,7 +405,13 @@ function detectHomepageShortcut(pathname: string): string | null {
 
   if (!rest.length || !rest[0]) return null;
   // Reserved virtual routes — never rewrite these into the homepage repo.
-  if (rest[0] === "search" || rest[0] === "languages" || rest[0] === "api") return null;
+  if (
+    rest[0] === "search" ||
+    rest[0] === "languages" ||
+    rest[0] === "translate-tasks" ||
+    rest[0] === "api"
+  )
+    return null;
 
   // Bail when the first non-locale segment IS a real repo slug — normal
   // resolveRoute will handle it.
@@ -584,10 +598,6 @@ async function renderRoute(
   let matchedPath: string | null = null;
   let machineTranslated = false;
   let translationAttempted = false;
-  // `${ep.id}:${model}` label of the provider that produced the
-  // translation, surfaced on the banner so readers see which upstream
-  // rendered their page when a failover chain is configured.
-  let translatedBy: string | undefined;
   for (const c of candidates) {
     const s = await fetchSourceFile(env, route.repo, route.version.branch, c, {
       ctx,
@@ -600,44 +610,35 @@ async function renderRoute(
   }
 
   // Machine-translation fallback. When the requested locale is listed in
-  // `site.translate.targets` and no hand-translated file was found, fetch
-  // the default-locale source and run it through the translator. The
-  // result is cached in D1 by (repoSlug@branch:pagePath, locale) so the
-  // next read for the same page returns the cached row in one DB hop.
-  //
-  // mtTranslate falls back to the source string when the provider call
-  // fails (no API key, network error, rate limit, …) — we compare the
-  // returned content against the source to detect that path. Either way
-  // we render the content we have (better than 404'ing the reader),
-  // but only set `machineTranslated` when the returned text is actually
-  // a translation. That keeps the "machine-translated" banner honest:
-  // it shows up when the reader is actually seeing translated content,
-  // and stays hidden when they're seeing the un-translated source under
-  // their requested URL.
+  // `site.translate.targets` and no hand-translated file was found, check
+  // the D1 cache for a pre-translated version. Cache hit → serve it with
+  // machineTranslated:true. Cache miss → serve the default-locale source
+  // immediately (no blocking provider call) and kick off a background
+  // translation via triggerSmartTranslation(). The banner shows
+  // "Translating, you can view this page in …" while the provider runs;
+  // on the next visit the cache hit path serves the translation instantly.
   if (!source && isMtTarget(SITE, route.localeCode)) {
     const defaultCandidates = pageCandidates(route.repo, "", route.pagePath);
     for (const c of defaultCandidates) {
       const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
       if (s) {
         translationAttempted = true;
-        const result = await mtTranslate({
-          env,
-          ctx,
-          site: SITE,
-          kind: "page",
-          key: `${route.repoSlug}@${route.version.branch}:${route.pagePath}`,
-          locale: route.localeCode,
-          source: s,
-        });
-        source = result.content;
         matchedPath = c;
-        machineTranslated = !!result.content && result.content !== s;
-        if (machineTranslated) {
-          translatedBy = result.model;
+        const pageKey = `${route.repoSlug}@${route.version.branch}:${route.pagePath}`;
+
+        // Fast path: check D1 cache first (no provider call).
+        const cached = await readCachedTranslation(env, "page", pageKey, route.localeCode);
+        if (cached) {
+          source = cached;
+          machineTranslated = true;
         } else {
-          console.warn(
-            `[vellum][router] MT no-op for ${route.repoSlug}@${route.version.branch}:${route.pagePath} locale=${route.localeCode}; serving source unchanged`,
-          );
+          // Non-blocking: serve source immediately so the reader doesn't
+          // wait for the provider. The banner shows "Translating, you can
+          // view this page in [already-translated languages]". Background
+          // translation fills the cache for the next visit.
+          source = s;
+          machineTranslated = false;
+          ctx.waitUntil(triggerSmartTranslation(env, ctx, SITE, route, s));
         }
         break;
       }
@@ -784,9 +785,10 @@ async function renderRoute(
 
   // Title resolution:
   //   frontmatter.title > first h1 > hero.name (for `layout: home` pages) > repo display name (for index) > derived from path
+  const heroObj = rendered.frontmatter?.hero;
   const heroName =
-    rendered.frontmatter && typeof (rendered.frontmatter as any).hero === "object"
-      ? ((rendered.frontmatter as any).hero?.name as string | undefined)
+    heroObj && typeof heroObj === "object"
+      ? ((heroObj as Record<string, unknown>).name as string | undefined)
       : undefined;
   // For the index page, fall back to the translated repo displayName so the
   // `<title>` and hero match the rest of the localized chrome.
@@ -798,8 +800,8 @@ async function renderRoute(
 
   // Description: frontmatter.description > frontmatter.hero.tagline > repo.description
   const heroTagline =
-    rendered.frontmatter && typeof (rendered.frontmatter as any).hero === "object"
-      ? ((rendered.frontmatter as any).hero?.tagline as string | undefined)
+    heroObj && typeof heroObj === "object"
+      ? ((heroObj as Record<string, unknown>).tagline as string | undefined)
       : undefined;
   const finalDescription =
     rendered.description ||
@@ -828,7 +830,6 @@ async function renderRoute(
         next,
         machineTranslated,
         translationAttempted,
-        translatedBy,
         translatedLocales: await resolveTranslatedLocales(env, SITE, route),
       },
     },
@@ -1289,6 +1290,89 @@ async function renderLanguagesPage(
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-vellum": "edge-languages",
+    },
+  });
+}
+
+function matchTranslateTasksRoute(
+  pathname: string,
+): { localeCode: string; canonicalUrl: string } | null {
+  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
+  if (parts.length === 1 && parts[0] === "translate-tasks") {
+    return { localeCode: SITE.site.defaultLocale, canonicalUrl: "/translate-tasks" };
+  }
+  if (parts.length === 2 && parts[1] === "translate-tasks") {
+    const locale = SITE.site.locales.find((l) => l.prefix && l.prefix === parts[0]);
+    if (locale) {
+      return {
+        localeCode: locale.code,
+        canonicalUrl: `/${locale.prefix}/translate-tasks`,
+      };
+    }
+  }
+  return null;
+}
+
+async function renderTranslateTasksPage(
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+  match: { localeCode: string; canonicalUrl: string },
+): Promise<Response> {
+  const url = new URL(request.url);
+  const wantsJson = url.searchParams.get("_data") === "1";
+  const initialTheme = pickTheme(request);
+
+  const stubRepo = SITE.repos[0]!;
+  const stubVersion =
+    stubRepo.versions?.find((v) => v.default) ??
+    ({ label: stubRepo.branch, branch: stubRepo.branch } as RouteContext["version"]);
+
+  const [localizedSite, uiStrings] = await Promise.all([
+    translateSiteConfig(env, ctx, SITE, match.localeCode),
+    translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
+  ]);
+
+  const title = translate(match.localeCode, "ui.translateTasks.title");
+
+  const payload: BootstrapPayload = {
+    config: localizedSite,
+    route: {
+      repoSlug: stubRepo.slug,
+      repo: stubRepo,
+      version: stubVersion,
+      localeCode: match.localeCode,
+      pagePath: "translate-tasks",
+      canonicalUrl: match.canonicalUrl,
+    },
+    sidebar: [],
+    initialTheme,
+    uiStrings,
+    page: {
+      ast: { blocks: [] },
+      meta: {
+        title,
+        frontmatter: { layout: "translate-tasks" },
+        outline: [],
+      },
+    },
+  };
+
+  if (wantsJson) {
+    return new Response(JSON.stringify(payload), {
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  const html = await renderPage(env, payload, request);
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
     },
   });
 }

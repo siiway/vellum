@@ -11,6 +11,9 @@ import footnote from "markdown-it-footnote";
 import taskLists from "markdown-it-task-lists";
 import mathjax3 from "markdown-it-mathjax3";
 
+type MdPlugin = (md: MarkdownIt) => void;
+type MdPluginWithOptions = (md: MarkdownIt, options?: unknown) => void;
+
 import { applyContainers } from "./containers";
 import { applyGithubAlerts } from "./github-alerts";
 import { applyAnchorsAndOutline, nestOutline } from "./anchors";
@@ -69,8 +72,8 @@ function preRenderMath(tokens: Array<Token>, md: MarkdownIt): void {
       if (rule) {
         const html = rule(tokens, i, md.options, {}, md.renderer);
         tok.type = "html_block";
-        (tok as any).content = html;
-        (tok as any).block = true;
+        tok.content = html;
+        tok.block = true;
       }
       continue;
     }
@@ -99,15 +102,15 @@ function buildMd(outlineSink: { outline: OutlineNode[] }): MarkdownIt {
     breaks: false,
   });
 
-  md.use(attrs as any, { allowedAttributes: ["id", "class", /^data-.*/] });
-  md.use(emoji as any);
-  md.use(footnote as any);
-  md.use(taskLists as any, { enabled: true, label: false, lineNumber: false });
+  md.use(attrs as MdPluginWithOptions, { allowedAttributes: ["id", "class", /^data-.*/] });
+  md.use(emoji as MdPlugin);
+  md.use(footnote as MdPlugin);
+  md.use(taskLists as MdPluginWithOptions, { enabled: true, label: false, lineNumber: false });
   // MathJax: renders $inline$ and $$display$$ to inline SVG at parse time so
   // the client doesn't need a math library. Output is HTML, which the AST
   // builder lifts into html_inline / html_block tokens and the renderer drops
   // into the page via dangerouslySetInnerHTML.
-  md.use(mathjax3 as any);
+  md.use(mathjax3 as MdPluginWithOptions);
 
   applyContainers(md);
   applyGithubAlerts(md);
@@ -217,7 +220,7 @@ function buildInlineMd(): MarkdownIt {
     typographer: true,
     breaks: false,
   });
-  md.use(emoji as any);
+  md.use(emoji as MdPlugin);
   return md;
 }
 
