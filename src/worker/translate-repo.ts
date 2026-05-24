@@ -278,30 +278,7 @@ async function handleStart(
   const docsPrefix = docsRootPrefix(repo.docsRoot);
 
   const tree = await fetchSourceTree(env, repo, branch, { ctx });
-  const mdFiles = tree
-    .filter((e) => e.type === "blob" && e.path.endsWith(".md"))
-    .filter((e) => e.path.startsWith(docsPrefix) || !docsPrefix)
-    .map((e) => {
-      const rel =
-        docsPrefix && e.path.startsWith(docsPrefix) ? e.path.slice(docsPrefix.length) : e.path;
-      return (
-        rel
-          .replace(/\.md$/, "")
-          .replace(/\/index$/, "/")
-          .replace(/\/$/, "") || "index"
-      );
-    });
-
-  const pageSet = new Set<string>();
-  const pages: string[] = [];
-  for (const p of mdFiles) {
-    const normalized = p === "" ? "index" : p;
-    if (!pageSet.has(normalized)) {
-      pageSet.add(normalized);
-      pages.push(normalized);
-    }
-  }
-
+  const pages = listDefaultLocalePages(tree, docsPrefix, site);
   const priorityPages = sortByPriority(pages);
   const total = priorityPages.length;
 
@@ -479,6 +456,50 @@ async function handleStart(
 
 // --- Helpers ----------------------------------------------------------------
 
+// Enumerate default-locale pages from a repo tree, excluding locale
+// subdirectories (zh/, ja/, etc.) that hold hand-curated translations.
+function listDefaultLocalePages(
+  tree: Array<{ path: string; type: string }>,
+  docsPrefix: string,
+  site: VellumConfig,
+): string[] {
+  // Locale subdirectories can be named by code (zh), prefix (zh-CN), or
+  // either — collect all non-default locale identifiers so we skip every
+  // hand-curated directory regardless of naming convention.
+  const localeDirs = new Set<string>();
+  for (const l of site.site.locales) {
+    if (l.code === site.site.defaultLocale) continue;
+    localeDirs.add(l.code);
+    if (l.prefix) localeDirs.add(l.prefix);
+  }
+
+  const pageSet = new Set<string>();
+  const pages: string[] = [];
+
+  for (const e of tree) {
+    if (e.type !== "blob" || !e.path.endsWith(".md")) continue;
+    if (docsPrefix && !e.path.startsWith(docsPrefix)) continue;
+
+    const rel =
+      docsPrefix && e.path.startsWith(docsPrefix) ? e.path.slice(docsPrefix.length) : e.path;
+    const firstSeg = rel.split("/")[0]!;
+    if (firstSeg && localeDirs.has(firstSeg)) continue;
+
+    const normalized =
+      rel
+        .replace(/\.md$/, "")
+        .replace(/\/index$/, "/")
+        .replace(/\/$/, "") || "index";
+    const key = normalized === "" ? "index" : normalized;
+    if (!pageSet.has(key)) {
+      pageSet.add(key);
+      pages.push(key);
+    }
+  }
+
+  return pages;
+}
+
 function sortByPriority(pages: string[]): string[] {
   const priority: string[] = [];
   const rest: string[] = [];
@@ -626,19 +647,7 @@ export async function triggerSmartTranslation(
     // 4. All remaining pages in the repo
     console.log(`${tag} phase 4: remaining pages`);
     const tree = await fetchSourceTree(env, repo, branch, { ctx });
-    const allPages = tree
-      .filter((e) => e.type === "blob" && e.path.endsWith(".md"))
-      .filter((e) => e.path.startsWith(docsPrefix) || !docsPrefix)
-      .map((e) => {
-        const rel =
-          docsPrefix && e.path.startsWith(docsPrefix) ? e.path.slice(docsPrefix.length) : e.path;
-        return (
-          rel
-            .replace(/\.md$/, "")
-            .replace(/\/index$/, "/")
-            .replace(/\/$/, "") || "index"
-        );
-      });
+    const allPages = listDefaultLocalePages(tree, docsPrefix, site);
 
     const translated = new Set([route.pagePath, ...linkedPages]);
     const remaining = sortByPriority(allPages).filter((p) => !translated.has(p));
