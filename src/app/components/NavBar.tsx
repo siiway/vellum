@@ -3,6 +3,7 @@ import {
   Image,
   Link,
   Menu,
+  MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
@@ -489,11 +490,12 @@ function LocalePicker() {
               {l.label}
             </MenuItem>
           ))}
-          {overflow && (
-            <MenuItem onClick={() => navigate(languagesPageUrl())}>
-              {t("ui.locale.allLanguages")} ({sorted.length})
-            </MenuItem>
-          )}
+          {overflow && <MenuDivider />}
+          <MenuItem onClick={() => navigate(languagesPageUrl())}>
+            {overflow
+              ? `${t("ui.locale.allLanguages")} (${data.config.site.locales.length})`
+              : t("ui.locale.moreLanguages")}
+          </MenuItem>
         </MenuList>
       </MenuPopover>
     </Menu>
