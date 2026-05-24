@@ -145,15 +145,36 @@ async function pooled<T>(
   items: T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<void>,
-): Promise<void> {
+  shouldStop?: () => Promise<boolean>,
+): Promise<boolean> {
   let idx = 0;
+  let stopped = false;
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (idx < items.length) {
+    while (idx < items.length && !stopped) {
+      if (shouldStop) {
+        const stop = await shouldStop();
+        if (stop) {
+          stopped = true;
+          return;
+        }
+      }
       const i = idx++;
+      if (i >= items.length) break;
       await fn(items[i]!, i);
     }
   });
   await Promise.all(workers);
+  return stopped;
+}
+
+async function isJobCancelled(
+  db: D1Database | undefined,
+  repoSlug: string,
+  locale: string,
+): Promise<boolean> {
+  if (!db) return false;
+  const job = await readJob(db, repoSlug, locale);
+  return job?.status === "cancelled";
 }
 
 // --- Router entry -----------------------------------------------------------
@@ -301,7 +322,6 @@ async function handleStart(
 
   ctx.waitUntil(
     (async () => {
-      let cancelled = false;
       try {
         const job: TranslateJob = {
           cancelToken,
@@ -329,31 +349,13 @@ async function handleStart(
         let done = 0;
         let lastModel: string | undefined;
         let lastKeyHint: string | undefined;
+        const checkCancel = () => isJobCancelled(db, repoSlug, locale);
 
-        // Translate pages concurrently in batches
-        for (let i = 0; i < priorityPages.length; i += concurrency) {
-          // Check cancellation once per batch
-          if (db) {
-            const current = await readJob(db, repoSlug, locale);
-            if (current?.status === "cancelled") {
-              cancelled = true;
-              await sendEvent("cancelled", { done, total });
-              break;
-            }
-          }
-
-          const batch = priorityPages.slice(i, i + concurrency);
-
-          await sendEvent("progress", {
-            done,
-            total,
-            current: batch.length > 1 ? `${batch[0]} (+${batch.length - 1} more)` : batch[0],
-            phase: "page",
-            providerModel: lastModel,
-            apiKeyHint: lastKeyHint,
-          });
-
-          await pooled(batch, concurrency, async (pagePath) => {
+        // Translate pages concurrently with per-page cancellation checks
+        const stopped = await pooled(
+          priorityPages,
+          concurrency,
+          async (pagePath) => {
             try {
               let source: string | null = null;
               if (closestLocale) {
@@ -385,36 +387,43 @@ async function handleStart(
                 `[vellum][translate-repo] page ${pagePath} failed: ${(err as Error).message}`,
               );
             }
-          });
+            done++;
 
-          done += batch.length;
+            if (db && done % concurrency === 0) {
+              job.done = done;
+              job.current = pagePath;
+              job.phase = "page";
+              job.providerModel = lastModel;
+              job.apiKeyHint = lastKeyHint;
+              await writeJob(db, repoSlug, locale, job);
+            }
 
-          // Update D1 job state after each batch
-          if (db) {
-            job.done = done;
-            job.current = batch[batch.length - 1]!;
-            job.phase = "page";
-            job.providerModel = lastModel;
-            job.apiKeyHint = lastKeyHint;
-            await writeJob(db, repoSlug, locale, job);
-          }
+            await sendEvent("progress", {
+              done,
+              total,
+              current: pagePath,
+              phase: "page",
+              providerModel: lastModel,
+              apiKeyHint: lastKeyHint,
+            });
+          },
+          checkCancel,
+        );
 
-          await sendEvent("progress", {
-            done,
-            total,
-            current: batch[batch.length - 1],
-            phase: "page",
-            providerModel: lastModel,
-            apiKeyHint: lastKeyHint,
-          });
+        if (stopped) {
+          await sendEvent("cancelled", { done, total });
         }
 
-        if (!cancelled) {
-          if (db) {
-            job.done = done;
-            job.status = "complete";
-            await writeJob(db, repoSlug, locale, job);
-          }
+        // Final D1 update
+        if (db) {
+          job.done = done;
+          job.providerModel = lastModel;
+          job.apiKeyHint = lastKeyHint;
+          job.status = stopped ? "cancelled" : "complete";
+          await writeJob(db, repoSlug, locale, job);
+        }
+
+        if (!stopped) {
           await sendEvent("complete", { done, total });
         }
       } catch (err) {
@@ -588,6 +597,8 @@ export async function triggerSmartTranslation(
   const concurrency = site.site.translate?.concurrency ?? 4;
   const closestLocale = findClosestLocale(locale, site);
   const tag = `[vellum][smart-translate] ${repo.slug}/${route.pagePath} → ${locale}`;
+  const db = env.VELLUM_TRANSLATION_DB;
+  const checkCancel = () => isJobCancelled(db, repo.slug, locale);
 
   async function translatePage(pagePath: string, source?: string): Promise<void> {
     const cached = await readCachedTranslation(
@@ -623,6 +634,8 @@ export async function triggerSmartTranslation(
     console.log(`${tag} phase 1: current page`);
     await translatePage(route.pagePath, currentPageSource);
 
+    if (await checkCancel()) return;
+
     // 2. Sidebar labels
     console.log(`${tag} phase 2: sidebar`);
     try {
@@ -631,17 +644,25 @@ export async function triggerSmartTranslation(
       // sidebar translation failure shouldn't block the rest
     }
 
+    if (await checkCancel()) return;
+
     // 3. Pages linked from the current page's markdown
     const linkedPages = extractInternalLinks(currentPageSource, repo.slug);
     if (linkedPages.length) {
       console.log(`${tag} phase 3: ${linkedPages.length} linked pages`);
-      await pooled(linkedPages, concurrency, async (pagePath) => {
-        try {
-          await translatePage(pagePath);
-        } catch {
-          // continue on failure
-        }
-      });
+      const stopped = await pooled(
+        linkedPages,
+        concurrency,
+        async (pagePath) => {
+          try {
+            await translatePage(pagePath);
+          } catch {
+            // continue on failure
+          }
+        },
+        checkCancel,
+      );
+      if (stopped) return;
     }
 
     // 4. All remaining pages in the repo
@@ -653,13 +674,18 @@ export async function triggerSmartTranslation(
     const remaining = sortByPriority(allPages).filter((p) => !translated.has(p));
 
     if (remaining.length) {
-      await pooled(remaining, concurrency, async (pagePath) => {
-        try {
-          await translatePage(pagePath);
-        } catch {
-          // continue on failure
-        }
-      });
+      await pooled(
+        remaining,
+        concurrency,
+        async (pagePath) => {
+          try {
+            await translatePage(pagePath);
+          } catch {
+            // continue on failure
+          }
+        },
+        checkCancel,
+      );
     }
 
     console.log(`${tag} done`);
