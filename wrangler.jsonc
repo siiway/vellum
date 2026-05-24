@@ -72,5 +72,23 @@
 		"crons": [
 			"0 * * * *"
 		]
+	},
+	// Preview environment: deploys to vellum.siiway.workers.dev with a
+	// separate D1 database so preview translations don't pollute production.
+	// Deploy with: wrangler deploy --env preview
+	// Apply migrations: wrangler d1 migrations apply vellum-translations-preview --remote --env preview
+	"env": {
+		"preview": {
+			"workers_dev": true,
+			"routes": [],
+			"d1_databases": [
+				{
+					"binding": "VELLUM_TRANSLATION_DB",
+					"database_name": "vellum-translations-preview",
+					"database_id": "6625ef3e-a073-43dc-9d0e-69297ed2b756",
+					"migrations_dir": "migrations"
+				}
+			]
+		}
 	}
 }
