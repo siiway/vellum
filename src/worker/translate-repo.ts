@@ -255,6 +255,25 @@ async function handleStart(
     );
   }
 
+  // Guard against concurrent jobs for the same (repo, locale).
+  const db = env.VELLUM_TRANSLATION_DB;
+  if (db) {
+    const existing = await readJob(db, repoSlug, locale);
+    if (existing?.status === "running") {
+      return Response.json(
+        {
+          error: "A translation job is already running for this repo and locale",
+          status: existing.status,
+          done: existing.done,
+          total: existing.total,
+          current: existing.current,
+          phase: existing.phase,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const branch = repoRef(repo);
   const docsPrefix = docsRootPrefix(repo.docsRoot);
 
@@ -291,7 +310,6 @@ async function handleStart(
   }
 
   const cancelToken = generateToken();
-  const db = env.VELLUM_TRANSLATION_DB;
   const concurrency = site.site.translate?.concurrency ?? 4;
   const closestLocale = findClosestLocale(locale, site);
 
