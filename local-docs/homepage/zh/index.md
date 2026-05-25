@@ -24,6 +24,10 @@ products:
       description: 连接所有主流聊天平台的消息桥接工具！
       icon: https://icons.siiway.org/nextbridge/icon.svg
       link: /zh/nextbridge/
+    - title: Claude Review
+      description: Claude 驱动的，自动化的 GitHub PR 审核工具。
+      icon: https://icons.siiway.org/claude-review/icon.svg
+      link: /zh/claude-review
     - title: Vellum
       description: 多仓库文档平台 — 也就是你正在阅读的这个。
       icon: https://icons.siiway.org/vellum/icon.svg

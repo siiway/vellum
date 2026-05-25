@@ -28,6 +28,10 @@ products:
       description: Multi-repo docs platform — what you're reading right now.
       icon: https://icons.siiway.org/vellum/icon.svg
       link: /vl-handbook/
+    - title: Claude Review
+      description: Automated GitHub PR code review agent powered by Claude.
+      icon: https://icons.siiway.org/claude-review/icon.svg
+      link: /claude-review
 resources:
   title: More resources
   items:

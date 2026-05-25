@@ -79,6 +79,18 @@
       "versions": [{ "label": "main", "branch": "main", "default": true }]
     },
     {
+      "slug": "claude-review",
+      "owner": "siiway",
+      "repo": "claude_review",
+      "branch": "main",
+      "docsRoot": "docs",
+      "displayName": "Claude Review",
+      "description": "Automated GitHub PR code review agent powered by Claude.",
+      "logo": "https://icons.siiway.org/claude-review/icon.svg",
+      "editLinkPattern": "https://github.com/siiway/claude_review/edit/main/docs/:path",
+      "versions": [{ "label": "main", "branch": "main", "default": true }]
+    },
+    {
       "slug": "vl-handbook",
       "source": "local",
       "docsRoot": "",
