@@ -986,9 +986,7 @@ async function errorPage(
   };
 
   const url = new URL(request.url);
-  const wantsJson =
-    url.searchParams.get("_data") === "1" ||
-    (request.headers.get("accept") ?? "").includes("application/json");
+  const wantsJson = url.searchParams.get("_data") === "1";
   if (wantsJson) {
     return new Response(JSON.stringify(payload), {
       status: error.status,

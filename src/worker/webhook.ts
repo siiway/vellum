@@ -4,6 +4,7 @@
 import type { Env } from "./env";
 import { invalidate } from "./cache";
 import { invalidateForRepo } from "./translate";
+import { docsRootPrefix } from "./sources";
 import config from "../../vellum.config.json";
 import { expandLocalesFromTranslate } from "../shared/types";
 import type { VellumConfig } from "../shared/types";
@@ -64,12 +65,14 @@ export async function handleWebhook(
     );
   }
 
+  const rootPrefix = docsRootPrefix(repo.docsRoot);
   const keys: string[] = [];
   for (const p of touched) {
-    if (!p.startsWith(`${repo.docsRoot}/`) || !p.endsWith(".md")) continue;
+    if (!p.endsWith(".md")) continue;
+    if (rootPrefix && !p.startsWith(rootPrefix)) continue;
     keys.push(`raw:${repo.owner}/${repo.repo}@${branch}:${p}`);
     keys.push(`commit:${repo.owner}/${repo.repo}@${branch}:${p}`);
-    const pagePath = pageKeyFromFile(p, repo.docsRoot);
+    const pagePath = pageKeyFromFile(p, rootPrefix);
     if (pagePath) {
       for (const locale of SITE.site.locales) {
         keys.push(`html:${repo.slug}@${branch}:${locale.code}:${pagePath.path}`);
@@ -93,9 +96,12 @@ export async function handleWebhook(
 
 function pageKeyFromFile(
   absPath: string,
-  docsRoot: string,
+  rootPrefix: string,
 ): { locale: string; path: string } | null {
-  const rel = absPath.slice(`${docsRoot}/`.length).replace(/\.md$/, "");
+  const rel = (rootPrefix && absPath.startsWith(rootPrefix)
+    ? absPath.slice(rootPrefix.length)
+    : absPath
+  ).replace(/\.md$/, "");
   // Locale prefix detection by config
   for (const l of SITE.site.locales) {
     if (l.prefix && rel.startsWith(`${l.prefix}/`)) {
