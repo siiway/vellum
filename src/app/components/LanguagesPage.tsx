@@ -120,7 +120,10 @@ const useStyles = makeStyles({
     transition: "background-color 80ms ease, border-color 80ms ease",
     "&:hover": {
       backgroundColor: tokens.colorNeutralBackground2Hover,
-      borderColor: tokens.colorBrandStroke1,
+      borderTopColor: tokens.colorNeutralForeground1,
+      borderRightColor: tokens.colorNeutralForeground1,
+      borderBottomColor: tokens.colorNeutralForeground1,
+      borderLeftColor: tokens.colorNeutralForeground1,
     },
     "&:active": {
       backgroundColor: tokens.colorNeutralBackground2Pressed,
@@ -129,12 +132,18 @@ const useStyles = makeStyles({
   // Current locale gets a brand-tinted background and is non-interactive —
   // no pointer cursor, no hover colour shift.
   cardCurrent: {
-    borderColor: tokens.colorBrandStroke1,
+    borderTopColor: tokens.colorBrandStroke1,
+    borderRightColor: tokens.colorBrandStroke1,
+    borderBottomColor: tokens.colorBrandStroke1,
+    borderLeftColor: tokens.colorBrandStroke1,
     backgroundColor: tokens.colorBrandBackground2,
     cursor: "default",
     "&:hover": {
       backgroundColor: tokens.colorBrandBackground2,
-      borderColor: tokens.colorBrandStroke1,
+      borderTopColor: tokens.colorBrandStroke1,
+      borderRightColor: tokens.colorBrandStroke1,
+      borderBottomColor: tokens.colorBrandStroke1,
+      borderLeftColor: tokens.colorBrandStroke1,
     },
   },
   cardLabel: {

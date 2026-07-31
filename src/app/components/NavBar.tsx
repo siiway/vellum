@@ -31,18 +31,13 @@ const useStyles = makeStyles({
     position: "sticky",
     top: 0,
     zIndex: 100,
-    backdropFilter: "saturate(180%) blur(14px)",
-    WebkitBackdropFilter: "saturate(180%) blur(14px)",
-    backgroundColor: tokens.colorNeutralBackgroundAlpha,
-    boxShadow: `inset 0 -1px 0 ${tokens.colorNeutralStroke3}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
     display: "flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalM,
-    paddingInline: tokens.spacingHorizontalXL,
-    height: "60px",
-    // Tighten the inset + gap on small screens so the hamburger, brand,
-    // search button, and three action icons stop fighting each other for
-    // the last few pixels of width.
+    paddingInline: "20px",
+    height: "56px",
     "@media (max-width: 720px)": {
       gap: tokens.spacingHorizontalXS,
       paddingInline: tokens.spacingHorizontalM,
@@ -148,9 +143,12 @@ const useStyles = makeStyles({
     justifyContent: "flex-start",
     color: tokens.colorNeutralForeground3,
     fontWeight: tokens.fontWeightRegular,
-    backgroundColor: tokens.colorNeutralBackground2,
-    borderColor: tokens.colorNeutralStroke2,
-    "&:hover": { backgroundColor: tokens.colorNeutralBackground2Hover },
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderTopColor: tokens.colorNeutralStroke2,
+    borderRightColor: tokens.colorNeutralStroke2,
+    borderBottomColor: tokens.colorNeutralStroke2,
+    borderLeftColor: tokens.colorNeutralStroke2,
+    "&:hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
     // Below 540px the full search bar (label + outline + shortcut hint)
     // duplicates the visual weight of the other action icons. Hide it and
     // let `searchIconBtn` take over with the same look as AskAI/locale/theme.

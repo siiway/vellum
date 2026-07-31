@@ -6,15 +6,14 @@ import { useVellum } from "../context";
 
 const useStyles = makeStyles({
   root: {
-    paddingBlock: tokens.spacingVerticalL,
-    paddingInline: tokens.spacingHorizontalM,
+    paddingBlock: "12px",
+    paddingInline: "10px",
     overflowY: "auto",
     height: "calc(100vh - 56px)",
     position: "sticky",
     top: "56px",
+    borderRight: `2px solid ${tokens.colorNeutralStroke1}`,
     "@media (max-width: 960px)": { display: "none" },
-    // Subtle right divider via box-shadow so it doesn't add to grid metrics.
-    boxShadow: `inset -1px 0 0 ${tokens.colorNeutralStroke3}`,
   },
   // `mobile` variant: rendered inside a Drawer instead of as a sticky aside.
   // Drops the height clamp, sticky positioning, divider, and the "hide on
@@ -25,7 +24,7 @@ const useStyles = makeStyles({
     overflowY: "auto",
   },
   group: {
-    marginBottom: tokens.spacingVerticalL,
+    marginBottom: "16px",
   },
   groupHeader: {
     display: "block",
@@ -43,10 +42,11 @@ const useStyles = makeStyles({
     paddingBlock: "5px",
     color: tokens.colorNeutralForeground2,
     textDecoration: "none",
-    borderRadius: tokens.borderRadiusMedium,
+    borderRadius: "6px",
     fontSize: tokens.fontSizeBase300,
     lineHeight: tokens.lineHeightBase300,
     transition: "background-color 80ms ease-out, color 80ms ease-out",
+    border: "1px solid transparent",
     "&:hover": {
       backgroundColor: tokens.colorSubtleBackgroundHover,
       color: tokens.colorNeutralForeground1,

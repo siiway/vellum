@@ -71,7 +71,7 @@ import { createElement } from "react";
 
 const useStyles = makeStyles({
   root: {
-    maxWidth: "780px",
+    maxWidth: "800px",
     marginInline: "auto",
     color: tokens.colorNeutralForeground1,
     "& :first-child": { marginTop: 0 },
@@ -124,7 +124,7 @@ const useStyles = makeStyles({
   heading: {
     position: "relative",
     "&:hover .vellum-anchor-mark": { opacity: 1 },
-    scrollMarginTop: "72px",
+    scrollMarginTop: "68px",
   },
   inlineCode: {
     fontFamily: tokens.fontFamilyMonospace,
@@ -165,9 +165,11 @@ const useStyles = makeStyles({
     marginBlock: tokens.spacingVerticalL,
     overflow: "hidden",
     padding: 0,
-    borderRadius: tokens.borderRadiusLarge,
-    borderColor: "var(--vellum-code-border)",
-    boxShadow: "none",
+    borderRadius: "10px",
+    borderTopColor: "var(--vellum-code-border)",
+    borderRightColor: "var(--vellum-code-border)",
+    borderBottomColor: "var(--vellum-code-border)",
+    borderLeftColor: "var(--vellum-code-border)",
     backgroundColor: "var(--vellum-code-bg)",
     position: "relative",
   },

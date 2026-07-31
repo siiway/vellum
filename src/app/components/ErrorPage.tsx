@@ -23,20 +23,19 @@ import type { ErrorState } from "../../shared/types";
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 60px)",
+    minHeight: "calc(100vh - 56px)",
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr)",
     placeItems: "center",
     paddingInline: tokens.spacingHorizontalXXL,
     paddingBlock: tokens.spacingVerticalXXXL,
-    backgroundImage: `radial-gradient(1200px 400px at 50% -10%, ${tokens.colorBrandBackground2}, transparent)`,
   },
   card: {
     width: "100%",
     maxWidth: "640px",
     padding: tokens.spacingHorizontalXXL,
-    borderRadius: tokens.borderRadiusXLarge,
-    boxShadow: tokens.shadow16,
+    borderRadius: "14px",
+    border: `2px solid ${tokens.colorNeutralStroke1}`,
   },
   status: {
     fontSize: "104px",

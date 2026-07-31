@@ -416,7 +416,6 @@ const useStyles = makeStyles({
   },
   stopBtn: {
     borderRadius: tokens.borderRadiusCircular,
-    boxShadow: tokens.shadow4,
   },
   // Provider-attempt FluentUI Field + ProgressBar lives next to the Stop
   // button while a failover is in progress. The bar advances through
