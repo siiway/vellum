@@ -102,6 +102,9 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,
 scrollbar-width:thin;scrollbar-color:rgba(0,0,0,0.12) transparent;
 html[data-theme="dark"]{scrollbar-color:rgba(255,255,255,0.12) transparent;}
 
+/* Fluent Badge: never wrap CJK text or shrink when squeezed by a flex container. */
+.fui-Badge{white-space:nowrap;flex-shrink:0;}
+
 /* Code surface tokens. */
 :root{--vellum-code-bg:#f6f8fa;--vellum-code-border:#d0d7de;--vellum-code-fg-muted:#656d76;}
 html[data-theme="dark"]{--vellum-code-bg:#0d1117;--vellum-code-border:#30363d;--vellum-code-fg-muted:#8b949e;}

@@ -50,7 +50,7 @@ const LIGHT = {
   colorNeutralBackground3Hover: "#ebebeb",
   colorNeutralBackground3Pressed: "#e0e0e0",
   colorNeutralBackground3Selected: "#e8e8e8",
-  colorNeutralStroke1: "#000000",
+  colorNeutralStroke1: "#c0c0c0",
   colorNeutralStroke2: "#d0d0d0",
   colorNeutralStroke3: "#e0e0e0",
   colorSubtleBackgroundHover: "#f5f5f5",
