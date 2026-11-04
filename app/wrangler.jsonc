@@ -1,0 +1,94 @@
+{
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "vellum",
+	"main": "src/worker/index.ts",
+	"compatibility_date": "2025-02-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "./dist/client",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		// "VELLUM_GITHUB_TOKEN": "",
+		// "VELLUM_WEBHOOK_SECRET": "",
+		"VELLUM_CACHE_TTL_SECONDS": "300",
+		"VELLUM_HTML_TTL_SECONDS": "60"
+		// AI Summary credentials: VELLUM_AI_API_KEY, VELLUM_AI_BASE_URL, and
+		// VELLUM_TURNSTILE_SECRET are intentionally NOT listed here. Configure
+		// them via `wrangler secret put` so they don't leak into the public
+		// repo. The Workers AI binding below is only consulted when the
+		// configured provider is "workers-ai".
+	},
+	// Workers AI binding. Safe to leave defined even when the configured AI
+	// Summary provider is openai-compatible / anthropic; the worker only
+	// references env.AI when provider === "workers-ai". Comment the block out
+	// if your account doesn't have Workers AI enabled.
+	// "ai": {
+	//     "binding": "AI"
+	// },
+	"routes": [
+		{
+			"pattern": "docs.siiway.org",
+			"custom_domain": true
+		},
+		{
+			"pattern": "vellum.siiway.org",
+			"custom_domain": true
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "VELLUM_CACHE",
+			"id": "8999733736ff415c844f1c8fc00c3042"
+		}
+	],
+	// D1 database for machine-translated copies of pages, sidebars, repo nav,
+	// frontmatter, UI strings, and per-repo config text. Created with:
+	//   wrangler d1 create vellum-translations
+	// Run migrations from ./src/worker/db/migrations with `wrangler d1 migrations apply
+	// vellum-translations --remote`. The binding is optional at runtime —
+	// when missing, the translation layer no-ops and locales fall back to
+	// the default-locale source files unchanged.
+	"d1_databases": [
+		{
+			"binding": "VELLUM_TRANSLATION_DB",
+			"database_name": "vellum-translations",
+			"database_id": "5b7dff17-ffa9-4b24-8f39-58cdfb7d29f2",
+			"migrations_dir": "src/worker/db/migrations"
+		}
+	],
+	// Cron trigger for the translation refresh job. Wakes hourly; each tick
+	// pulls rows from the translations table whose age exceeds
+	// site.translate.refreshDays and re-runs the provider on a small batch.
+	// Capping the per-tick batch keeps a single invocation well inside Worker
+	// CPU limits even when the table holds tens of thousands of rows.
+	"triggers": {
+		"crons": [
+			"0 * * * *"
+		]
+	},
+	// Preview environment: deploys to vellum.siiway.workers.dev with a
+	// separate D1 database so preview translations don't pollute production.
+	// Deploy with: wrangler deploy --env preview
+	// Apply migrations: wrangler d1 migrations apply vellum-translations-preview --remote --env preview
+	"env": {
+		"preview": {
+			"workers_dev": true,
+			"routes": [],
+			"d1_databases": [
+				{
+					"binding": "VELLUM_TRANSLATION_DB",
+					"database_name": "vellum-translations-preview",
+					"database_id": "6625ef3e-a073-43dc-9d0e-69297ed2b756",
+					"migrations_dir": "src/worker/db/migrations"
+				}
+			]
+		}
+	}
+}
