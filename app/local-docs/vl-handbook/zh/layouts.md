@@ -26,7 +26,10 @@ description: Optional tagline shown under the H1.
 - 表格允许横向滚动
 - `:::` 与 GFM 提示框
 
-侧边栏来自文档根的 `vellum.json#groups`，或回退到目录列表。
+侧边栏来自文档根的 `vellum.json#groups`，其次是 VitePress 配置
+（`.vitepress/config.ts`，按当前语言取值）里的 `themeConfig.sidebar`，
+最后回退到目录列表。VitePress 配置不会被执行，而是静态读取：会跟进字面量、
+`const` 和同一文件里声明的辅助函数，但不会跟进从其他文件导入的内容。
 大纲由当前页面的标题层级生成。
 
 ## `home` —— VitePress 风格 hero

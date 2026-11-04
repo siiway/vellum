@@ -24,6 +24,7 @@
     "clean": "rm -rf dist .wrangler/tmp"
   },
   "dependencies": {
+    "@babel/parser": "^8.1.0",
     "@fluentui/react-components": "^9.73.8",
     "@fluentui/react-icons": "^2.0.327",
     "@shikijs/transformers": "^4.1.0",
@@ -46,6 +47,7 @@
     "vue3-sfc-loader": "^0.9.5"
   },
   "devDependencies": {
+    "@babel/types": "^8.1.0",
     "@cloudflare/workers-types": "^4.20260521.1",
     "@eslint/js": "^10.0.1",
     "@j178/prek": "0.5.9",

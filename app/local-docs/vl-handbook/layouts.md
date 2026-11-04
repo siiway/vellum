@@ -28,8 +28,12 @@ The article column maxes at 780px and has the standard prose styling:
 - Tables wrapped for horizontal overflow
 - Callouts via `:::` and GFM alerts
 
-The sidebar comes from `vellum.json#groups` at the docs root, or falls back
-to the directory listing. The outline is generated from the page's headings.
+The sidebar comes from `vellum.json#groups` at the docs root, then from
+`themeConfig.sidebar` in a VitePress config (`.vitepress/config.ts`, scoped to
+the current locale), and falls back to the directory listing. The VitePress
+config is read without running it: literals, `const`s and helper functions
+declared in the same file are followed, but imports from other files are not.
+The outline is generated from the page's headings.
 
 ## `home` — VitePress-style hero
 
