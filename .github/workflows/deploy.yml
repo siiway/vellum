@@ -1,0 +1,77 @@
+name: Deploy
+
+# Builds and deploys the production `vellum` Worker (docs.siiway.org,
+# vellum.siiway.org). If the repository is also connected to Cloudflare
+# Workers Builds, disconnect it under the Worker's Settings -> Builds in the
+# dashboard, or every push to main deploys twice.
+#
+# Triggers:
+#   * push to `main`                 -> deploy production
+#   * manual run (workflow_dispatch) -> redeploy production from main
+#
+# The prek hooks from prek.toml (file checks, prettier, eslint, typecheck,
+# build) run first, so a failure stops the deploy before anything reaches
+# production. Pending D1 migrations are applied before publishing.
+#
+# Requires CLOUDFLARE_API_TOKEN (repository or `production` Environment secret)
+# scoped to the SiiWay account with: Workers Scripts:Edit, D1:Edit, Workers KV
+# Storage:Edit, plus Workers Routes:Edit and Zone:Read on the zone, because
+# production is attached to custom domains.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never cancel a deploy mid-run (it may be between migrating and publishing).
+# A newer run waits for the current one instead.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # A manual run started from another branch must not ship that branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Gate point: add required reviewers or an environment-scoped token to the
+    # `production` Environment to control deploys.
+    environment:
+      name: production
+      url: https://docs.siiway.org
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Commit hooks (prettier, eslint, file checks)
+        run: bunx prek run --all-files --show-diff-on-failure --color=always
+
+      - name: Push hooks (typecheck, build)
+        run: bunx prek run --all-files --hook-stage pre-push --color=always
+
+      - name: Apply D1 migrations
+        run: bunx wrangler d1 migrations apply vellum-translations --remote
+
+      - name: Deploy
+        run: bunx wrangler deploy

@@ -98,9 +98,8 @@ function pageKeyFromFile(
   absPath: string,
   rootPrefix: string,
 ): { locale: string; path: string } | null {
-  const rel = (rootPrefix && absPath.startsWith(rootPrefix)
-    ? absPath.slice(rootPrefix.length)
-    : absPath
+  const rel = (
+    rootPrefix && absPath.startsWith(rootPrefix) ? absPath.slice(rootPrefix.length) : absPath
   ).replace(/\.md$/, "");
   // Locale prefix detection by config
   for (const l of SITE.site.locales) {

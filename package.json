@@ -5,6 +5,7 @@
   "type": "module",
   "description": "A Microsoft Open Publishing System-style multi-repo docs platform on Cloudflare Workers, with full VitePress markdown support and a FluentUI v9 shell.",
   "scripts": {
+    "prepare": "bun scripts/hooks.ts",
     "dev": "bun run build:client && wrangler dev",
     "build": "bun run build:client && bun run build:worker",
     "build:client": "vite build",
@@ -48,6 +49,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260521.1",
     "@eslint/js": "^10.0.1",
+    "@j178/prek": "0.5.9",
     "@types/markdown-it": "^14.1.2",
     "@types/markdown-it-container": "^2.0.11",
     "@types/markdown-it-emoji": "^3.0.1",
