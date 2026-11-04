@@ -12,7 +12,9 @@ src/
   app/       — React client (Layout, NavBar, Sidebar, Outline, SearchDialog, SearchPage, MarkdownAst renderer)
   shared/    — Types + i18n dictionary shared between worker and client
 local-docs/  — Bundled local-source docs (vellum handbook, homepage)
-scripts/     — gen-site-schema, drop-kv-cache, vite-local-docs plugin
+scripts/     — gen-site-schema, drop-kv-cache, vite-local-docs plugin, hooks (prek installer)
+migrations/  — D1 migrations for the translations database
+.github/     — PR checks, deploy and triage workflows
 ```
 
 **Data flow:** `Request → Worker → Source (GitHub raw or local ASSETS) → Markdown → AST → SSR HTML + JSON payload → Cache (per-edge + optional KV)`

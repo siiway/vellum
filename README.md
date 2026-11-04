@@ -121,7 +121,11 @@ src/
 local-docs/
   vl-handbook/    # This handbook (a local-source repo)
   homepage/       # The site landing page (also local-source)
-scripts/          # gen-site-schema, drop-kv-cache, vite-local-docs plugin
+scripts/          # gen-site-schema, drop-kv-cache, vite-local-docs plugin,
+                  #   git hook installer
+migrations/       # D1 migrations for the translations database
+.github/          # CI, deploy and triage workflows
+prek.toml         # git hooks (prettier, eslint, typecheck, build)
 ```
 
 ## Scripts
