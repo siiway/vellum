@@ -20,13 +20,26 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
 
 interface VellumContextValue {
   data: BootstrapPayload;
+  // Resolved scheme currently on screen.
   theme: "light" | "dark";
-  setTheme: (t: "light" | "dark") => void;
+  // What the reader picked: an explicit scheme, or "system" to follow the OS.
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   // Client-side navigation. Returns a promise that resolves once the page swap is complete.
   navigate: (href: string, opts?: { replace?: boolean; scrollTo?: string | null }) => Promise<void>;
   isNavigating: boolean;
   // Translate a UI string using the current route's locale.
   t: (key: MessageKey, fallback?: string) => string;
+}
+
+export type ThemeMode = "system" | "light" | "dark";
+
+const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+function osPrefersDark(): boolean {
+  return (
+    typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches
+  );
 }
 
 const Ctx = createContext<VellumContextValue | null>(null);
@@ -70,28 +83,48 @@ export function VellumProvider({
   const pendingScrollRef = useRef<PendingScroll>(null);
   const firstRenderRef = useRef(true);
 
-  const setTheme = useCallback((t: "light" | "dark") => {
+  // The explicit `vellum-theme` cookie is the reader's choice; without it the
+  // page follows the OS (the head pre-script keeps `vellum-theme-auto` in sync
+  // so SSR renders the matching tokens). Read on the client only: the mode is
+  // shown inside a popover that isn't part of the SSR markup, so there is no
+  // hydration mismatch.
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
+    if (typeof document === "undefined") return "system";
+    const m = document.cookie.match(/(?:^|; )vellum-theme=(light|dark)/);
+    return m ? (m[1] as "light" | "dark") : "system";
+  });
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
     // Apply DOM side effects FIRST so the html[data-theme] CSS rules (page bg,
     // Shiki palette) flip in the same frame as the click. setThemeState then
     // schedules the React re-render that swaps FluentProvider's theme; doing
     // the DOM updates before the React commit avoids a window where the user
     // sees a partial swap and clicks again thinking nothing happened.
+    const next: "light" | "dark" = mode === "system" ? (osPrefersDark() ? "dark" : "light") : mode;
     if (typeof document !== "undefined") {
-      document.documentElement.dataset.theme = t;
-      document.cookie = `vellum-theme=${t}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+      document.documentElement.dataset.theme = next;
+      if (mode === "system") {
+        document.cookie = "vellum-theme=; path=/; max-age=0; samesite=lax";
+        document.cookie = `vellum-theme-auto=${next}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
+      } else {
+        document.cookie = `vellum-theme=${mode}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
+      }
     }
-    setThemeState(t);
+    setThemeModeState(mode);
+    setThemeState(next);
   }, []);
 
-  // Track OS-level theme changes when the user hasn't explicitly chosen one
-  // (i.e. no vellum-theme cookie). The head pre-script picks the initial value;
-  // this listener keeps the page in sync if the OS toggles light/dark mid-session.
+  // Track OS-level theme changes while following the system (no vellum-theme
+  // cookie). The head pre-script picks the initial value; this listener keeps
+  // the page in sync if the OS toggles light/dark mid-session, and refreshes
+  // the auto cookie so the next SSR matches.
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => {
-      if (/(?:^|; )vellum-theme=/.test(document.cookie)) return;
+      if (/(?:^|; )vellum-theme=(light|dark)/.test(document.cookie)) return;
       const next = e.matches ? "dark" : "light";
+      document.cookie = `vellum-theme-auto=${next}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
       setThemeState(next);
       document.documentElement.dataset.theme = next;
     };
@@ -265,8 +298,8 @@ export function VellumProvider({
   );
 
   const value = useMemo<VellumContextValue>(
-    () => ({ data, theme, setTheme, navigate, isNavigating, t: tFn }),
-    [data, theme, setTheme, navigate, isNavigating, tFn],
+    () => ({ data, theme, themeMode, setThemeMode, navigate, isNavigating, t: tFn }),
+    [data, theme, themeMode, setThemeMode, navigate, isNavigating, tFn],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

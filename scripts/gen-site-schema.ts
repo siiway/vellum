@@ -69,7 +69,8 @@ const OVERRIDES: Record<string, OverrideTable> = {
       tagline: "Short subtitle shown on the landing page hero.",
       logo: "URL of the site logo (SVG recommended).",
       favicon: "URL of the favicon.",
-      themeColor: '<meta name="theme-color"> value, e.g. "#0078d4".',
+      themeColor:
+        'Accent colour (primary buttons, links, focus) and the <meta name="theme-color"> value, e.g. "#0078d4".',
       footer: "Footer text rendered below every page.",
       homepageRepo:
         "Slug of the repo whose root acts as the site's landing page. `/` redirects here, and the NavBar brand link points here with the current locale preserved.",

@@ -3,7 +3,7 @@
 // Triggered by the Layout component when the page frontmatter contains layout: home.
 
 import { Button, Card, Caption1, Image, tokens } from "@fluentui/react-components";
-import { ArrowRight24Regular, Open24Regular } from "@fluentui/react-icons";
+import { ArrowRight20Regular, Open20Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
@@ -31,72 +31,55 @@ interface Feature {
 }
 
 const useStyles = makeStyles({
+  // Flat on the canvas like the rest of the shell: no glow, no gradient
+  // text. Hierarchy comes from type size and the muted tagline.
   root: {
     position: "relative",
-    paddingBlock: tokens.spacingVerticalXXXL,
-    paddingInline: tokens.spacingHorizontalXXXL,
+    padding: "56px 40px 48px",
     maxWidth: "1200px",
     marginInline: "auto",
-    "@media (max-width: 720px)": {
-      paddingInline: tokens.spacingHorizontalL,
-      paddingBlock: tokens.spacingVerticalXXL,
-    },
+    boxSizing: "border-box",
+    "@media (max-width: 1024px)": { padding: "40px 24px" },
+    "@media (max-width: 768px)": { padding: "24px 16px 32px" },
   },
   hero: {
-    position: "relative",
-    zIndex: 1,
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) auto",
-    gap: tokens.spacingHorizontalXXXL,
+    gap: "48px",
     alignItems: "center",
-    paddingBlock: tokens.spacingVerticalXXL,
+    paddingBlock: "24px",
     "@media (max-width: 960px)": {
       gridTemplateColumns: "1fr",
-      paddingBlock: tokens.spacingVerticalL,
+      paddingBlock: "8px",
     },
   },
   heroTextCol: { minWidth: 0 },
   heroHeading: {
     display: "block",
     marginBlock: 0,
-    fontWeight: tokens.fontWeightBold,
+    fontWeight: tokens.fontWeightSemibold,
   },
   heroName: {
     display: "block",
-    fontSize: "clamp(44px, 6vw, 68px)",
-    fontWeight: tokens.fontWeightBold,
-    lineHeight: 1.2,
-    letterSpacing: "-0.04em",
-    overflow: "visible",
-    background: `linear-gradient(120deg, ${tokens.colorBrandForeground1} 0%, ${tokens.colorPaletteBerryForeground1} 100%)`,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
+    fontSize: "clamp(36px, 5vw, 52px)",
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: 1.15,
+    letterSpacing: "-0.025em",
+    color: tokens.colorNeutralForeground1,
     marginBlock: 0,
-    // Pad the title's own block-end by ~descender-height so the descender of
-    // "g" / "p" / "y" lives INSIDE the heroName's content box. Without this,
-    // descenders extend below the line box and a small marginTop on heroText
-    // still gets eaten. With it, heroText.marginTop measures from below the
-    // descender, so even marginTop:0 leaves a clean baseline.
-    paddingBlockEnd: "0.2em",
     "& code": {
-      WebkitTextFillColor: tokens.colorNeutralForeground1,
-      background: "none",
       fontFamily: tokens.fontFamilyMonospace,
       fontSize: "0.8em",
     },
   },
   heroText: {
     display: "block",
-    fontSize: "clamp(28px, 3.5vw, 40px)",
+    fontSize: "clamp(24px, 3vw, 32px)",
     fontWeight: tokens.fontWeightSemibold,
     lineHeight: 1.25,
-    letterSpacing: "-0.02em",
-    color: tokens.colorNeutralForeground1,
-    // 0.25em ≈ 7–10px depending on viewport. Combined with heroName's
-    // paddingBlockEnd (0.2em ≈ 9–14px at title size), the total visible gap
-    // settles around 16–24px — proportional to the title, not the subtitle.
-    marginTop: "0.25em",
+    letterSpacing: "-0.015em",
+    color: tokens.colorNeutralForeground3,
+    marginTop: "8px",
     "& code": {
       fontFamily: tokens.fontFamilyMonospace,
       fontSize: "0.9em",
@@ -104,18 +87,17 @@ const useStyles = makeStyles({
       paddingInline: "6px",
       paddingBlock: "2px",
       borderRadius: tokens.borderRadiusSmall,
-      border: `1px solid ${tokens.colorNeutralStroke3}`,
-      WebkitBackgroundClip: "border-box",
-      WebkitTextFillColor: tokens.colorNeutralForeground1,
-      backgroundClip: "border-box",
+      border: `1px solid ${tokens.colorNeutralStroke2}`,
+      color: tokens.colorNeutralForeground1,
     },
   },
   heroTagline: {
     display: "block",
-    color: tokens.colorNeutralForeground2,
-    marginTop: tokens.spacingVerticalL,
-    fontSize: tokens.fontSizeBase500,
-    lineHeight: tokens.lineHeightBase500,
+    color: tokens.colorNeutralForeground3,
+    marginTop: "16px",
+    marginBottom: 0,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
     maxWidth: "620px",
     "& code": {
       fontFamily: tokens.fontFamilyMonospace,
@@ -135,76 +117,82 @@ const useStyles = makeStyles({
   heroActions: {
     display: "flex",
     flexWrap: "wrap",
-    gap: tokens.spacingHorizontalM,
-    marginTop: tokens.spacingVerticalXXL,
+    gap: "8px",
+    marginTop: "28px",
   },
   heroImageWrap: {
     position: "relative",
-    width: "320px",
-    height: "320px",
+    width: "280px",
+    height: "280px",
     "@media (max-width: 960px)": { display: "none" },
   },
   heroImage: {
-    width: "320px",
-    height: "320px",
+    width: "280px",
+    height: "280px",
     objectFit: "contain",
   },
   featuresSection: {
-    position: "relative",
-    zIndex: 1,
-    marginTop: tokens.spacingVerticalXXXL,
+    marginTop: "48px",
   },
+  // Section label in the Prism nav-section voice: small, muted, sentence case.
   featuresHeader: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    marginBottom: tokens.spacingVerticalL,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    textTransform: "uppercase",
+    gap: "12px",
+    margin: "0 0 12px",
+    fontSize: "12px",
+    fontWeight: tokens.fontWeightRegular,
     color: tokens.colorNeutralForeground3,
-    letterSpacing: "0.08em",
   },
   featuresHeaderRule: {
     flex: 1,
     height: "1px",
-    backgroundColor: tokens.colorNeutralStroke3,
+    backgroundColor: tokens.colorNeutralStroke2,
   },
   features: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-    gap: tokens.spacingHorizontalL,
+    gap: "12px",
   },
+  // Bordered card on the canvas; no shadow.
   feature: {
     position: "relative",
-    padding: tokens.spacingHorizontalL,
+    padding: "20px",
     height: "100%",
     display: "flex",
     flexDirection: "column",
-    gap: tokens.spacingVerticalS,
+    gap: "8px",
+    boxShadow: "none",
+    borderRadius: tokens.borderRadiusLarge,
+    background: tokens.colorNeutralBackground1,
+    "&::after": {
+      borderTopColor: tokens.colorNeutralStroke2,
+      borderRightColor: tokens.colorNeutralStroke2,
+      borderBottomColor: tokens.colorNeutralStroke2,
+      borderLeftColor: tokens.colorNeutralStroke2,
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
+  // Bordered tile, as in Prism's empty states, rather than a brand-tinted chip.
   featureIconChip: {
-    width: "44px",
-    height: "44px",
+    width: "40px",
+    height: "40px",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: "10px",
-    backgroundColor: tokens.colorNeutralBackground3,
-    color: tokens.colorNeutralForeground1,
-    fontSize: "24px",
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground3,
+    fontSize: "20px",
     lineHeight: 1,
-    marginBottom: tokens.spacingVerticalXS,
-    borderTopColor: tokens.colorNeutralStroke2,
-    borderRightColor: tokens.colorNeutralStroke2,
-    borderBottomColor: tokens.colorNeutralStroke2,
-    borderLeftColor: tokens.colorNeutralStroke2,
+    marginBottom: "4px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   featureTitle: {
     display: "block",
     margin: 0,
-    fontSize: tokens.fontSizeBase500,
-    lineHeight: tokens.lineHeightBase500,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground1,
     "& code": {
@@ -222,7 +210,7 @@ const useStyles = makeStyles({
     display: "block",
     margin: 0,
     fontSize: tokens.fontSizeBase300,
-    color: tokens.colorNeutralForeground2,
+    color: tokens.colorNeutralForeground3,
     lineHeight: tokens.lineHeightBase300,
     flex: 1,
     "& code": {
@@ -251,26 +239,15 @@ const useStyles = makeStyles({
     paddingInline: 0,
   },
   body: {
-    position: "relative",
-    zIndex: 1,
-    marginTop: tokens.spacingVerticalXXXL,
-    paddingTop: tokens.spacingVerticalXXL,
-    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
+    marginTop: "48px",
+    paddingTop: "32px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   siteFooter: {
-    position: "relative",
-    zIndex: 1,
-    marginTop: tokens.spacingVerticalXXXL,
-    paddingTop: tokens.spacingVerticalXL,
+    marginTop: "48px",
+    paddingTop: "16px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     textAlign: "center",
-  },
-  siteFooterRule: {
-    width: "60px",
-    height: "2px",
-    backgroundColor: tokens.colorNeutralStroke3,
-    borderRadius: tokens.borderRadiusCircular,
-    marginInline: "auto",
-    marginBottom: tokens.spacingVerticalL,
   },
   siteFooterText: {
     margin: 0,
@@ -326,8 +303,7 @@ export function HomeLayout() {
                           ? "outline"
                           : "secondary"
                     }
-                    size="large"
-                    icon={isExternal ? <Open24Regular /> : <ArrowRight24Regular />}
+                    icon={isExternal ? <Open20Regular /> : <ArrowRight20Regular />}
                     iconPosition="after"
                     {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                   >
@@ -383,7 +359,7 @@ export function HomeLayout() {
                     href={feat.link}
                     appearance="subtle"
                     size="small"
-                    icon={<ArrowRight24Regular />}
+                    icon={<ArrowRight20Regular />}
                     iconPosition="after"
                     className={styles.featureLinkBtn}
                   >
@@ -404,7 +380,6 @@ export function HomeLayout() {
 
       {data.config.site.footer && (
         <footer className={styles.siteFooter}>
-          <div className={styles.siteFooterRule} aria-hidden="true" />
           <p className={styles.siteFooterText}>{data.config.site.footer}</p>
         </footer>
       )}

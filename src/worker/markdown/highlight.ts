@@ -343,7 +343,11 @@ function resolveLang(raw: string | null): BundledLanguage {
   return "text" as BundledLanguage;
 }
 
-export async function highlightCode(code: string, info: string): Promise<string> {
+export async function highlightCode(rawCode: string, info: string): Promise<string> {
+  // Fence content always ends with a newline; Shiki turns it into a trailing
+  // empty `.line`, which shows up as an extra blank row at the bottom of
+  // every code block.
+  const code = rawCode.replace(/\r?\n$/, "");
   const meta = parseCodeInfo(info);
   const lang = resolveLang(meta.lang);
 

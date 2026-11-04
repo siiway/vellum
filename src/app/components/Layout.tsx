@@ -1,14 +1,14 @@
 import {
-  Body1,
   Button,
-  Display,
   Drawer,
   DrawerBody,
   DrawerHeader,
   DrawerHeaderTitle,
+  Text,
+  Title1,
   tokens,
 } from "@fluentui/react-components";
-import { Dismiss24Regular } from "@fluentui/react-icons";
+import { Dismiss20Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useVellum } from "../context";
@@ -46,46 +46,52 @@ const SearchDialog = lazy(() =>
 const useStyles = makeStyles({
   shell: {
     minHeight: "100vh",
-    backgroundColor: tokens.colorNeutralBackground1,
+    background: "var(--vellum-canvas)",
     color: tokens.colorNeutralForeground1,
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "minmax(260px, 300px) minmax(0, 1fr) minmax(220px, 260px)",
+    gridTemplateColumns: "260px minmax(0, 1fr) 240px",
     "@media (max-width: 1200px)": {
-      gridTemplateColumns: "minmax(260px, 300px) minmax(0, 1fr)",
+      gridTemplateColumns: "260px minmax(0, 1fr)",
     },
     "@media (max-width: 960px)": { gridTemplateColumns: "1fr" },
   },
+  // Same rhythm as Prism's content column: 32/40 on desktop, tighter below.
   main: {
-    paddingInline: "24px",
-    paddingBlock: tokens.spacingVerticalXXL,
+    padding: "32px 40px 48px",
     minWidth: 0,
     maxWidth: "100%",
-    "@media (max-width: 720px)": {
-      paddingInline: "12px",
-      paddingBlock: tokens.spacingVerticalL,
-    },
+    "@media (max-width: 1024px)": { padding: "24px" },
+    "@media (max-width: 768px)": { padding: "16px 16px 32px" },
   },
   article: {
-    maxWidth: "800px",
+    maxWidth: "760px",
     marginInline: "auto",
   },
+  // Page header: title + muted subtitle, like Prism's PageHeader.
   hero: {
-    marginBottom: tokens.spacingVerticalXXL,
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    marginBottom: "28px",
   },
   title: {
     display: "block",
-    letterSpacing: "-0.025em",
-    lineHeight: 1.1,
+    letterSpacing: "-0.015em",
     marginBlock: 0,
   },
   description: {
     display: "block",
-    color: tokens.colorNeutralForeground2,
-    marginTop: tokens.spacingVerticalM,
-    fontSize: tokens.fontSizeBase500,
-    lineHeight: tokens.lineHeightBase500,
+    margin: 0,
+    color: tokens.colorNeutralForeground3,
+  },
+  drawer: {
+    background: "var(--vellum-canvas)",
+  },
+  drawerTitle: {
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightSemibold,
   },
 });
 
@@ -172,13 +178,13 @@ export function Layout() {
             <article className={styles.article}>
               {page.meta.title && (
                 <header className={styles.hero}>
-                  <Display as="h1" className={styles.title}>
+                  <Title1 as="h1" className={styles.title}>
                     {page.meta.title}
-                  </Display>
+                  </Title1>
                   {page.meta.description && (
-                    <Body1 as="p" className={styles.description}>
+                    <Text as="p" size={400} className={styles.description}>
                       {page.meta.description}
-                    </Body1>
+                    </Text>
                   )}
                 </header>
               )}
@@ -207,19 +213,23 @@ export function Layout() {
           open={sidebarOpen}
           onOpenChange={(_, d) => setSidebarOpen(d.open)}
           aria-label={t("ui.nav.sidebar")}
+          className={styles.drawer}
+          size="small"
         >
           <DrawerHeader>
             <DrawerHeaderTitle
+              className={styles.drawerTitle}
               action={
                 <Button
                   appearance="subtle"
+                  size="small"
                   aria-label={t("ui.search.close")}
-                  icon={<Dismiss24Regular />}
+                  icon={<Dismiss20Regular />}
                   onClick={() => setSidebarOpen(false)}
                 />
               }
             >
-              {t("ui.nav.sidebar")}
+              {data.route.repo?.displayName ?? config.site.title}
             </DrawerHeaderTitle>
           </DrawerHeader>
           <DrawerBody>

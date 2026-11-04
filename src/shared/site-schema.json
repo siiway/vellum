@@ -53,7 +53,7 @@
         },
         "themeColor": {
           "type": "string",
-          "description": "<meta name=\"theme-color\"> value, e.g. \"#0078d4\".",
+          "description": "Accent colour (primary buttons, links, focus) and the <meta name=\"theme-color\"> value, e.g. \"#0078d4\".",
           "pattern": "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
         },
         "footer": {
@@ -356,6 +356,9 @@
           "description": "Per-tick row budget for the scheduled refresher. Defaults to 50. Caps CPU + outbound-fetch time per cron invocation.",
           "minimum": 1,
           "maximum": 500
+        },
+        "turnstileSiteKey": {
+          "type": "string"
         }
       },
       "required": [

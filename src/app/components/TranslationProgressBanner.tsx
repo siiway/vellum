@@ -39,8 +39,10 @@ const useStyles = makeStyles({
     cursor: "pointer",
     paddingBlock: tokens.spacingVerticalS,
     paddingInline: tokens.spacingHorizontalM,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
+    // Floating surface: one soft shadow plus a hairline, like Prism's popovers.
+    boxShadow: tokens.shadow16,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusLarge,
   },
   body: {
     display: "flex",

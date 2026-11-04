@@ -1,10 +1,10 @@
 import { Button, Divider, Link, mergeClasses, tokens, Text } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import {
-  Edit24Regular,
-  ChevronLeft24Regular,
-  ChevronRight24Regular,
-  DocumentPdf24Regular,
+  Edit16Regular,
+  ChevronLeft16Regular,
+  ChevronRight16Regular,
+  DocumentPdf16Regular,
 } from "@fluentui/react-icons";
 import type { PageMeta } from "../../shared/types";
 import { useVellum } from "../context";
@@ -31,33 +31,38 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalL,
     "@media (max-width: 720px)": { gridTemplateColumns: "1fr" },
   },
+  // Bordered card on the canvas; hover darkens the hairline and lifts the
+  // fill by a shade, nothing more.
   card: {
-    padding: "16px",
-    borderRadius: "10px",
+    padding: "14px 16px",
+    borderRadius: tokens.borderRadiusLarge,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground1,
     textDecoration: "none",
     color: tokens.colorNeutralForeground1,
     transition: "border-color 80ms ease, background-color 80ms ease",
     "&:hover": {
-      borderTopColor: tokens.colorNeutralForeground1,
-      borderRightColor: tokens.colorNeutralForeground1,
-      borderBottomColor: tokens.colorNeutralForeground1,
-      borderLeftColor: tokens.colorNeutralForeground1,
-      backgroundColor: tokens.colorSubtleBackgroundHover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      color: tokens.colorNeutralForeground1,
+      textDecoration: "none",
     },
   },
   label: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalXS,
-    fontSize: tokens.fontSizeBase200,
+    gap: "4px",
+    fontSize: "12px",
     color: tokens.colorNeutralForeground3,
   },
   title: {
     display: "block",
-    fontSize: tokens.fontSizeBase500,
+    fontSize: tokens.fontSizeBase300,
     fontWeight: tokens.fontWeightSemibold,
-    marginTop: tokens.spacingVerticalXS,
+    marginTop: "4px",
   },
   end: { textAlign: "right" },
 });
@@ -85,7 +90,7 @@ export function PageFooter({ meta, siteFooter }: { meta: PageMeta; siteFooter?: 
           <Button
             appearance="subtle"
             size="small"
-            icon={<DocumentPdf24Regular />}
+            icon={<DocumentPdf16Regular />}
             onClick={() => {
               // Browser print dialog -> "Save as PDF". The @media print rules in
               // ssr.tsx hide the chrome so the saved PDF is just the article.
@@ -99,7 +104,7 @@ export function PageFooter({ meta, siteFooter }: { meta: PageMeta; siteFooter?: 
             <Button
               appearance="subtle"
               size="small"
-              icon={<Edit24Regular />}
+              icon={<Edit16Regular />}
               as="a"
               href={meta.editUrl}
             >
@@ -113,7 +118,7 @@ export function PageFooter({ meta, siteFooter }: { meta: PageMeta; siteFooter?: 
           {meta.prev ? (
             <Link className={styles.card} href={meta.prev.link} appearance="subtle">
               <div className={styles.label}>
-                <ChevronLeft24Regular /> {t("ui.prev")}
+                <ChevronLeft16Regular /> {t("ui.prev")}
               </div>
               <Text className={styles.title}>{meta.prev.text}</Text>
             </Link>
@@ -127,7 +132,7 @@ export function PageFooter({ meta, siteFooter }: { meta: PageMeta; siteFooter?: 
               appearance="subtle"
             >
               <div className={`${styles.label}`} style={{ justifyContent: "flex-end" }}>
-                {t("ui.next")} <ChevronRight24Regular />
+                {t("ui.next")} <ChevronRight16Regular />
               </div>
               <Text className={styles.title}>{meta.next.text}</Text>
             </Link>

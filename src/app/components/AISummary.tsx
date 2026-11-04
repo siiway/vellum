@@ -53,32 +53,32 @@ const useStyles = makeStyles({
   // reads as "AI surface" without competing with the H1.
   pill: {
     borderRadius: tokens.borderRadiusCircular,
-    borderTopColor: tokens.colorBrandStroke1,
-    borderRightColor: tokens.colorBrandStroke1,
-    borderBottomColor: tokens.colorBrandStroke1,
-    borderLeftColor: tokens.colorBrandStroke1,
+    borderColor: tokens.colorBrandStroke1,
     color: tokens.colorBrandForeground1,
     "&:hover": {
       backgroundColor: tokens.colorBrandBackground2,
-      borderTopColor: tokens.colorBrandStroke1,
-      borderRightColor: tokens.colorBrandStroke1,
-      borderBottomColor: tokens.colorBrandStroke1,
-      borderLeftColor: tokens.colorBrandStroke1,
+      borderColor: tokens.colorBrandStroke1,
       color: tokens.colorBrandForeground1,
     },
     "&:active, &:hover:active": {
       backgroundColor: tokens.colorBrandBackground2Hover,
-      borderTopColor: tokens.colorBrandStroke1,
-      borderRightColor: tokens.colorBrandStroke1,
-      borderBottomColor: tokens.colorBrandStroke1,
-      borderLeftColor: tokens.colorBrandStroke1,
+      borderColor: tokens.colorBrandStroke1,
       color: tokens.colorBrandForeground1,
     },
   },
+  // Hairline card on the canvas, no shadow. Fluent Card draws its border on
+  // ::after; soften it to the page's hairline stroke.
   card: {
     width: "100%",
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: "10px",
+    boxShadow: "none",
+    borderRadius: tokens.borderRadiusLarge,
+    "&::after": {
+      borderTopColor: tokens.colorNeutralStroke2,
+      borderRightColor: tokens.colorNeutralStroke2,
+      borderBottomColor: tokens.colorNeutralStroke2,
+      borderLeftColor: tokens.colorNeutralStroke2,
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   headerTitle: {
     display: "inline-flex",

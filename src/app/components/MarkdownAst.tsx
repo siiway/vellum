@@ -71,7 +71,7 @@ import { createElement } from "react";
 
 const useStyles = makeStyles({
   root: {
-    maxWidth: "800px",
+    maxWidth: "760px",
     marginInline: "auto",
     color: tokens.colorNeutralForeground1,
     "& :first-child": { marginTop: 0 },
@@ -91,7 +91,7 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalXXXL,
     marginBottom: tokens.spacingVerticalL,
     paddingTop: tokens.spacingVerticalL,
-    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     letterSpacing: "-0.01em",
   },
   h3: {
@@ -143,6 +143,11 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
     lineHeight: tokens.lineHeightBase400,
+    // Each item's content is a paragraph block; trim its outer margins so a
+    // tight list isn't spaced like a run of paragraphs. Paragraphs between
+    // blocks inside a loose item keep their spacing.
+    "& > li > :first-child, & > li > div > :first-child": { marginTop: 0 },
+    "& > li > :last-child, & > li > div > :last-child": { marginBottom: 0 },
   },
   taskItem: {
     listStyle: "none",
@@ -159,19 +164,34 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     backgroundColor: tokens.colorNeutralBackground2,
     borderRadius: tokens.borderRadiusMedium,
+    "& > :first-child": { marginTop: 0 },
+    "& > :last-child": { marginBottom: 0 },
   },
-  callout: { marginBlock: tokens.spacingVerticalL },
+  // The body's first/last paragraph margins otherwise add to the bar's own
+  // padding, leaving more space below the text than above it.
+  callout: {
+    marginBlock: tokens.spacingVerticalL,
+    "& .fui-MessageBarBody > :first-child": { marginTop: 0 },
+    "& .fui-MessageBarBody > :last-child": { marginBottom: 0 },
+  },
   codeCard: {
     marginBlock: tokens.spacingVerticalL,
     overflow: "hidden",
     padding: 0,
-    borderRadius: "10px",
-    borderTopColor: "var(--vellum-code-border)",
-    borderRightColor: "var(--vellum-code-border)",
-    borderBottomColor: "var(--vellum-code-border)",
-    borderLeftColor: "var(--vellum-code-border)",
+    // Fluent Card spaces its children with a 12px gap; header and body sit flush.
+    gap: 0,
+    borderRadius: tokens.borderRadiusLarge,
+    boxShadow: "none",
     backgroundColor: "var(--vellum-code-bg)",
     position: "relative",
+    // Fluent Card draws its border on ::after.
+    "&::after": {
+      borderTopColor: "var(--vellum-code-border)",
+      borderRightColor: "var(--vellum-code-border)",
+      borderBottomColor: "var(--vellum-code-border)",
+      borderLeftColor: "var(--vellum-code-border)",
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   codeHeader: {
     display: "flex",
@@ -272,7 +292,7 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke3}`,
   },
   tableWrap: {
-    // Article column is bounded by maxWidth:780px; wide tables would otherwise
+    // Article column is bounded by maxWidth:760px; wide tables would otherwise
     // push past it and break the grid. Confine overflow to the wrapper.
     marginBlock: tokens.spacingVerticalL,
     maxWidth: "100%",
@@ -293,12 +313,22 @@ const useStyles = makeStyles({
     marginBlock: tokens.spacingVerticalL,
     overflow: "hidden",
     padding: 0,
+    gap: 0,
     borderRadius: tokens.borderRadiusLarge,
+    boxShadow: "none",
+    backgroundColor: "var(--vellum-code-bg)",
+    "&::after": {
+      borderTopColor: "var(--vellum-code-border)",
+      borderRightColor: "var(--vellum-code-border)",
+      borderBottomColor: "var(--vellum-code-border)",
+      borderLeftColor: "var(--vellum-code-border)",
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   codeGroupTabs: {
     display: "flex",
-    backgroundColor: tokens.colorNeutralBackground3,
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: "var(--vellum-code-bg)",
+    borderBottom: `1px solid var(--vellum-code-border)`,
   },
   codeGroupTab: {
     background: "transparent",

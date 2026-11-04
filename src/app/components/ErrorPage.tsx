@@ -1,21 +1,13 @@
+// Full-page error, laid out like Prism's StatusPage: one bordered card on the
+// canvas with the status code, a title, a line of explanation and where to go
+// next.
+
+import { Button, Image, Link, Text, Title2, tokens } from "@fluentui/react-components";
 import {
-  Button,
-  Caption1,
-  Card,
-  CardHeader,
-  Display,
-  Image,
-  Link,
-  Text,
-  Title2,
-  Body1,
-  tokens,
-} from "@fluentui/react-components";
-import {
-  ChevronRight24Regular,
-  Home24Regular,
-  ArrowLeft24Regular,
-  DocumentSearch24Regular,
+  ChevronRight16Regular,
+  Home20Regular,
+  ArrowLeft20Regular,
+  Search20Regular,
 } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
@@ -23,75 +15,99 @@ import type { ErrorState } from "../../shared/types";
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 56px)",
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr)",
-    placeItems: "center",
-    paddingInline: tokens.spacingHorizontalXXL,
-    paddingBlock: tokens.spacingVerticalXXXL,
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "16px",
+    boxSizing: "border-box",
+    background: "var(--vellum-canvas)",
   },
   card: {
     width: "100%",
-    maxWidth: "640px",
-    padding: tokens.spacingHorizontalXXL,
-    borderRadius: "14px",
-    border: `2px solid ${tokens.colorNeutralStroke1}`,
+    maxWidth: "520px",
+    padding: "48px 40px",
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    background: tokens.colorNeutralBackground2,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "16px",
+    textAlign: "center",
+    boxSizing: "border-box",
+    "@media (max-width: 540px)": { padding: "32px 20px" },
   },
+  brand: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+  logo: { borderRadius: "6px" },
   status: {
-    fontSize: "104px",
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: "72px",
     lineHeight: 1,
-    fontWeight: tokens.fontWeightBold,
-    background: `linear-gradient(135deg, ${tokens.colorBrandForeground1}, ${tokens.colorPaletteBerryForeground1})`,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-    letterSpacing: "-0.04em",
-    marginBottom: tokens.spacingVerticalM,
+    fontWeight: tokens.fontWeightSemibold,
+    letterSpacing: "-2px",
+    color: tokens.colorBrandForeground1,
   },
-  title: {
-    marginBottom: tokens.spacingVerticalM,
-    display: "block",
-  },
+  title: { margin: 0 },
   message: {
-    color: tokens.colorNeutralForeground2,
-    marginBottom: tokens.spacingVerticalL,
-    display: "block",
+    color: tokens.colorNeutralForeground3,
   },
   hint: {
-    backgroundColor: tokens.colorNeutralBackground2,
+    alignSelf: "stretch",
+    textAlign: "left",
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusMedium,
-    padding: tokens.spacingHorizontalM,
+    padding: "10px 12px",
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground2,
-    marginBottom: tokens.spacingVerticalL,
     overflowX: "auto",
   },
   actions: {
     display: "flex",
     flexWrap: "wrap",
-    gap: tokens.spacingHorizontalS,
-    marginBottom: tokens.spacingVerticalL,
+    justifyContent: "center",
+    gap: "8px",
+    marginTop: "8px",
   },
   suggestions: {
+    alignSelf: "stretch",
     display: "flex",
     flexDirection: "column",
-    gap: tokens.spacingVerticalXS,
-    marginTop: tokens.spacingVerticalM,
+    gap: "1px",
+    paddingTop: "16px",
+    marginTop: "8px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    textAlign: "left",
+  },
+  suggestionsLabel: {
+    padding: "0 10px 6px",
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
   },
   suggestionRow: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    padding: tokens.spacingHorizontalS,
+    gap: "8px",
+    minHeight: "32px",
+    padding: "0 10px",
     borderRadius: tokens.borderRadiusMedium,
-    "&:hover": { backgroundColor: tokens.colorSubtleBackgroundHover },
-  },
-  brand: {
-    display: "flex",
-    alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    marginBottom: tokens.spacingVerticalL,
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground2,
+    textDecoration: "none",
+    "& svg": { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
+      textDecoration: "none",
+    },
   },
 });
 
@@ -102,59 +118,53 @@ export function ErrorPage({ error }: { error: ErrorState }) {
 
   return (
     <main className={styles.root}>
-      <Card className={styles.card}>
-        <CardHeader
-          image={site.logo ? <Image src={site.logo} alt="" width={32} height={32} /> : undefined}
-          header={<Caption1>{site.title}</Caption1>}
-          description={<Caption1>Edge-rendered docs</Caption1>}
-        />
+      <div className={styles.card}>
+        <div className={styles.brand}>
+          {site.logo && (
+            <Image src={site.logo} alt="" width={20} height={20} className={styles.logo} />
+          )}
+          <span>{site.title}</span>
+        </div>
 
-        <Display as="span" className={styles.status}>
+        <Text as="span" className={styles.status}>
           {error.status}
-        </Display>
+        </Text>
         <Title2 as="h1" className={styles.title}>
           {error.title}
         </Title2>
-        <Body1 className={styles.message}>{error.message}</Body1>
+        <Text className={styles.message}>{error.message}</Text>
 
         {error.hint && <div className={styles.hint}>{error.hint}</div>}
 
         <div className={styles.actions}>
-          <Button appearance="primary" icon={<Home24Regular />} as="a" href="/">
-            {t("ui.notFound.home")}
-          </Button>
-          <Button
-            appearance="outline"
-            icon={<ArrowLeft24Regular />}
-            onClick={() => window.history.back()}
-          >
+          <Button icon={<ArrowLeft20Regular />} onClick={() => window.history.back()}>
             {t("ui.notFound.back")}
           </Button>
           <Button
-            appearance="outline"
-            icon={<DocumentSearch24Regular />}
+            icon={<Search20Regular />}
             onClick={() =>
               window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))
             }
           >
             {t("ui.notFound.search")}
           </Button>
+          <Button appearance="primary" icon={<Home20Regular />} as="a" href="/">
+            {t("ui.notFound.home")}
+          </Button>
         </div>
 
         {error.suggestions && error.suggestions.length > 0 && (
-          <>
-            <Caption1>{t("ui.notFound.suggestions")}</Caption1>
-            <div className={styles.suggestions}>
-              {error.suggestions.map((s) => (
-                <Link key={s.link} href={s.link} className={styles.suggestionRow}>
-                  <ChevronRight24Regular />
-                  <Text>{s.text}</Text>
-                </Link>
-              ))}
-            </div>
-          </>
+          <div className={styles.suggestions}>
+            <div className={styles.suggestionsLabel}>{t("ui.notFound.suggestions")}</div>
+            {error.suggestions.map((s) => (
+              <Link key={s.link} href={s.link} className={styles.suggestionRow}>
+                <ChevronRight16Regular />
+                <span>{s.text}</span>
+              </Link>
+            ))}
+          </div>
         )}
-      </Card>
+      </div>
     </main>
   );
 }

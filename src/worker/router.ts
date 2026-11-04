@@ -572,7 +572,7 @@ async function renderRoute(
   // part of the key too: FluentUI's CSS-in-JS tokens are baked into the SSR
   // HTML, so a dark-mode page can't be reused for a light-mode visitor.
   const initialTheme = pickTheme(request);
-  const htmlKey = `html3:${url.host}:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}:${initialTheme}`;
+  const htmlKey = `html4:${url.host}:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}:${initialTheme}`;
   if (!wantsJson) {
     const cachedHtml = await readCache<string>(env, htmlKey);
     if (cachedHtml) {
