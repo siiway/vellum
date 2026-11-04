@@ -143,6 +143,11 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
     lineHeight: tokens.lineHeightBase400,
+    // Each item's content is a paragraph block; trim its outer margins so a
+    // tight list isn't spaced like a run of paragraphs. Paragraphs between
+    // blocks inside a loose item keep their spacing.
+    "& > li > :first-child, & > li > div > :first-child": { marginTop: 0 },
+    "& > li > :last-child, & > li > div > :last-child": { marginBottom: 0 },
   },
   taskItem: {
     listStyle: "none",
@@ -159,12 +164,22 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     backgroundColor: tokens.colorNeutralBackground2,
     borderRadius: tokens.borderRadiusMedium,
+    "& > :first-child": { marginTop: 0 },
+    "& > :last-child": { marginBottom: 0 },
   },
-  callout: { marginBlock: tokens.spacingVerticalL },
+  // The body's first/last paragraph margins otherwise add to the bar's own
+  // padding, leaving more space below the text than above it.
+  callout: {
+    marginBlock: tokens.spacingVerticalL,
+    "& .fui-MessageBarBody > :first-child": { marginTop: 0 },
+    "& .fui-MessageBarBody > :last-child": { marginBottom: 0 },
+  },
   codeCard: {
     marginBlock: tokens.spacingVerticalL,
     overflow: "hidden",
     padding: 0,
+    // Fluent Card spaces its children with a 12px gap; header and body sit flush.
+    gap: 0,
     borderRadius: tokens.borderRadiusLarge,
     boxShadow: "none",
     backgroundColor: "var(--vellum-code-bg)",
@@ -298,6 +313,7 @@ const useStyles = makeStyles({
     marginBlock: tokens.spacingVerticalL,
     overflow: "hidden",
     padding: 0,
+    gap: 0,
     borderRadius: tokens.borderRadiusLarge,
     boxShadow: "none",
     backgroundColor: "var(--vellum-code-bg)",

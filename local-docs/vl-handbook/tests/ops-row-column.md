@@ -63,8 +63,9 @@ It can hold longer prose — full paragraphs, lists, code, etc.
 A narrower side panel. Often used for tips, related links, or metadata.
 
 > Quote in a sidebar.
-> :::column-end:::
-> :::row-end:::
+
+:::column-end:::
+:::row-end:::
 
 ## Three equal columns
 
