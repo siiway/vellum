@@ -80,7 +80,7 @@ export async function renderPage(
   //   theme + page-friendly margins so "Save as PDF" produces a clean document.
   const lightBg = "#ffffff",
     lightFg = "#1a1a1a",
-    darkBg = "#000000",
+    darkBg = "#1f1f1f",
     darkFg = "#f5f5f5";
   const baseCss = `
 html,body{margin:0;padding:0;min-height:100%;background:${lightBg};color:${lightFg};}
@@ -91,19 +91,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 #vellum-root{min-height:100vh;}
 img,svg{vertical-align:middle;}
 ::selection{background:#0078d433;}
-
-/* Scrollbar */
-::-webkit-scrollbar{width:8px;height:8px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.12);border-radius:4px;}
-::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.22);}
-html[data-theme="dark"] ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);}
-html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.22);}
-scrollbar-width:thin;scrollbar-color:rgba(0,0,0,0.12) transparent;
-html[data-theme="dark"]{scrollbar-color:rgba(255,255,255,0.12) transparent;}
-
-/* Fluent Badge: never wrap CJK text or shrink when squeezed by a flex container. */
-.fui-Badge{white-space:nowrap;flex-shrink:0;}
 
 /* Code surface tokens. */
 :root{--vellum-code-bg:#f6f8fa;--vellum-code-border:#d0d7de;--vellum-code-fg-muted:#656d76;}

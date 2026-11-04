@@ -130,12 +130,9 @@ const useStyles = makeStyles({
     border: "1px solid transparent",
   },
   hitActive: {
-    backgroundColor: tokens.colorSubtleBackgroundHover,
-    borderTopColor: tokens.colorNeutralForeground1,
-    borderRightColor: tokens.colorNeutralForeground1,
-    borderBottomColor: tokens.colorNeutralForeground1,
-    borderLeftColor: tokens.colorNeutralForeground1,
-    color: tokens.colorNeutralForeground1,
+    backgroundColor: tokens.colorBrandBackground2,
+    borderColor: tokens.colorBrandStroke2,
+    color: tokens.colorBrandForeground1,
   },
   hitIcon: {
     flexShrink: 0,

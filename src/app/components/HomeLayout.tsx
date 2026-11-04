@@ -42,6 +42,25 @@ const useStyles = makeStyles({
       paddingBlock: tokens.spacingVerticalXXL,
     },
   },
+  backdrop: {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    zIndex: 0,
+    overflow: "hidden",
+    "&::before": {
+      content: '""',
+      position: "absolute",
+      top: "-20%",
+      left: "50%",
+      width: "min(1100px, 95%)",
+      height: "560px",
+      transform: "translateX(-50%)",
+      background: `radial-gradient(60% 60% at 50% 50%, ${tokens.colorBrandBackground2} 0%, transparent 70%)`,
+      opacity: 0.7,
+      filter: "blur(40px)",
+    },
+  },
   hero: {
     position: "relative",
     zIndex: 1,
@@ -143,6 +162,16 @@ const useStyles = makeStyles({
     width: "320px",
     height: "320px",
     "@media (max-width: 960px)": { display: "none" },
+    "&::before": {
+      content: '""',
+      position: "absolute",
+      inset: "-20px",
+      borderRadius: "50%",
+      background: `conic-gradient(from 180deg, ${tokens.colorBrandBackground2}, transparent, ${tokens.colorBrandBackground2})`,
+      opacity: 0.5,
+      filter: "blur(28px)",
+      zIndex: -1,
+    },
   },
   heroImage: {
     width: "320px",
@@ -189,16 +218,13 @@ const useStyles = makeStyles({
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: "10px",
-    backgroundColor: tokens.colorNeutralBackground3,
-    color: tokens.colorNeutralForeground1,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorBrandBackground2,
+    color: tokens.colorBrandForeground1,
     fontSize: "24px",
     lineHeight: 1,
     marginBottom: tokens.spacingVerticalXS,
-    borderTopColor: tokens.colorNeutralStroke2,
-    borderRightColor: tokens.colorNeutralStroke2,
-    borderBottomColor: tokens.colorNeutralStroke2,
-    borderLeftColor: tokens.colorNeutralStroke2,
+    border: `1px solid ${tokens.colorBrandStroke2}`,
   },
   featureTitle: {
     display: "block",
@@ -293,6 +319,8 @@ export function HomeLayout() {
 
   return (
     <main className={styles.root}>
+      <div className={styles.backdrop} aria-hidden="true" />
+
       <MachineTranslatedBanner />
 
       <section className={styles.hero}>

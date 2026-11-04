@@ -18,6 +18,7 @@ const useStyles = makeStyles({
     pointerEvents: "none",
     transformOrigin: "left center",
     backgroundColor: tokens.colorBrandBackground,
+    boxShadow: `0 0 10px ${tokens.colorBrandStroke1}, 0 0 5px ${tokens.colorBrandStroke1}`,
     transition: "transform 200ms ease-out, opacity 250ms ease-out 250ms",
   },
 });

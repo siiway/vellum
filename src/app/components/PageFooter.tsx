@@ -32,18 +32,14 @@ const useStyles = makeStyles({
     "@media (max-width: 720px)": { gridTemplateColumns: "1fr" },
   },
   card: {
-    padding: "16px",
-    borderRadius: "10px",
+    padding: tokens.spacingHorizontalL,
+    borderRadius: tokens.borderRadiusLarge,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     textDecoration: "none",
     color: tokens.colorNeutralForeground1,
-    transition: "border-color 80ms ease, background-color 80ms ease",
     "&:hover": {
-      borderTopColor: tokens.colorNeutralForeground1,
-      borderRightColor: tokens.colorNeutralForeground1,
-      borderBottomColor: tokens.colorNeutralForeground1,
-      borderLeftColor: tokens.colorNeutralForeground1,
-      backgroundColor: tokens.colorSubtleBackgroundHover,
+      borderColor: tokens.colorBrandStroke1,
+      backgroundColor: tokens.colorBrandBackground2,
     },
   },
   label: {

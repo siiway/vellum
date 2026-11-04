@@ -53,32 +53,24 @@ const useStyles = makeStyles({
   // reads as "AI surface" without competing with the H1.
   pill: {
     borderRadius: tokens.borderRadiusCircular,
-    borderTopColor: tokens.colorBrandStroke1,
-    borderRightColor: tokens.colorBrandStroke1,
-    borderBottomColor: tokens.colorBrandStroke1,
-    borderLeftColor: tokens.colorBrandStroke1,
+    borderColor: tokens.colorBrandStroke1,
     color: tokens.colorBrandForeground1,
     "&:hover": {
       backgroundColor: tokens.colorBrandBackground2,
-      borderTopColor: tokens.colorBrandStroke1,
-      borderRightColor: tokens.colorBrandStroke1,
-      borderBottomColor: tokens.colorBrandStroke1,
-      borderLeftColor: tokens.colorBrandStroke1,
+      borderColor: tokens.colorBrandStroke1,
       color: tokens.colorBrandForeground1,
     },
     "&:active, &:hover:active": {
       backgroundColor: tokens.colorBrandBackground2Hover,
-      borderTopColor: tokens.colorBrandStroke1,
-      borderRightColor: tokens.colorBrandStroke1,
-      borderBottomColor: tokens.colorBrandStroke1,
-      borderLeftColor: tokens.colorBrandStroke1,
+      borderColor: tokens.colorBrandStroke1,
       color: tokens.colorBrandForeground1,
     },
   },
   card: {
+    // Card's default `appearance="filled"` matches our shell's surface; we
+    // only need to clamp the width so the card stays inside the article
+    // column rather than stretching to the grid edge.
     width: "100%",
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: "10px",
   },
   headerTitle: {
     display: "inline-flex",
@@ -473,7 +465,7 @@ export function AISummary() {
       role="region"
       aria-labelledby={headingId}
     >
-      <Card className={styles.card} appearance="outline">
+      <Card className={styles.card} appearance="filled">
         <CardHeader
           header={
             <Body1Strong id={headingId} className={styles.headerTitle}>

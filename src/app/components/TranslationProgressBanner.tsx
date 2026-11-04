@@ -39,8 +39,8 @@ const useStyles = makeStyles({
     cursor: "pointer",
     paddingBlock: tokens.spacingVerticalS,
     paddingInline: tokens.spacingHorizontalM,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
+    boxShadow: tokens.shadow16,
+    borderRadius: tokens.borderRadiusMedium,
   },
   body: {
     display: "flex",

@@ -58,17 +58,17 @@ const useStyles = makeStyles({
     "@media (max-width: 960px)": { gridTemplateColumns: "1fr" },
   },
   main: {
-    paddingInline: "24px",
+    paddingInline: tokens.spacingHorizontalXXXL,
     paddingBlock: tokens.spacingVerticalXXL,
     minWidth: 0,
     maxWidth: "100%",
     "@media (max-width: 720px)": {
-      paddingInline: "12px",
+      paddingInline: tokens.spacingHorizontalL,
       paddingBlock: tokens.spacingVerticalL,
     },
   },
   article: {
-    maxWidth: "800px",
+    maxWidth: "780px",
     marginInline: "auto",
   },
   hero: {
