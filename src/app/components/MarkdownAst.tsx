@@ -71,7 +71,7 @@ import { createElement } from "react";
 
 const useStyles = makeStyles({
   root: {
-    maxWidth: "780px",
+    maxWidth: "760px",
     marginInline: "auto",
     color: tokens.colorNeutralForeground1,
     "& :first-child": { marginTop: 0 },
@@ -91,7 +91,7 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalXXXL,
     marginBottom: tokens.spacingVerticalL,
     paddingTop: tokens.spacingVerticalL,
-    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     letterSpacing: "-0.01em",
   },
   h3: {
@@ -124,7 +124,7 @@ const useStyles = makeStyles({
   heading: {
     position: "relative",
     "&:hover .vellum-anchor-mark": { opacity: 1 },
-    scrollMarginTop: "72px",
+    scrollMarginTop: "68px",
   },
   inlineCode: {
     fontFamily: tokens.fontFamilyMonospace,
@@ -166,10 +166,17 @@ const useStyles = makeStyles({
     overflow: "hidden",
     padding: 0,
     borderRadius: tokens.borderRadiusLarge,
-    borderColor: "var(--vellum-code-border)",
     boxShadow: "none",
     backgroundColor: "var(--vellum-code-bg)",
     position: "relative",
+    // Fluent Card draws its border on ::after.
+    "&::after": {
+      borderTopColor: "var(--vellum-code-border)",
+      borderRightColor: "var(--vellum-code-border)",
+      borderBottomColor: "var(--vellum-code-border)",
+      borderLeftColor: "var(--vellum-code-border)",
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   codeHeader: {
     display: "flex",
@@ -270,7 +277,7 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke3}`,
   },
   tableWrap: {
-    // Article column is bounded by maxWidth:780px; wide tables would otherwise
+    // Article column is bounded by maxWidth:760px; wide tables would otherwise
     // push past it and break the grid. Confine overflow to the wrapper.
     marginBlock: tokens.spacingVerticalL,
     maxWidth: "100%",
@@ -292,11 +299,20 @@ const useStyles = makeStyles({
     overflow: "hidden",
     padding: 0,
     borderRadius: tokens.borderRadiusLarge,
+    boxShadow: "none",
+    backgroundColor: "var(--vellum-code-bg)",
+    "&::after": {
+      borderTopColor: "var(--vellum-code-border)",
+      borderRightColor: "var(--vellum-code-border)",
+      borderBottomColor: "var(--vellum-code-border)",
+      borderLeftColor: "var(--vellum-code-border)",
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   codeGroupTabs: {
     display: "flex",
-    backgroundColor: tokens.colorNeutralBackground3,
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: "var(--vellum-code-bg)",
+    borderBottom: `1px solid var(--vellum-code-border)`,
   },
   codeGroupTab: {
     background: "transparent",

@@ -16,12 +16,13 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  Search20Regular,
   Search24Regular,
   Document24Regular,
   ArrowEnterLeft24Regular,
   ArrowUp16Regular,
   ArrowDown16Regular,
-  Dismiss24Regular,
+  Dismiss20Regular,
   History24Regular,
   Globe24Regular,
   ChevronRight20Regular,
@@ -53,25 +54,37 @@ const RECENT_KEY = "vellum.search.recent";
 const RECENT_MAX = 6;
 
 const useStyles = makeStyles({
+  // Command-palette surface, as in Prism: pinned near the top rather than
+  // centred, so the result list grows downwards without the input jumping.
   surface: {
-    maxWidth: "720px",
-    width: "92vw",
+    width: "min(640px, calc(100vw - 32px))",
+    maxWidth: "640px",
     padding: 0,
+    alignSelf: "flex-start",
+    marginTop: "12vh",
     overflow: "hidden",
     borderRadius: tokens.borderRadiusXLarge,
+    "@media (max-width: 640px)": { marginTop: "16px" },
   },
   body: { padding: 0 },
   content: { padding: 0 },
   inputWrap: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    paddingInline: tokens.spacingHorizontalL,
-    paddingBlock: tokens.spacingVerticalS,
+    gap: "10px",
+    paddingInline: "16px",
+    minHeight: "52px",
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    "& > svg": {
+      color: tokens.colorNeutralForeground3,
+      flexShrink: 0,
+    },
   },
   input: {
     flex: 1,
+    paddingLeft: 0,
+    "& input": { paddingLeft: 0 },
+    "&::after": { display: "none" },
     /* eslint-disable @typescript-eslint/no-explicit-any */
     borderTop: "0 !important" as any,
     borderLeft: "0 !important" as any,
@@ -93,49 +106,44 @@ const useStyles = makeStyles({
     },
   },
   status: {
-    paddingInline: tokens.spacingHorizontalL,
-    paddingBlock: tokens.spacingVerticalXS,
+    paddingInline: "16px",
+    paddingBlock: "6px",
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
-    backgroundColor: tokens.colorNeutralBackground2,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     display: "flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalS,
   },
   results: {
-    maxHeight: "min(56vh, 480px)",
+    maxHeight: "min(60vh, 480px)",
     overflowY: "auto",
-    padding: tokens.spacingHorizontalS,
+    padding: "6px",
   },
-  group: { marginBlock: tokens.spacingVerticalS },
+  group: { marginBottom: "4px" },
   groupHeader: {
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: tokens.spacingVerticalXS,
+    display: "block",
+    padding: "10px 10px 4px",
     color: tokens.colorNeutralForeground3,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-    fontSize: "11px",
-    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
   },
   hit: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalM,
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: tokens.spacingVerticalS,
+    gap: "12px",
+    padding: "8px 10px",
     borderRadius: tokens.borderRadiusMedium,
     color: tokens.colorNeutralForeground1,
     textDecoration: "none",
     cursor: "pointer",
-    border: "1px solid transparent",
   },
   hitActive: {
-    backgroundColor: tokens.colorBrandBackground2,
-    borderColor: tokens.colorBrandStroke2,
-    color: tokens.colorBrandForeground1,
+    backgroundColor: tokens.colorNeutralBackground1Hover,
   },
   hitIcon: {
+    display: "inline-flex",
     flexShrink: 0,
+    fontSize: "18px",
     color: tokens.colorNeutralForeground3,
   },
   hitText: { flex: 1, minWidth: 0 },
@@ -211,13 +219,12 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: tokens.spacingHorizontalM,
-    paddingInline: tokens.spacingHorizontalL,
-    paddingBlock: tokens.spacingVerticalS,
+    gap: "16px",
+    padding: "8px 16px",
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: tokens.colorNeutralBackground2,
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground3,
+    "@media (max-width: 640px)": { display: "none" },
   },
   footerHints: {
     display: "flex",
@@ -234,11 +241,9 @@ const useStyles = makeStyles({
     height: "18px",
     paddingInline: "5px",
     border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderBottomWidth: "2px",
     borderRadius: tokens.borderRadiusSmall,
-    backgroundColor: tokens.colorNeutralBackground1,
-    color: tokens.colorNeutralForeground2,
-    fontFamily: tokens.fontFamilyMonospace,
+    color: tokens.colorNeutralForeground3,
+    fontFamily: "inherit",
     fontSize: "11px",
     lineHeight: 1,
   },
@@ -266,11 +271,13 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalS,
     borderRadius: tokens.borderRadiusMedium,
     cursor: "pointer",
-    color: tokens.colorBrandForeground1,
-    border: `1px dashed ${tokens.colorBrandStroke2}`,
-    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
     fontSize: tokens.fontSizeBase300,
-    "&:hover": { backgroundColor: tokens.colorBrandBackground2 },
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      color: tokens.colorNeutralForeground1,
+    },
     "& .seeAllArrow": { marginLeft: "auto", opacity: 0.7 },
   },
 });
@@ -414,7 +421,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         <DialogBody className={styles.body}>
           <DialogContent className={styles.content}>
             <div className={styles.inputWrap}>
-              <Search24Regular />
+              <Search20Regular />
               <Input
                 ref={inputRef}
                 className={styles.input}
@@ -431,7 +438,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
               {loading && <Spinner size="extra-tiny" />}
               <Button
                 appearance="subtle"
-                icon={<Dismiss24Regular />}
+                size="small"
+                icon={<Dismiss20Regular />}
                 onClick={() => onOpenChange(false)}
                 aria-label={t("ui.search.close")}
               />

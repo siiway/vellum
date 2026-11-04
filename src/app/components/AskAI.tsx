@@ -55,6 +55,7 @@ import {
   History24Regular,
   Person24Regular,
   Send24Filled,
+  Sparkle20Regular,
   Sparkle24Regular,
   Stop24Filled,
   Wrench24Regular,
@@ -596,7 +597,7 @@ export function AskAiButton({ onClick }: { onClick: () => void }) {
     <Tooltip content={t("ui.askAi.button")} relationship="label">
       <Button
         appearance="subtle"
-        icon={<Sparkle24Regular />}
+        icon={<Sparkle20Regular />}
         onClick={onClick}
         aria-label={t("ui.askAi.button")}
       />

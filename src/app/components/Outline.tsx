@@ -7,22 +7,22 @@ import type { OutlineNode } from "../../shared/types";
 
 const useStyles = makeStyles({
   root: {
-    paddingBlock: tokens.spacingVerticalL,
-    paddingInline: tokens.spacingHorizontalL,
+    padding: "32px 20px 24px 16px",
     position: "sticky",
-    top: "56px",
-    height: "calc(100vh - 56px)",
+    top: "52px",
+    height: "calc(100vh - 52px)",
+    boxSizing: "border-box",
     overflowY: "auto",
-    fontSize: tokens.fontSizeBase200,
+    fontSize: "13px",
     "@media (max-width: 1200px)": { display: "none" },
   },
   header: {
     display: "block",
-    marginBottom: tokens.spacingVerticalS,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
+    margin: 0,
+    padding: "0 0 8px 12px",
+    fontSize: "12px",
+    fontWeight: tokens.fontWeightRegular,
+    lineHeight: "16px",
     color: tokens.colorNeutralForeground3,
   },
   list: {
@@ -33,7 +33,8 @@ const useStyles = makeStyles({
   },
   link: {
     display: "block",
-    padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`,
+    padding: "4px 12px",
+    lineHeight: "18px",
     color: tokens.colorNeutralForeground3,
     textDecoration: "none",
     borderLeft: "2px solid transparent",
@@ -50,9 +51,9 @@ const useStyles = makeStyles({
     "& a": { color: "inherit", textDecoration: "none" },
   },
   active: {
-    borderLeftColor: tokens.colorBrandStroke1,
-    color: tokens.colorBrandForeground1,
-    fontWeight: tokens.fontWeightSemibold,
+    borderLeftColor: tokens.colorNeutralForeground1,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightMedium,
   },
 });
 

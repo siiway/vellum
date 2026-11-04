@@ -4,81 +4,92 @@ import { useEffect, useRef } from "react";
 import type { SidebarGroup, SidebarItem } from "../../shared/types";
 import { useVellum } from "../context";
 
+// Prism-style navigation column: flat on the page canvas, a hairline on its
+// inner edge, 13px items with a grey (not brand) highlight for the current
+// page, and quiet 12px section labels.
 const useStyles = makeStyles({
   root: {
-    paddingBlock: tokens.spacingVerticalL,
-    paddingInline: tokens.spacingHorizontalM,
+    padding: "10px",
     overflowY: "auto",
-    height: "calc(100vh - 56px)",
+    height: "calc(100vh - 52px)",
     position: "sticky",
-    top: "56px",
+    top: "52px",
+    boxSizing: "border-box",
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: "var(--vellum-canvas)",
     "@media (max-width: 960px)": { display: "none" },
-    // Subtle right divider via box-shadow so it doesn't add to grid metrics.
-    boxShadow: `inset -1px 0 0 ${tokens.colorNeutralStroke3}`,
   },
   // `mobile` variant: rendered inside a Drawer instead of as a sticky aside.
   // Drops the height clamp, sticky positioning, divider, and the "hide on
   // narrow viewports" media query so the same item tree works in both layouts.
   rootMobile: {
-    paddingBlock: tokens.spacingVerticalL,
-    paddingInline: tokens.spacingHorizontalM,
+    padding: "0 2px",
     overflowY: "auto",
   },
   group: {
-    marginBottom: tokens.spacingVerticalL,
+    marginBottom: "6px",
   },
   groupHeader: {
     display: "block",
-    paddingInline: tokens.spacingHorizontalM,
-    marginTop: tokens.spacingVerticalM,
-    marginBottom: tokens.spacingVerticalS,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    color: tokens.colorNeutralForeground1,
-    letterSpacing: "0.02em",
+    padding: "16px 10px 6px",
+    margin: 0,
+    fontSize: "12px",
+    fontWeight: tokens.fontWeightRegular,
+    lineHeight: "16px",
+    color: tokens.colorNeutralForeground3,
+  },
+  groupFirst: {
+    paddingTop: "6px",
   },
   link: {
-    display: "block",
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: "5px",
+    display: "flex",
+    alignItems: "center",
+    minHeight: "32px",
+    paddingInline: "10px",
+    paddingBlock: "6px",
+    boxSizing: "border-box",
     color: tokens.colorNeutralForeground2,
     textDecoration: "none",
     borderRadius: tokens.borderRadiusMedium,
-    fontSize: tokens.fontSizeBase300,
-    lineHeight: tokens.lineHeightBase300,
-    transition: "background-color 80ms ease-out, color 80ms ease-out",
+    fontSize: "13px",
+    lineHeight: "18px",
     "&:hover": {
-      backgroundColor: tokens.colorSubtleBackgroundHover,
+      backgroundColor: tokens.colorNeutralBackground3,
       color: tokens.colorNeutralForeground1,
+      textDecoration: "none",
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
     },
   },
   // && bumps specificity so we win against FluentUI Link's own Griffel color rules.
   active: {
     "&&": {
-      backgroundColor: tokens.colorBrandBackground2,
-      color: tokens.colorBrandForeground1,
-      fontWeight: tokens.fontWeightSemibold,
-    },
-    "&&:hover": {
-      backgroundColor: tokens.colorBrandBackground2Hover,
-      color: tokens.colorBrandForeground1,
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
+      fontWeight: tokens.fontWeightMedium,
     },
   },
   nested: {
-    marginLeft: tokens.spacingHorizontalM,
-    borderLeft: `1px solid ${tokens.colorNeutralStroke3}`,
-    paddingLeft: tokens.spacingHorizontalS,
+    marginLeft: "14px",
+    borderLeft: `1px solid ${tokens.colorNeutralStroke2}`,
+    paddingLeft: "6px",
     display: "flex",
     flexDirection: "column",
     gap: "1px",
   },
   branch: {
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: "5px",
-    fontSize: tokens.fontSizeBase300,
-    fontWeight: tokens.fontWeightSemibold,
+    display: "flex",
+    alignItems: "center",
+    minHeight: "32px",
+    paddingInline: "10px",
+    paddingBlock: "6px",
+    boxSizing: "border-box",
+    fontSize: "13px",
+    lineHeight: "18px",
+    fontWeight: tokens.fontWeightMedium,
     color: tokens.colorNeutralForeground1,
-    marginTop: tokens.spacingVerticalXS,
   },
   list: { display: "flex", flexDirection: "column", gap: "1px" },
 });
@@ -115,10 +126,13 @@ export function Sidebar({
   const rootClass = variant === "mobile" ? styles.rootMobile : styles.root;
   return (
     <aside ref={containerRef} className={rootClass} aria-label={t("ui.nav.sidebar")}>
-      {groups.map((group) => (
+      {groups.map((group, gi) => (
         <section key={group.text} className={styles.group}>
           {group.text && (
-            <Text className={styles.groupHeader} as="h2">
+            <Text
+              className={mergeClasses(styles.groupHeader, gi === 0 && styles.groupFirst)}
+              as="h2"
+            >
               {group.text}
             </Text>
           )}

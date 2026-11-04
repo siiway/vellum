@@ -78,23 +78,42 @@ export async function renderPage(
   //   block can theme-swap without re-render); activate them via [data-theme] selectors.
   // - Print: hide nav/sidebar/outline, give the content area full width, force light
   //   theme + page-friendly margins so "Save as PDF" produces a clean document.
-  const lightBg = "#ffffff",
-    lightFg = "#1a1a1a",
-    darkBg = "#1f1f1f",
-    darkFg = "#f5f5f5";
+  // --vellum-canvas is the one flat page colour that header, sidebar and
+  // content share (same values as Prism's --prism-canvas); cards sit on it
+  // with a hairline border. Keyed off [data-theme] so it applies before the
+  // first paint.
   const baseCss = `
-html,body{margin:0;padding:0;min-height:100%;background:${lightBg};color:${lightFg};}
-html[data-theme="dark"],html[data-theme="dark"] body{background:${darkBg};color:${darkFg};}
-html{box-sizing:border-box;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;}
+html{--vellum-canvas:#ffffff;color-scheme:light;}
+html[data-theme="dark"]{--vellum-canvas:#1a1a1a;color-scheme:dark;}
+html,body{margin:0;padding:0;min-height:100%;background:var(--vellum-canvas);color:#171717;}
+html[data-theme="dark"],html[data-theme="dark"] body{color:#f0f0f0;}
+html{box-sizing:border-box;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
 *,*::before,*::after{box-sizing:inherit;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";font-feature-settings:"cv02","cv03","cv04","cv11";}
+body{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";}
 #vellum-root{min-height:100vh;}
 img,svg{vertical-align:middle;}
-::selection{background:#0078d433;}
+::selection{background:color-mix(in srgb,var(--colorBrandBackground,#0078d4) 22%,transparent);}
 
-/* Code surface tokens. */
-:root{--vellum-code-bg:#f6f8fa;--vellum-code-border:#d0d7de;--vellum-code-fg-muted:#656d76;}
-html[data-theme="dark"]{--vellum-code-bg:#0d1117;--vellum-code-border:#30363d;--vellum-code-fg-muted:#8b949e;}
+/* Fluent Badge must never wrap its label or shrink inside flex rows: CJK
+   text otherwise collapses onto two lines on narrow viewports. */
+.fui-Badge{white-space:nowrap;flex-shrink:0;}
+
+/* Portalled Fluent surfaces sit outside the page containers. A hairline on
+   top of their shadow keeps them distinct in dark mode, where a shadow on a
+   near-black canvas barely registers. */
+.fui-DialogSurface,.fui-MenuPopover,.fui-PopoverSurface,.fui-Listbox{border:1px solid var(--colorNeutralStroke2);}
+
+/* Scrollbars: thin, transparent track, neutral thumb. */
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.16);border-radius:4px;border:2px solid transparent;background-clip:padding-box;}
+::-webkit-scrollbar-thumb:hover{background-color:rgba(0,0,0,0.32);}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{background-color:rgba(255,255,255,0.14);}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover{background-color:rgba(255,255,255,0.28);}
+
+/* Code surface tokens: a shade off the canvas, hairline edge. */
+:root{--vellum-code-bg:#fafafa;--vellum-code-border:#e8e8e8;--vellum-code-fg-muted:#6b6b6b;}
+html[data-theme="dark"]{--vellum-code-bg:#1f1f1f;--vellum-code-border:#313131;--vellum-code-fg-muted:#a3a3a3;}
 
 /* Shiki: light theme renders with direct inline colors (no CSS needed).
    For dark theme we bind --shiki-dark variables (which Shiki *does* emit) to color/bg.

@@ -1,4 +1,4 @@
-// Microsoft Learn-style landing page: hero with brand-coloured gradient + a
+// Microsoft Learn-style landing page: a flat hero with a
 // prominent search bar, then a stack of card grids (get-started → products →
 // roles → resources). Triggered by `layout: ms-learn` in the page frontmatter.
 //
@@ -26,7 +26,6 @@ import {
   Image,
   Input,
   Link,
-  Subtitle1,
   Text,
   Title1,
   Title3,
@@ -42,7 +41,9 @@ import {
   Open24Regular,
   PeopleTeam24Regular,
   Rocket24Regular,
-  Search24Regular,
+  ArrowRight20Regular,
+  Open20Regular,
+  Search20Regular,
   Server24Regular,
   TagMultiple24Regular,
 } from "@fluentui/react-icons";
@@ -106,95 +107,73 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 60px)",
+    minHeight: "calc(100vh - 52px)",
     paddingBottom: tokens.spacingVerticalXXXL,
     color: tokens.colorNeutralForeground1,
   },
 
+  // Flat hero on the canvas, separated from the sections by a hairline —
+  // no gradient wash or gradient text.
   hero: {
     position: "relative",
-    overflow: "hidden",
-    paddingBlock: "96px",
-    paddingInline: tokens.spacingHorizontalXXXL,
+    paddingBlock: "72px 56px",
+    paddingInline: "40px",
     textAlign: "center",
-    backgroundImage: `
-      radial-gradient(900px 480px at 18% -10%, ${tokens.colorBrandBackground2} 0%, transparent 70%),
-      radial-gradient(900px 480px at 82% -10%, ${tokens.colorPaletteBerryBackground2} 0%, transparent 70%),
-      radial-gradient(600px 300px at 50% 110%, ${tokens.colorBrandBackground2} 0%, transparent 70%)
-    `,
-    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     "@media (max-width: 720px)": {
-      paddingBlock: "56px",
-      paddingInline: tokens.spacingHorizontalL,
+      paddingBlock: "40px 32px",
+      paddingInline: "16px",
     },
   },
   heroInner: {
-    position: "relative",
-    zIndex: 1,
     maxWidth: "880px",
     marginInline: "auto",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    // Bigger gap so the gradient title's descenders / glyph overflow can't
-    // get visually swallowed by the tagline below. Previously spacingVerticalL
-    // (16px) wasn't enough at large hero font sizes.
-    gap: tokens.spacingVerticalXXL,
+    gap: "16px",
   },
   heroTitle: {
     display: "block",
     margin: 0,
-    fontSize: "clamp(40px, 5.5vw, 64px)",
-    fontWeight: tokens.fontWeightBold,
-    // Generous lineHeight + paddingBlock prevent the gradient title from
-    // clipping. WebkitBackgroundClip:text uses the span's content box as the
-    // mask; CJK characters and Latin descenders (g/p/y) sit slightly outside
-    // the cap-height box, so a tight line-height shaves their edges. 1.35 +
-    // 0.3em padding covers every script + diacritic combo we render.
-    lineHeight: 1.35,
-    letterSpacing: "-0.03em",
-    paddingBlock: "0.3em",
-    overflow: "visible",
-    "& > span": {
-      // Inline-block so the span owns a real box and its line-height stops
-      // collapsing into the parent's. Padding inside the span itself gives
-      // the gradient clip-mask room for descenders / accents / CJK strokes
-      // that the cap-height box doesn't account for.
-      display: "inline-block",
-      lineHeight: 1.35,
-      paddingBlock: "0.15em",
-      paddingInline: "0.02em",
-      overflow: "visible",
-      background: `linear-gradient(135deg, ${tokens.colorBrandForeground1} 0%, ${tokens.colorPaletteBerryForeground1} 100%)`,
-      WebkitBackgroundClip: "text",
-      WebkitTextFillColor: "transparent",
-      backgroundClip: "text",
-    },
+    fontSize: "clamp(34px, 4.5vw, 52px)",
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: 1.2,
+    letterSpacing: "-0.025em",
+    color: tokens.colorNeutralForeground1,
   },
   heroTagline: {
     display: "block",
     margin: 0,
     maxWidth: "640px",
-    fontSize: tokens.fontSizeBase500,
-    lineHeight: tokens.lineHeightBase500,
-    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+    color: tokens.colorNeutralForeground3,
   },
+  // Field-style search: hairline border that darkens on hover, focus ring
+  // from Fluent's own stroke token. No shadow.
   heroSearch: {
     width: "min(560px, 100%)",
-    marginTop: tokens.spacingVerticalM,
+    marginTop: "12px",
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
+    gap: "8px",
     backgroundColor: tokens.colorNeutralBackground1,
-    paddingInline: tokens.spacingHorizontalL,
-    paddingBlock: "6px",
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    boxShadow: tokens.shadow8,
-    transition: "border-color 120ms ease, box-shadow 120ms ease",
+    paddingInline: "12px",
+    minHeight: "44px",
+    boxSizing: "border-box",
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    transition: "border-color 120ms ease",
+    "&:hover": {
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
+    },
     "&:focus-within": {
-      borderColor: tokens.colorBrandStroke1,
-      boxShadow: tokens.shadow16,
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
     },
   },
   heroSearchIcon: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
@@ -207,34 +186,43 @@ const useStyles = makeStyles({
     borderBottom: "0 !important" as any,
     backgroundColor: "transparent !important" as any,
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    "& input": { fontSize: tokens.fontSizeBase400 },
+    "&::after": { display: "none" },
+    "& input": { fontSize: tokens.fontSizeBase300, paddingLeft: 0 },
   },
   heroActions: {
     display: "flex",
     flexWrap: "wrap",
-    gap: tokens.spacingHorizontalM,
+    gap: "8px",
     justifyContent: "center",
-    marginTop: tokens.spacingVerticalM,
+    marginTop: "8px",
   },
 
   section: {
     maxWidth: "1200px",
     marginInline: "auto",
-    paddingInline: tokens.spacingHorizontalXXXL,
-    marginTop: tokens.spacingVerticalXXXL,
-    "@media (max-width: 720px)": { paddingInline: tokens.spacingHorizontalL },
+    paddingInline: "40px",
+    marginTop: "48px",
+    boxSizing: "border-box",
+    "@media (max-width: 1024px)": { paddingInline: "24px" },
+    "@media (max-width: 720px)": { paddingInline: "16px" },
   },
-  sectionHeader: { marginBottom: tokens.spacingVerticalL },
+  // Same shape as Prism's PageHeader: title + muted subtitle.
+  sectionHeader: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    marginBottom: "16px",
+  },
   sectionTitle: {
     display: "block",
     marginBlock: 0,
     fontWeight: tokens.fontWeightSemibold,
-    letterSpacing: "-0.01em",
+    letterSpacing: "-0.015em",
   },
   sectionDescription: {
     display: "block",
-    marginTop: tokens.spacingVerticalXS,
-    color: tokens.colorNeutralForeground2,
+    margin: 0,
+    color: tokens.colorNeutralForeground3,
   },
 
   // Three-up grid that collapses to two then one across viewports — same
@@ -242,7 +230,7 @@ const useStyles = makeStyles({
   grid3: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: tokens.spacingHorizontalL,
+    gap: "12px",
     "@media (max-width: 960px)": {
       gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     },
@@ -261,47 +249,56 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground1,
     "&:hover": { textDecoration: "none" },
   },
+  // Bordered card on the canvas. Hover darkens the hairline and lifts the
+  // fill a shade — no transform, no shadow, no size change.
   card: {
     display: "flex",
     flexDirection: "column",
-    gap: tokens.spacingVerticalS,
-    padding: tokens.spacingHorizontalL,
+    gap: "8px",
+    padding: "20px",
     width: "100%",
+    boxSizing: "border-box",
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusLarge,
+    // Fluent Card adds its own shadow and an ::after border; this card
+    // carries a single hairline of its own instead.
+    boxShadow: "none",
+    "&::after": { display: "none" },
     color: tokens.colorNeutralForeground1,
-    // Only the border colour shifts on hover — no transform, no shadow, no
-    // size change. Keeps the page calm.
     transition: "border-color 120ms ease, background-color 120ms ease",
     "&:hover": {
-      borderColor: tokens.colorBrandStroke1,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
   },
+  // Bordered tile, as in Prism's empty states.
   cardIconChip: {
-    width: "48px",
-    height: "48px",
+    width: "40px",
+    height: "40px",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorBrandBackground2,
-    color: tokens.colorBrandForeground1,
-    border: `1px solid ${tokens.colorBrandStroke2}`,
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
     flexShrink: 0,
   },
-  cardLogo: { width: "32px", height: "32px", objectFit: "contain" },
+  cardLogo: { width: "26px", height: "26px", objectFit: "contain" },
   cardTitle: {
     display: "block",
     marginBlock: 0,
-    fontSize: tokens.fontSizeBase500,
+    fontSize: tokens.fontSizeBase400,
     fontWeight: tokens.fontWeightSemibold,
-    lineHeight: tokens.lineHeightBase500,
+    lineHeight: tokens.lineHeightBase400,
   },
   cardDescription: {
     display: "block",
-    color: tokens.colorNeutralForeground2,
+    color: tokens.colorNeutralForeground3,
     flex: 1,
   },
   cardCta: {
@@ -318,7 +315,7 @@ const useStyles = makeStyles({
   grid4: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: tokens.spacingHorizontalL,
+    gap: "12px",
     "@media (max-width: 960px)": {
       gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     },
@@ -327,21 +324,25 @@ const useStyles = makeStyles({
   resourceCard: {
     display: "flex",
     alignItems: "flex-start",
-    gap: tokens.spacingHorizontalM,
-    padding: tokens.spacingHorizontalL,
-    backgroundColor: tokens.colorNeutralBackground2,
+    gap: "12px",
+    padding: "14px 16px",
+    backgroundColor: tokens.colorNeutralBackground1,
     borderRadius: tokens.borderRadiusLarge,
-    border: `1px solid ${tokens.colorNeutralStroke3}`,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
     color: tokens.colorNeutralForeground1,
     textDecoration: "none",
     transition: "background-color 120ms ease, border-color 120ms ease",
     "&:hover": {
-      backgroundColor: tokens.colorNeutralBackground2Hover,
-      borderColor: tokens.colorBrandStroke2,
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
+      textDecoration: "none",
     },
   },
   resourceIcon: {
-    color: tokens.colorBrandForeground1,
+    color: tokens.colorNeutralForeground3,
     flexShrink: 0,
     marginTop: "2px",
   },
@@ -354,18 +355,19 @@ const useStyles = makeStyles({
   resourceDescription: {
     display: "block",
     marginTop: "2px",
-    color: tokens.colorNeutralForeground2,
+    color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
   },
 
   body: {
     maxWidth: "1200px",
     marginInline: "auto",
-    paddingInline: tokens.spacingHorizontalXXXL,
-    marginTop: tokens.spacingVerticalXXXL,
-    paddingTop: tokens.spacingVerticalXL,
-    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
-    "@media (max-width: 720px)": { paddingInline: tokens.spacingHorizontalL },
+    paddingInline: "40px",
+    marginTop: "48px",
+    paddingTop: "32px",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    "@media (max-width: 720px)": { paddingInline: "16px" },
     // Cancel MarkdownAst's own max-width / margin-auto so the body content
     // can stretch the full landing-page width when authors want it to.
     "& > div": { maxWidth: "100%" },
@@ -374,14 +376,15 @@ const useStyles = makeStyles({
   footer: {
     maxWidth: "1200px",
     marginInline: "auto",
-    paddingInline: tokens.spacingHorizontalXXXL,
-    marginTop: tokens.spacingVerticalXXXL,
-    paddingTop: tokens.spacingVerticalXL,
-    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
+    paddingInline: "40px",
+    marginTop: "48px",
+    paddingTop: "16px",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     textAlign: "center",
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
-    "@media (max-width: 720px)": { paddingInline: tokens.spacingHorizontalL },
+    "@media (max-width: 720px)": { paddingInline: "16px" },
   },
 });
 
@@ -453,9 +456,7 @@ function HeroSection({
         {/* hero.title and hero.tagline are pre-rendered HTML from the worker's
             processHomeFrontmatter() pass. FluentUI's typography components
             drop the `dangerouslySetInnerHTML` prop through their slot system,
-            so we wrap the HTML in a child <span> instead. The gradient
-            styles in `heroTitle` target `& > span` so the clip-to-text
-            effect lives on the same element that owns the text. */}
+            so we wrap the HTML in a child <span> instead. */}
         {hero?.title && (
           <Title1 as="h1" className={styles.heroTitle}>
             <span dangerouslySetInnerHTML={{ __html: hero.title }} />
@@ -467,11 +468,10 @@ function HeroSection({
           </Body1>
         )}
         <div className={styles.heroSearch}>
-          <Search24Regular className={styles.heroSearchIcon} />
+          <Search20Regular className={styles.heroSearchIcon} />
           <Input
             className={styles.heroSearchInput}
             appearance="filled-lighter"
-            size="large"
             placeholder={hero?.searchPlaceholder ?? "Search the docs"}
             value={q}
             onChange={(_, d) => setQ(d.value)}
@@ -492,9 +492,8 @@ function HeroSection({
                   key={i}
                   as="a"
                   href={a.link}
-                  appearance={a.theme === "brand" ? "primary" : "outline"}
-                  size="large"
-                  icon={isExternal ? <Open24Regular /> : <ArrowRight24Regular />}
+                  appearance={a.theme === "brand" ? "primary" : "secondary"}
+                  icon={isExternal ? <Open20Regular /> : <ArrowRight20Regular />}
                   iconPosition="after"
                   {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                 >
@@ -531,9 +530,9 @@ function CardGridSection({
           </Title3>
         )}
         {section.description && (
-          <Subtitle1 as="p" className={styles.sectionDescription}>
+          <Text as="p" size={300} className={styles.sectionDescription}>
             <span dangerouslySetInnerHTML={{ __html: section.description }} />
-          </Subtitle1>
+          </Text>
         )}
       </header>
       <div className={styles.grid3}>
@@ -644,9 +643,9 @@ function ResourceSection({
           </Title3>
         )}
         {section.description && (
-          <Subtitle1 as="p" className={styles.sectionDescription}>
+          <Text as="p" size={300} className={styles.sectionDescription}>
             <span dangerouslySetInnerHTML={{ __html: section.description }} />
-          </Subtitle1>
+          </Text>
         )}
       </header>
       <div className={styles.grid4}>

@@ -66,11 +66,19 @@ const useStyles = makeStyles({
       color: tokens.colorBrandForeground1,
     },
   },
+  // Hairline card on the canvas, no shadow. Fluent Card draws its border on
+  // ::after; soften it to the page's hairline stroke.
   card: {
-    // Card's default `appearance="filled"` matches our shell's surface; we
-    // only need to clamp the width so the card stays inside the article
-    // column rather than stretching to the grid edge.
     width: "100%",
+    boxShadow: "none",
+    borderRadius: tokens.borderRadiusLarge,
+    "&::after": {
+      borderTopColor: tokens.colorNeutralStroke2,
+      borderRightColor: tokens.colorNeutralStroke2,
+      borderBottomColor: tokens.colorNeutralStroke2,
+      borderLeftColor: tokens.colorNeutralStroke2,
+      borderRadius: tokens.borderRadiusLarge,
+    },
   },
   headerTitle: {
     display: "inline-flex",
@@ -465,7 +473,7 @@ export function AISummary() {
       role="region"
       aria-labelledby={headingId}
     >
-      <Card className={styles.card} appearance="filled">
+      <Card className={styles.card} appearance="outline">
         <CardHeader
           header={
             <Body1Strong id={headingId} className={styles.headerTitle}>

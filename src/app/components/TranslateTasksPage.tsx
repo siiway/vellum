@@ -29,7 +29,7 @@ interface JobSummary {
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 60px)",
+    minHeight: "calc(100vh - 52px)",
     paddingBlock: tokens.spacingVerticalXXXL,
     paddingInline: tokens.spacingHorizontalXXXL,
     maxWidth: "900px",

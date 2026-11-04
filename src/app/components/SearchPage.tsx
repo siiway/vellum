@@ -62,7 +62,7 @@ const RECENT_MAX = 8;
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 60px)",
+    minHeight: "calc(100vh - 52px)",
     paddingBlock: tokens.spacingVerticalXXXL,
     paddingInline: tokens.spacingHorizontalXXXL,
     maxWidth: "960px",
@@ -90,16 +90,21 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalS,
-    backgroundColor: tokens.colorNeutralBackground2,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: tokens.borderRadiusLarge,
-    paddingInline: tokens.spacingHorizontalL,
-    paddingBlock: tokens.spacingVerticalSNudge,
-    boxShadow: tokens.shadow4,
-    transition: "border-color 120ms ease, box-shadow 120ms ease",
+    paddingInline: "12px",
+    paddingBlock: "4px",
+    transition: "border-color 120ms ease",
+    "&:hover": {
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
+    },
     "&:focus-within": {
-      borderColor: tokens.colorBrandStroke1,
-      boxShadow: tokens.shadow8,
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
     },
   },
   searchIcon: {
@@ -190,8 +195,11 @@ const useStyles = makeStyles({
     },
   },
   hitActive: {
-    backgroundColor: tokens.colorBrandBackground2,
-    borderColor: tokens.colorBrandStroke2,
+    backgroundColor: tokens.colorNeutralBackground1Hover,
+    borderTopColor: tokens.colorNeutralStroke1,
+    borderRightColor: tokens.colorNeutralStroke1,
+    borderBottomColor: tokens.colorNeutralStroke1,
+    borderLeftColor: tokens.colorNeutralStroke1,
   },
   hitIcon: {
     flexShrink: 0,

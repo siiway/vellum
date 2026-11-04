@@ -36,7 +36,7 @@ import { TranslateRepoDialog, fetchJobStatus } from "./TranslateRepoDialog";
 
 const useStyles = makeStyles({
   root: {
-    minHeight: "calc(100vh - 60px)",
+    minHeight: "calc(100vh - 52px)",
     paddingBlock: tokens.spacingVerticalXXXL,
     paddingInline: tokens.spacingHorizontalXXXL,
     maxWidth: "1100px",
@@ -117,24 +117,41 @@ const useStyles = makeStyles({
     width: "100%",
     height: "100%",
     cursor: "pointer",
-    transition: "background-color 80ms ease, border-color 80ms ease",
+    boxShadow: "none",
+    transition: "background-color 80ms ease",
+    // Fluent Card draws its border on ::after.
+    "&::after": {
+      borderTopColor: tokens.colorNeutralStroke2,
+      borderRightColor: tokens.colorNeutralStroke2,
+      borderBottomColor: tokens.colorNeutralStroke2,
+      borderLeftColor: tokens.colorNeutralStroke2,
+    },
     "&:hover": {
-      backgroundColor: tokens.colorNeutralBackground2Hover,
-      borderColor: tokens.colorBrandStroke1,
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+    "&:hover::after": {
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
     },
     "&:active": {
-      backgroundColor: tokens.colorNeutralBackground2Pressed,
+      backgroundColor: tokens.colorNeutralBackground1Pressed,
     },
   },
-  // Current locale gets a brand-tinted background and is non-interactive —
-  // no pointer cursor, no hover colour shift.
+  // Current locale gets the grey "selected" fill used for the current page
+  // in the nav, and is non-interactive — no pointer cursor, no hover shift.
   cardCurrent: {
-    borderColor: tokens.colorBrandStroke1,
-    backgroundColor: tokens.colorBrandBackground2,
+    backgroundColor: tokens.colorNeutralBackground3,
     cursor: "default",
+    "&::after": {
+      borderTopColor: tokens.colorNeutralStroke1,
+      borderRightColor: tokens.colorNeutralStroke1,
+      borderBottomColor: tokens.colorNeutralStroke1,
+      borderLeftColor: tokens.colorNeutralStroke1,
+    },
     "&:hover": {
-      backgroundColor: tokens.colorBrandBackground2,
-      borderColor: tokens.colorBrandStroke1,
+      backgroundColor: tokens.colorNeutralBackground3,
     },
   },
   cardLabel: {

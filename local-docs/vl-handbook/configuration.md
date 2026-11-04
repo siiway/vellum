@@ -46,7 +46,7 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `tagline`       |          | Shown on landing pages with the `home` layout.                                     |
 | `logo`          |          | URL of the site logo.                                                              |
 | `favicon`       |          | URL of the favicon.                                                                |
-| `themeColor`    |          | `<meta name="theme-color">` hex value, e.g. `#0078d4`.                             |
+| `themeColor`    |          | Accent hex (buttons, links, focus) and `<meta name="theme-color">`, e.g. `#0078d4`. |
 | `footer`        |          | Footer text rendered below every page.                                             |
 | `aiProviders`   |          | Global AI provider pool. See [AI providers](#ai-providers-global-pool).            |
 | `aiSummary`     |          | Microsoft Learn-style summary button per page. See [AI Summary](#ai-summary).      |

@@ -45,7 +45,7 @@ Vellum 启动时只读一个文件：项目根目录的 `vellum.config.json`。�
 | `tagline`       |      | 在 `home` 布局的落地页上显示。                                             |
 | `logo`          |      | 站点 logo 的 URL。                                                         |
 | `favicon`       |      | favicon 的 URL。                                                           |
-| `themeColor`    |      | `<meta name="theme-color">` 的十六进制值，例如 `#0078d4`。                 |
+| `themeColor`    |      | 强调色（按钮、链接、焦点）及 `<meta name="theme-color">`，例如 `#0078d4`。 |
 | `footer`        |      | 每个页面底部展示的页脚文字。                                               |
 | `aiProviders`   |      | 全局 AI 提供商池。见 [AI 提供商](#ai-提供商全局池)。                       |
 | `aiSummary`     |      | Microsoft Learn 风格的逐页摘要按钮。见 [AI 摘要](#ai-摘要)。              |

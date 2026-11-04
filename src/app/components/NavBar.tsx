@@ -8,6 +8,9 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   Text,
   Tooltip,
   mergeClasses,
@@ -15,66 +18,85 @@ import {
 } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import {
-  Search24Regular,
-  Globe24Regular,
-  WeatherSunny24Regular,
-  WeatherMoon24Regular,
-  ChevronDown16Regular,
-  Navigation24Regular,
+  Search16Regular,
+  Search20Regular,
+  Globe20Regular,
+  Desktop16Regular,
+  WeatherSunny16Regular,
+  WeatherMoon16Regular,
+  WeatherSunny20Regular,
+  WeatherMoon20Regular,
+  ChevronDown12Regular,
+  Navigation20Regular,
 } from "@fluentui/react-icons";
-import { useVellum } from "../context";
+import { useEffect, useState } from "react";
+import { useVellum, type ThemeMode } from "../context";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
 import { AskAiButton } from "./AskAI";
+import { Segmented } from "./Segmented";
+
+// Shell header in the Prism style: a solid strip of the page canvas with a
+// hairline under it, compact 32px controls, and grey (not brand) selection.
+export const HEADER_HEIGHT = 52;
 
 const useStyles = makeStyles({
   root: {
     position: "sticky",
     top: 0,
     zIndex: 100,
-    backdropFilter: "saturate(180%) blur(14px)",
-    WebkitBackdropFilter: "saturate(180%) blur(14px)",
-    backgroundColor: tokens.colorNeutralBackgroundAlpha,
-    boxShadow: `inset 0 -1px 0 ${tokens.colorNeutralStroke3}`,
+    background: "var(--vellum-canvas)",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalM,
-    paddingInline: tokens.spacingHorizontalXL,
-    height: "60px",
-    // Tighten the inset + gap on small screens so the hamburger, brand,
-    // search button, and three action icons stop fighting each other for
-    // the last few pixels of width.
+    gap: "8px",
+    paddingInline: "16px 12px",
+    height: `${HEADER_HEIGHT}px`,
+    boxSizing: "border-box",
     "@media (max-width: 720px)": {
-      gap: tokens.spacingHorizontalXS,
-      paddingInline: tokens.spacingHorizontalM,
+      gap: "4px",
+      paddingInline: "8px",
     },
   },
   brandGroup: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
+    gap: "8px",
     minWidth: 0,
+    flexShrink: 1,
   },
   brand: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalSNudge,
-    fontSize: tokens.fontSizeBase400,
-    fontWeight: tokens.fontWeightSemibold,
+    gap: "10px",
+    minWidth: 0,
     color: tokens.colorNeutralForeground1,
     textDecoration: "none",
-    letterSpacing: "-0.01em",
-    "&:hover": { color: tokens.colorBrandForeground1 },
+    "&:hover": { color: tokens.colorNeutralForeground1, textDecoration: "none" },
   },
+  brandText: {
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  // Repo crumb: muted, like a path segment after the site name.
   brandRepo: {
-    color: tokens.colorNeutralForeground2,
-    fontWeight: tokens.fontWeightRegular,
+    gap: "8px",
+    color: tokens.colorNeutralForeground3,
+    "&:hover": { color: tokens.colorNeutralForeground1, textDecoration: "none" },
     "@media (max-width: 540px)": { display: "none" },
   },
+  brandRepoText: {
+    fontSize: tokens.fontSizeBase300,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
   brandSep: {
-    width: "1px",
-    height: "18px",
-    backgroundColor: tokens.colorNeutralStroke2,
-    flexShrink: 0,
+    color: tokens.colorNeutralStroke1,
+    fontSize: tokens.fontSizeBase400,
+    userSelect: "none",
     "@media (max-width: 540px)": { display: "none" },
   },
   // Hamburger button wrapper: opens the mobile Drawer sidebar. Only shown
@@ -86,50 +108,69 @@ const useStyles = makeStyles({
     display: "none",
     "@media (max-width: 960px)": { display: "inline-flex" },
   },
-  logo: { width: "26px", height: "26px", display: "block", flexShrink: 0 },
-  logoSmall: { width: "22px", height: "22px", display: "block", flexShrink: 0 },
+  logo: {
+    width: "24px",
+    height: "24px",
+    display: "block",
+    flexShrink: 0,
+    borderRadius: "7px",
+  },
+  logoSmall: {
+    width: "20px",
+    height: "20px",
+    display: "block",
+    flexShrink: 0,
+    borderRadius: "6px",
+  },
   spacer: { flex: 1 },
   navLinks: {
     display: "flex",
     alignItems: "center",
-    gap: "2px",
-    marginLeft: tokens.spacingHorizontalM,
+    gap: "1px",
+    marginLeft: "12px",
     "@media (max-width: 720px)": { display: "none" },
   },
   navLink: {
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: "6px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    minHeight: "32px",
+    paddingInline: "10px",
     borderRadius: tokens.borderRadiusMedium,
     color: tokens.colorNeutralForeground2,
     textDecoration: "none",
-    fontSize: tokens.fontSizeBase300,
-    fontWeight: tokens.fontWeightRegular,
+    fontSize: "13px",
+    fontWeight: tokens.fontWeightMedium,
+    whiteSpace: "nowrap",
     "&:hover": {
-      backgroundColor: tokens.colorSubtleBackgroundHover,
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
+      textDecoration: "none",
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
+    },
+  },
+  // && beats FluentUI Link's own colour rules.
+  navLinkActive: {
+    "&&": {
+      backgroundColor: tokens.colorNeutralBackground3,
       color: tokens.colorNeutralForeground1,
     },
   },
-  navLinkActive: {
-    color: tokens.colorBrandForeground1,
-    fontWeight: tokens.fontWeightSemibold,
-  },
   navMenuTrigger: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "2px",
     background: "transparent",
     border: "none",
     cursor: "pointer",
     fontFamily: "inherit",
-    lineHeight: tokens.lineHeightBase300,
   },
   navChevron: {
-    opacity: 0.6,
-    marginLeft: "1px",
+    color: tokens.colorNeutralForeground3,
   },
-  actions: { display: "flex", alignItems: "center", gap: "4px" },
-  // Social-link row. Sits between the locale picker and the theme toggle in
-  // the NavBar actions strip. Hidden when no links are configured.
+  actions: { display: "flex", alignItems: "center", gap: "2px" },
+  // Social-link row. Sits between the locale picker and the theme switch in
+  // the actions strip. Hidden when no links are configured.
   socials: {
     display: "flex",
     alignItems: "center",
@@ -138,40 +179,78 @@ const useStyles = makeStyles({
   },
   socialIcon: {
     display: "inline-flex",
-    width: "20px",
-    height: "20px",
+    width: "18px",
+    height: "18px",
     "& svg": { width: "100%", height: "100%", display: "block" },
   },
+  // Looks like a field, acts as a button: opens the search dialog.
   searchBtn: {
-    minWidth: "220px",
-    height: "34px",
-    justifyContent: "flex-start",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "240px",
+    height: "32px",
+    marginRight: "6px",
+    padding: "0 8px 0 10px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    background: tokens.colorNeutralBackground1,
     color: tokens.colorNeutralForeground3,
-    fontWeight: tokens.fontWeightRegular,
-    backgroundColor: tokens.colorNeutralBackground2,
-    borderColor: tokens.colorNeutralStroke2,
-    "&:hover": { backgroundColor: tokens.colorNeutralBackground2Hover },
-    // Below 540px the full search bar (label + outline + shortcut hint)
-    // duplicates the visual weight of the other action icons. Hide it and
-    // let `searchIconBtn` take over with the same look as AskAI/locale/theme.
+    fontFamily: "inherit",
+    fontSize: "13px",
+    cursor: "pointer",
+    "& > svg": { flexShrink: 0 },
+    ":hover": {
+      borderTopColor: tokens.colorNeutralStroke1,
+      borderRightColor: tokens.colorNeutralStroke1,
+      borderBottomColor: tokens.colorNeutralStroke1,
+      borderLeftColor: tokens.colorNeutralStroke1,
+      color: tokens.colorNeutralForeground2,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
+    },
+    "@media (max-width: 900px)": { width: "180px" },
+    // Below 540px the field duplicates the weight of the icon actions; the
+    // icon-only `searchIconBtn` takes over.
     "@media (max-width: 540px)": { display: "none" },
   },
   searchIconBtn: {
     display: "none",
     "@media (max-width: 540px)": { display: "inline-flex" },
   },
-  searchLabel: { flex: 1, textAlign: "left", marginLeft: "4px" },
+  searchLabel: { flex: 1, textAlign: "left" },
   kbd: {
-    marginLeft: "auto",
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    padding: "0 5px",
     borderRadius: tokens.borderRadiusSmall,
-    padding: "1px 5px",
-    fontFamily: tokens.fontFamilyMonospace,
-    fontWeight: tokens.fontWeightSemibold,
-    "@media (max-width: 720px)": { display: "none" },
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    fontSize: "11px",
+    lineHeight: "18px",
+    fontFamily: "inherit",
+    "@media (max-width: 900px)": { display: "none" },
+  },
+  // Appearance panel. PopoverSurface ships its own drop-shadow filter and a
+  // transparent border; replace both so there is one soft shadow and a
+  // hairline edge, like Prism's account panel.
+  prefPanel: {
+    padding: "4px",
+    minWidth: "220px",
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    filter: "none",
+    boxShadow: tokens.shadow8,
+    background: tokens.colorNeutralBackground1,
+    fontSize: "13px",
+  },
+  prefRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    minHeight: "36px",
+    padding: "0 4px 0 8px",
+    color: tokens.colorNeutralForeground2,
   },
 });
 
@@ -186,8 +265,13 @@ export interface NavBarProps {
 
 export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps) {
   const styles = useStyles();
-  const { data, theme, setTheme, navigate, t } = useVellum();
+  const { data, navigate, t } = useVellum();
   const { site } = data.config;
+  // SSR renders "Ctrl K"; the platform is only known in the browser.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+  }, []);
 
   // Site title links to the configured homepage repo's localized home so a
   // zh reader stays in zh after clicking the brand. Repo crumb does the same
@@ -205,18 +289,20 @@ export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps
       <div className={styles.brandGroup}>
         <Link href={homepageHref} className={styles.brand} appearance="subtle">
           {site.logo && <Image src={site.logo} alt="" className={styles.logo} />}
-          <Text weight="semibold">{site.title}</Text>
+          <Text className={styles.brandText}>{site.title}</Text>
         </Link>
         {repo && !repo.hideInBrand && (
           <>
-            <span className={styles.brandSep} aria-hidden="true" />
+            <span className={styles.brandSep} aria-hidden="true">
+              /
+            </span>
             <Link
               href={repoHref}
               className={mergeClasses(styles.brand, styles.brandRepo)}
               appearance="subtle"
             >
               {repo.logo && <Image src={repo.logo} alt="" className={styles.logoSmall} />}
-              <Text>{repo.displayName}</Text>
+              <Text className={styles.brandRepoText}>{repo.displayName}</Text>
             </Link>
           </>
         )}
@@ -239,7 +325,7 @@ export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps
                     )}
                   >
                     {item.text}
-                    <ChevronDown16Regular className={styles.navChevron} />
+                    <ChevronDown12Regular className={styles.navChevron} />
                   </button>
                 </MenuTrigger>
                 <MenuPopover>
@@ -289,28 +375,28 @@ export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps
           <span className={styles.menuBtn}>
             <Button
               appearance="subtle"
-              icon={<Navigation24Regular />}
+              icon={<Navigation20Regular />}
               onClick={onOpenSidebar}
               aria-label={t("ui.nav.sidebar")}
             />
           </span>
         )}
-        {/* Desktop / tablet: a full search bar with label + shortcut hint.
-            Mobile (<540px): a plain subtle icon button so it matches the
-            visual weight of the other action buttons (AskAI / locale /
-            theme) and the navbar stops feeling crowded. */}
-        <Button
-          appearance="outline"
-          icon={<Search24Regular />}
-          onClick={onOpenSearch}
+        {/* Desktop / tablet: a field-style button with label + shortcut hint.
+            Mobile (<540px): a plain subtle icon button with the same weight
+            as the other actions. */}
+        <button
+          type="button"
           className={styles.searchBtn}
+          onClick={onOpenSearch}
+          aria-keyshortcuts="Control+K Meta+K"
         >
-          <span style={{ flex: 1, textAlign: "left" }}>{t("ui.search")}</span>
-          <span className={styles.kbd}>Ctrl K</span>
-        </Button>
+          <Search16Regular />
+          <span className={styles.searchLabel}>{t("ui.search")}</span>
+          <kbd className={styles.kbd}>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+        </button>
         <Button
           appearance="subtle"
-          icon={<Search24Regular />}
+          icon={<Search20Regular />}
           onClick={onOpenSearch}
           aria-label={t("ui.search")}
           className={styles.searchIconBtn}
@@ -318,19 +404,50 @@ export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps
         {onOpenAskAi && <AskAiButton onClick={onOpenAskAi} />}
         <LocalePicker />
         <SocialLinks />
-        <Tooltip
-          content={theme === "dark" ? t("ui.theme.toggleToLight") : t("ui.theme.toggleToDark")}
-          relationship="label"
-        >
-          <Button
-            appearance="subtle"
-            icon={theme === "dark" ? <WeatherSunny24Regular /> : <WeatherMoon24Regular />}
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={theme === "dark" ? t("ui.theme.toggleToLight") : t("ui.theme.toggleToDark")}
-          />
-        </Tooltip>
+        <ThemeSwitch />
       </div>
     </header>
+  );
+}
+
+// Theme picker: an icon button opening a small panel with the same
+// System / Light / Dark segmented switch Prism has in its account menu.
+function ThemeSwitch() {
+  const styles = useStyles();
+  const { theme, themeMode, setThemeMode, t } = useVellum();
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(_, d) => setOpen(d.open)}
+      positioning={{ position: "below", align: "end", offset: 6 }}
+      trapFocus
+    >
+      <PopoverTrigger disableButtonEnhancement>
+        <Tooltip content={t("ui.theme.label")} relationship="label">
+          <Button
+            appearance="subtle"
+            icon={theme === "dark" ? <WeatherMoon20Regular /> : <WeatherSunny20Regular />}
+            aria-label={t("ui.theme.label")}
+          />
+        </Tooltip>
+      </PopoverTrigger>
+      <PopoverSurface className={styles.prefPanel}>
+        <div className={styles.prefRow}>
+          <span>{t("ui.theme.label")}</span>
+          <Segmented<ThemeMode>
+            label={t("ui.theme.label")}
+            value={themeMode}
+            onChange={setThemeMode}
+            options={[
+              { value: "system", label: t("ui.theme.system"), content: <Desktop16Regular /> },
+              { value: "light", label: t("ui.theme.light"), content: <WeatherSunny16Regular /> },
+              { value: "dark", label: t("ui.theme.dark"), content: <WeatherMoon16Regular /> },
+            ]}
+          />
+        </div>
+      </PopoverSurface>
+    </Popover>
   );
 }
 
@@ -477,7 +594,7 @@ function LocalePicker() {
   return (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <Button appearance="subtle" icon={<Globe24Regular />} aria-label={t("ui.locale.label")} />
+        <Button appearance="subtle" icon={<Globe20Regular />} aria-label={t("ui.locale.label")} />
       </MenuTrigger>
       <MenuPopover>
         <MenuList>
