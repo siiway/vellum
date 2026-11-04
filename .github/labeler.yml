@@ -3,33 +3,33 @@
 
 worker:
   - changed-files:
-      - any-glob-to-any-file: "src/worker/**"
+      - any-glob-to-any-file: "app/src/worker/**"
 
-app:
+web:
   - changed-files:
-      - any-glob-to-any-file: "src/app/**"
+      - any-glob-to-any-file: "app/src/web/**"
 
 docs:
   - changed-files:
-      - any-glob-to-any-file: ["local-docs/**", "README*.md", "AGENTS.md"]
+      - any-glob-to-any-file: ["app/local-docs/**", "README*.md", "AGENTS.md"]
 
 i18n:
   - changed-files:
-      - any-glob-to-any-file: "src/shared/i18n.ts"
+      - any-glob-to-any-file: "app/src/shared/i18n.ts"
 
 config:
   - changed-files:
       - any-glob-to-any-file:
-          ["vellum.config.json", "src/shared/types.ts", "src/shared/site-schema.json"]
+          ["app/vellum.config.json", "app/src/shared/types.ts", "app/src/shared/site-schema.json"]
 
 database:
   - changed-files:
-      - any-glob-to-any-file: "migrations/**"
+      - any-glob-to-any-file: "app/src/worker/db/migrations/**"
 
 ci:
   - changed-files:
-      - any-glob-to-any-file: [".github/workflows/**", "prek.toml"]
+      - any-glob-to-any-file: [".github/workflows/**", "app/prek.toml"]
 
 dependencies:
   - changed-files:
-      - any-glob-to-any-file: ["package.json", "bun.lock"]
+      - any-glob-to-any-file: ["app/package.json", "app/bun.lock"]
