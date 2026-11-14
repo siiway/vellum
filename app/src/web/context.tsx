@@ -141,7 +141,7 @@ export function VellumProvider({
         skipHistory?: boolean;
       } = {},
     ) => {
-      const url = new URL(href, window.location.href);
+      let url = new URL(href, window.location.href);
 
       // If we already have this page's payload rendered, treat it as in-page nav:
       // jump to hash, optionally update history, but don't refetch.
@@ -174,9 +174,18 @@ export function VellumProvider({
         const payload = (await res.json()) as BootstrapPayload;
         // Keep current theme so the user's toggle survives navigation.
         payload.initialTheme = theme;
+        // When the server redirected (a repo's landing page, a legacy URL),
+        // show where the reader actually landed.
+        if (res.redirected) {
+          const landed = new URL(res.url);
+          landed.searchParams.delete("_data");
+          landed.hash = url.hash;
+          if (landed.origin === url.origin) url = landed;
+        }
         // popstate already changed the URL for us - don't touch history there.
-        if (!opts.skipHistory) {
-          history[opts.replace ? "replaceState" : "pushState"](
+        // A redirect still has to replace the entry it left behind.
+        if (!opts.skipHistory || res.redirected) {
+          history[opts.replace || opts.skipHistory ? "replaceState" : "pushState"](
             { vellum: true },
             "",
             url.toString(),

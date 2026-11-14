@@ -10,7 +10,7 @@ import type {
   RouteContext,
   VellumConfig,
 } from "../shared/types";
-import { expandLocalesFromTranslate, localeSourcePrefix } from "../shared/types";
+import { expandLocalesFromTranslate, localeSourcePrefix, sourceLocale } from "../shared/types";
 import config from "../../vellum.config.json";
 import {
   fetchSourceFile,
@@ -566,6 +566,16 @@ async function renderRoute(
   // Keying by `_data=1` keeps the two cache entries cleanly separated.
   const wantsJson = url.searchParams.get("_data") === "1";
 
+  // A repo whose docs root holds no real home page sends its root URL to the
+  // configured landing page. 302, since the target moves with the config.
+  const landing = route.repo.landingPage?.replace(/^\/+|\/+$/g, "");
+  if (route.pagePath === "index" && landing && landing !== "index") {
+    const prefix = SITE.site.locales.find((l) => l.code === route.localeCode)?.prefix;
+    const dest = new URL(`${prefix ? `/${prefix}` : ""}/${route.repoSlug}/${landing}`, url.origin);
+    url.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+    return Response.redirect(dest.toString(), 302);
+  }
+
   // Cache key includes the hostname so multi-host deployments don't pollute
   // each other's cached HTML — the SEO head now embeds absolute URLs derived
   // from the request origin, so the rendered bytes are host-specific. Theme is
@@ -590,8 +600,13 @@ async function renderRoute(
   const localeConfig = SITE.site.locales.find((l) => l.code === route.localeCode);
   const localeUrlPath = localeConfig?.prefix ?? "";
   const localeSrcPath = localeConfig
-    ? localeSourcePrefix(localeConfig, SITE.site.defaultLocale)
+    ? localeSourcePrefix(localeConfig, SITE.site.defaultLocale, route.repo)
     : "";
+  const defaultSrcPath = localeSourcePrefix(
+    { code: SITE.site.defaultLocale },
+    SITE.site.defaultLocale,
+    route.repo,
+  );
   const candidates = pageCandidates(route.repo, localeSrcPath, route.pagePath);
 
   let source: string | null = null;
@@ -618,7 +633,7 @@ async function renderRoute(
   // "Translating, you can view this page in …" while the provider runs;
   // on the next visit the cache hit path serves the translation instantly.
   if (!source && isMtTarget(SITE, route.localeCode)) {
-    const defaultCandidates = pageCandidates(route.repo, "", route.pagePath);
+    const defaultCandidates = pageCandidates(route.repo, defaultSrcPath, route.pagePath);
     for (const c of defaultCandidates) {
       const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
       if (s) {
@@ -647,7 +662,7 @@ async function renderRoute(
 
   if (!source || !matchedPath) {
     // Build "did you mean" suggestions by scanning the repo tree for similarly-named pages.
-    const suggestions = await suggestPages(env, ctx, route, localeSrcPath);
+    const suggestions = await suggestPages(env, ctx, route);
     return errorPage(
       env,
       ctx,
@@ -681,7 +696,11 @@ async function renderRoute(
     repoUrlBase,
     localePrefix: localeUrlPath,
     localeCode: route.localeCode,
-    pageIsIndex: route.pagePath === "index",
+    // The directory the page was read from; the MT fallback reads the
+    // default locale's.
+    localeSrcDir: translationAttempted ? defaultSrcPath : localeSrcPath,
+    // `drivers/index.md` served at `/repo/drivers` is a directory page too.
+    pageIsIndex: route.pagePath === "index" || matchedPath.endsWith("/index.md"),
     resolveXref: (slug, rest) => {
       const r = SITE.repos.find((x) => x.slug === slug);
       if (!r) return null;
@@ -1013,14 +1032,13 @@ async function suggestPages(
   env: Env,
   ctx: ExecutionContext,
   route: RouteContext,
-  srcPath: string,
 ): Promise<Array<{ text: string; link: string }>> {
   try {
     const tree = await fetchSourceTree(env, route.repo, route.version.branch, {
       ctx,
     });
     const docsPrefix = docsRootPrefix(route.repo.docsRoot);
-    const locPrefix = srcPath ? `${srcPath}/` : "";
+    // Pages of this locale, as paths inside its source directory.
     const targets = tree
       .filter(
         (e) =>
@@ -1029,16 +1047,17 @@ async function suggestPages(
           e.path.endsWith(".md"),
       )
       .map((e) =>
-        (docsPrefix && e.path.startsWith(docsPrefix)
-          ? e.path.slice(docsPrefix.length)
-          : e.path
-        ).replace(/\.md$/, ""),
+        sourceLocale(
+          (docsPrefix && e.path.startsWith(docsPrefix)
+            ? e.path.slice(docsPrefix.length)
+            : e.path
+          ).replace(/\.md$/, ""),
+          SITE.site.locales,
+          SITE.site.defaultLocale,
+          route.repo,
+        ),
       )
-      .filter((p) =>
-        locPrefix
-          ? p.startsWith(locPrefix)
-          : !SITE.site.locales.some((l) => l.prefix && p.startsWith(`${l.prefix}/`)),
-      );
+      .flatMap((s) => (s?.code === route.localeCode ? [s.path] : []));
 
     const needle = route.pagePath.toLowerCase();
     const scored = targets
@@ -1054,7 +1073,7 @@ async function suggestPages(
     const urlPrefix = SITE.site.locales.find((l) => l.code === route.localeCode)?.prefix ?? "";
     const repoBase = `${urlPrefix ? `/${urlPrefix}` : ""}/${route.repoSlug}`;
     return scored.map((s) => {
-      const rel = locPrefix && s.p.startsWith(locPrefix) ? s.p.slice(locPrefix.length) : s.p;
+      const rel = s.p;
       const link =
         `${repoBase}/${rel === "index" ? "" : rel}`.replace(/\/+/g, "/").replace(/\/$/, "") ||
         repoBase;

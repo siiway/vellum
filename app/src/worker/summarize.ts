@@ -161,7 +161,9 @@ async function fetchPageMarkdown(
   // locales live under a subdir named after the short `code` (not the BCP47
   // `prefix`). See `localeSourcePrefix` and the matching logic in router.ts.
   const localeConfig = site.site.locales.find((l) => l.code === route.localeCode);
-  const localePath = localeConfig ? localeSourcePrefix(localeConfig, site.site.defaultLocale) : "";
+  const localePath = localeConfig
+    ? localeSourcePrefix(localeConfig, site.site.defaultLocale, route.repo)
+    : "";
   for (const path of pageCandidates(route.repo, localePath, route.pagePath)) {
     const text = await fetchSourceFile(env, route.repo, route.branch, path, { ctx });
     if (text) return text;

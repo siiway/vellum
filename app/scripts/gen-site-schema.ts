@@ -196,6 +196,10 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'Template for the "Edit this page" link in the page footer. `:path` is substituted with the docs-root-relative path. Omit for local repos.',
       versions:
         "Optional version selector. Default version is used when no version is encoded in the URL.",
+      localeDirs:
+        'Source directory of each locale\'s pages, relative to docsRoot, keyed by locale code (e.g. { "en": "en", "zh": "zh" }). Locales left out keep the default layout: the default locale at the docs root, others in a directory named after their code.',
+      landingPage:
+        'Path the repo\'s root URL redirects to, relative to the repo (e.g. "v0.4" sends /{locale}/{slug} to /{locale}/{slug}/v0.4). Use it when the docs root holds no real home page, such as docs versioned by directory.',
       localPath:
         "Override for where local-source files live. Defaults to `local-docs/{slug}`. Path is relative to the project root.",
       hideInBrand:

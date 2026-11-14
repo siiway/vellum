@@ -17,7 +17,7 @@ import type {
   SocialLink,
   VellumConfig,
 } from "../shared/types";
-import { localeSourcePrefix } from "../shared/types";
+import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchSourceFile, fetchSourceTree, docsRootPrefix } from "./sources";
 import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
@@ -36,13 +36,29 @@ interface LocaleResolution {
   isDefault: boolean;
 }
 
-function resolveLocale(locale: LocaleConfig, defaultLocaleCode: string): LocaleResolution {
+function resolveLocale(
+  locale: LocaleConfig,
+  defaultLocaleCode: string,
+  repo: RepoConfig,
+): LocaleResolution {
   return {
     code: locale.code,
     urlPrefix: locale.prefix,
-    srcPrefix: localeSourcePrefix(locale, defaultLocaleCode),
+    srcPrefix: localeSourcePrefix(locale, defaultLocaleCode, repo),
     isDefault: locale.code === defaultLocaleCode,
   };
+}
+
+// Machine-translated locales have no tree of their own: they read the
+// default locale's files and config, and keep their own URL prefix.
+function sourceLocaleResolution(
+  locale: LocaleConfig,
+  defaultLocaleCode: string,
+  repo: RepoConfig,
+): LocaleResolution {
+  return locale.machineTranslated
+    ? resolveLocale({ ...locale, code: defaultLocaleCode }, defaultLocaleCode, repo)
+    : resolveLocale(locale, defaultLocaleCode, repo);
 }
 
 // Native `vellum.json` supports two shapes:
@@ -70,7 +86,7 @@ export async function loadSidebar(
   ctx?: ExecutionContext,
   site?: VellumConfig,
 ): Promise<SidebarGroup[]> {
-  const resolved = resolveLocale(locale, defaultLocaleCode);
+  const resolved = resolveLocale(locale, defaultLocaleCode, repo);
   const key = `sidebar:${repo.slug}@${branch}:${resolved.code}`;
   const cached = await readCache<SidebarGroup[]>(env, key);
   if (cached) return cached;
@@ -80,28 +96,32 @@ export async function loadSidebar(
   // the labels in one batch below. (Locales declared in site.locales but
   // also listed in translate.targets are treated as author-curated and use
   // their own srcPrefix — author content wins.)
-  const sourceResolved =
-    locale.machineTranslated && site
-      ? resolveLocale(
-          { ...locale, code: defaultLocaleCode, prefix: locale.prefix },
-          defaultLocaleCode,
-        )
-      : resolved;
+  const sourceResolved = sourceLocaleResolution(locale, defaultLocaleCode, repo);
 
   let groups: SidebarGroup[] | null = null;
   const native = await tryLoadNative(env, repo, branch, ctx);
   if (native) {
     const fromNative = pickNativeLocale(native, resolved.code, defaultLocaleCode);
-    if (fromNative) groups = localize(fromNative, repo.slug, resolved);
+    if (fromNative) groups = localize(fromNative, repo.slug, resolved, sourceResolved);
   }
 
   if (!groups) {
-    const vp = await tryLoadVitePress(env, repo, branch, sourceResolved.srcPrefix, ctx);
-    if (vp) groups = localize(vp, repo.slug, resolved);
+    const vp = await tryLoadVitePress(env, repo, branch, sourceResolved, ctx);
+    if (vp) groups = localize(vp, repo.slug, resolved, sourceResolved);
   }
 
   if (!groups) {
-    groups = await buildFromTree(env, repo, branch, sourceResolved, ctx, resolved);
+    const locales = site?.site.locales ?? [locale, { code: defaultLocaleCode }];
+    groups = await buildFromTree(
+      env,
+      repo,
+      branch,
+      sourceResolved,
+      locales,
+      defaultLocaleCode,
+      ctx,
+      resolved,
+    );
   }
 
   // Machine-translation pass. Only fires when the locale was synthesized
@@ -199,21 +219,28 @@ async function loadVitePressConfig(
   return null;
 }
 
-// VitePress keys `locales` by the locale's source directory (`zh`), and the
-// default locale by `root`, so the config and the locale's files agree.
-const vitePressLocaleKey = (srcPrefix: string) => srcPrefix || "root";
+// VitePress keys `locales` by the locale's top-level source directory (`zh`)
+// and the default locale by `root`, so the config and the locale's files
+// agree. A default locale with its own directory (`localeDirs`) is still
+// `root` unless the config names that directory.
+function vitePressLocaleKey(config: Record<string, unknown>, resolved: LocaleResolution): string {
+  const dir = resolved.srcPrefix.split("/")[0]!;
+  if (!dir) return "root";
+  if (!resolved.isDefault) return dir;
+  return isRecord(config.locales) && isRecord(config.locales[dir]) ? dir : "root";
+}
 
 async function tryLoadVitePress(
   env: Env,
   repo: RepoConfig,
   branch: string,
-  srcPrefix: string,
+  sourceResolved: LocaleResolution,
   ctx?: ExecutionContext,
 ): Promise<SidebarGroup[] | null> {
   const config = await loadVitePressConfig(env, repo, branch, ctx);
   if (!config) return null;
   const groups = toSidebarGroups(
-    themeConfigField(config, vitePressLocaleKey(srcPrefix), "sidebar"),
+    themeConfigField(config, vitePressLocaleKey(config, sourceResolved), "sidebar"),
   );
   return groups.length ? groups : null;
 }
@@ -306,36 +333,26 @@ async function buildFromTree(
   repo: RepoConfig,
   branch: string,
   sourceResolved: LocaleResolution,
+  locales: Pick<LocaleConfig, "code">[],
+  defaultLocaleCode: string,
   ctx?: ExecutionContext,
   urlResolved?: LocaleResolution,
 ): Promise<SidebarGroup[]> {
   const tree = await fetchSourceTree(env, repo, branch, { ctx });
   const prefix = docsRootPrefix(repo.docsRoot);
-  // Source-side prefix — where this locale's files live under docsRoot.
-  // Default locale's files sit at the docs root (empty source prefix); other
-  // locales live under their prefix directory. For machine-translated
-  // locales the source-side resolution points at the default locale so the
-  // tree walk finds the actual files; `urlResolved` carries the target
-  // locale's URL prefix for link construction.
+  // Source-side locale — whose files to list. For machine-translated
+  // locales it is the default locale so the tree walk finds the actual
+  // files; `urlResolved` carries the target locale's URL prefix for link
+  // construction.
   const resolved = urlResolved ?? sourceResolved;
-  const localePath = sourceResolved.srcPrefix ? `${sourceResolved.srcPrefix}/` : "";
 
-  // Set of *all* locale directories so the root locale's filter can exclude
-  // anything that lives under a locale dir (e.g. "zh/").
-  const localeDirs = new Set<string>();
-  // Heuristic: any top-level directory whose name is 2-5 ASCII chars is a
-  // candidate locale. The router-side site config is the source of truth, but
-  // we don't have it here, so cover the common 2-char (en/zh/ja) case.
-  localeDirs.add("zh");
-
+  // This locale's pages, as paths inside its source directory, without `.md`.
   const files = tree
     .filter((e) => e.type === "blob" && e.path.startsWith(prefix) && e.path.endsWith(".md"))
-    .map((e) => e.path.slice(prefix.length))
-    .filter((p) => {
-      if (localePath) return p.startsWith(localePath);
-      // Root locale: drop anything that sits inside a known locale dir.
-      const first = p.split("/")[0]!;
-      return !localeDirs.has(first);
+    .flatMap((e) => {
+      const rel = e.path.slice(prefix.length).replace(/\.md$/, "");
+      const owner = sourceLocale(rel, locales, defaultLocaleCode, repo);
+      return owner?.code === sourceResolved.code ? [owner.path] : [];
     });
 
   // Build a directory-aware tree. Files at the docs root land in the "root"
@@ -359,9 +376,7 @@ async function buildFromTree(
     );
   }
 
-  for (const p of files) {
-    const rel = localePath ? p.slice(localePath.length) : p;
-    const name = rel.replace(/\.md$/, "");
+  for (const name of files) {
     const parts = name.split("/");
 
     if (parts.length === 1) {
@@ -444,6 +459,7 @@ function localize(
   groups: SidebarGroup[],
   repoSlug: string,
   resolved: LocaleResolution,
+  sourceResolved: LocaleResolution,
 ): SidebarGroup[] {
   // URL-side prefix (always — even for the default locale, now that it
   // carries its own URL prefix). Locale-first canonical: `/{urlPrefix}/{repoSlug}`.
@@ -452,8 +468,9 @@ function localize(
   // Authored configs sometimes write paths prefixed with the locale's
   // *source* directory (the VitePress convention — `/zh/getting-started`
   // inside the zh sidebar). Strip those before prepending our canonical
-  // base so we don't double the segment.
-  const srcPrefix = resolved.srcPrefix;
+  // base so we don't double the segment. Machine-translated locales use
+  // the default locale's config, so its directory is the one to strip.
+  const srcPrefix = sourceResolved.srcPrefix;
 
   function rewrite(href: string): string {
     if (/^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("#"))
@@ -496,16 +513,14 @@ export async function loadRepoNav(
   ctx?: ExecutionContext,
   site?: VellumConfig,
 ): Promise<NavItem[] | null> {
-  const resolved = resolveLocale(locale, defaultLocaleCode);
+  const resolved = resolveLocale(locale, defaultLocaleCode, repo);
   const key = `nav:${repo.slug}@${branch}:${resolved.code}`;
   const cached = await readCache<NavItem[] | { empty: true }>(env, key);
   if (cached) return Array.isArray(cached) ? cached : null;
 
   // Machine-translated locales pull from the default-locale config (no
   // localized nav exists in the repo) and then translate the labels below.
-  const sourceLocaleKey = locale.machineTranslated
-    ? "root"
-    : vitePressLocaleKey(resolved.srcPrefix);
+  const sourceResolved = sourceLocaleResolution(locale, defaultLocaleCode, repo);
 
   let nav: NavItem[] | null = null;
 
@@ -521,7 +536,7 @@ export async function loadRepoNav(
     try {
       const data = JSON.parse(nativeText) as { nav?: NavItem[] };
       if (Array.isArray(data.nav) && data.nav.length) {
-        nav = localizeNav(data.nav, repo.slug, resolved);
+        nav = localizeNav(data.nav, repo.slug, resolved, sourceResolved);
       }
     } catch {
       // Fall through to VitePress.
@@ -531,8 +546,10 @@ export async function loadRepoNav(
   if (!nav) {
     // 2. VitePress themeConfig.nav.
     const config = await loadVitePressConfig(env, repo, branch, ctx);
-    const items = config ? toNavItems(themeConfigField(config, sourceLocaleKey, "nav")) : [];
-    if (items.length) nav = localizeNav(items, repo.slug, resolved);
+    const items = config
+      ? toNavItems(themeConfigField(config, vitePressLocaleKey(config, sourceResolved), "nav"))
+      : [];
+    if (items.length) nav = localizeNav(items, repo.slug, resolved, sourceResolved);
   }
 
   if (!nav) {
@@ -641,14 +658,19 @@ export async function loadRepoSocialLinks(
   return null;
 }
 
-function localizeNav(items: NavItem[], repoSlug: string, resolved: LocaleResolution): NavItem[] {
+function localizeNav(
+  items: NavItem[],
+  repoSlug: string,
+  resolved: LocaleResolution,
+  sourceResolved: LocaleResolution,
+): NavItem[] {
   // URL-side prefix anchors every link to the canonical locale-first path.
   const urlPrefix = resolved.urlPrefix;
   const base = `${urlPrefix ? `/${urlPrefix}` : ""}/${repoSlug}`;
   // Source-side prefix is what authors write inside their locale-keyed
   // config (e.g. `/zh/getting-started`); strip it before reattaching our
   // canonical base.
-  const srcPrefix = resolved.srcPrefix;
+  const srcPrefix = sourceResolved.srcPrefix;
 
   function rewrite(href: string): string {
     if (/^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("#"))

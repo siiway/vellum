@@ -8,6 +8,7 @@
 
 import type { Env } from "./env";
 import type { VellumConfig } from "../shared/types";
+import { sourceLocale } from "../shared/types";
 import { fetchSourceTree, docsRootPrefix, repoRef } from "./sources";
 import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
@@ -129,19 +130,19 @@ async function buildSitemapUrls(
           // non-page assets. Matches VitePress/Jekyll behaviour.
           if (relWithLocale.split("/").some((seg) => seg.startsWith("_"))) continue;
 
-          // Determine the locale this file belongs to. The first path segment
-          // matches a configured locale.prefix → that's the locale; otherwise
-          // it's the default locale.
-          const segments = relWithLocale.split("/");
-          const firstSeg = segments[0] ?? "";
-          const matchedLocale = site.site.locales.find((l) => l.prefix && l.prefix === firstSeg);
-          const locale =
-            matchedLocale ?? site.site.locales.find((l) => l.code === site.site.defaultLocale);
-          if (!locale) continue;
-
-          // Strip the locale segment if present, leaving the "page path"
-          // (e.g. "getting-started" or "index"). This becomes the page key.
-          const pageRel = matchedLocale ? segments.slice(1).join("/") : relWithLocale;
+          // Determine the locale this file belongs to from the source
+          // directory it sits in, and strip that directory, leaving the
+          // "page path" (e.g. "getting-started" or "index"). This becomes the
+          // page key.
+          const owner = sourceLocale(
+            relWithLocale,
+            site.site.locales,
+            site.site.defaultLocale,
+            repo,
+          );
+          const locale = owner && site.site.locales.find((l) => l.code === owner.code);
+          if (!owner || !locale) continue;
+          const pageRel = owner.path;
           if (!pageRel) continue;
 
           const pageKey = `${repo.slug}/${pageRel}`;

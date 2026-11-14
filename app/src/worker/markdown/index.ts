@@ -173,8 +173,9 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     // Check both the URL prefix (e.g. "zh-CN") and the locale code (e.g.
     // "zh") — authors in source files use the code in docs-root-relative
     // links because source directories are named by code, not by URL prefix.
-    const localeCandidates = [localePrefix];
-    if (c.localeCode && c.localeCode !== localePrefix) localeCandidates.push(c.localeCode);
+    // The page's source directory goes first: with `localeDirs` it can be
+    // deeper than the code (`en/v0.4`), and the longer match must win.
+    const localeCandidates = [c.localeSrcDir ?? "", localePrefix, c.localeCode ?? ""];
     for (const lp of localeCandidates) {
       if (
         lp &&

@@ -457,6 +457,8 @@ sources for your handbook and landing page.
 | `logo`            |          | Per-repo logo URL.                                                                     |
 | `editLinkPattern` |          | Template for "Edit this page" — `:path` is replaced with the docs-root-relative path.  |
 | `versions`        |          | Optional version picker. `[ { label, branch, default? } ]`.                            |
+| `localeDirs`      |          | Source directory per locale code. See [i18n](./i18n#per-repo-content-layout).          |
+| `landingPage`     |          | Path the repo's root URL redirects to, e.g. `"v0.4"` for docs versioned by directory.  |
 | `hideInBrand`     |          | Hides the repo's displayName crumb after the site title. Useful for the homepage repo. |
 
 ¹ Conditionally required: the JSON schema enforces `owner` / `repo` / `branch`

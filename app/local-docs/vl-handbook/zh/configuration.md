@@ -439,6 +439,8 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
 | `logo`            |      | 仓库级别的 logo URL。                                                         |
 | `editLinkPattern` |      | "编辑此页面" 的模板——`:path` 会被替换成文档根的相对路径。                     |
 | `versions`        |      | 可选的版本选择器。`[ { label, branch, default? } ]`。                         |
+| `localeDirs`      |      | 各语言代码对应的源目录。详见 [国际化](./i18n#每个仓库的内容布局)。            |
+| `landingPage`     |      | 仓库根 URL 重定向到的路径，例如按目录分版本的文档用 `"v0.4"`。                |
 | `hideInBrand`     |      | 在站点标题后隐藏该仓库的 displayName 面包屑。对主页仓库很有用。               |
 
 ¹ 条件性必填：JSON Schema 在 `source` 为 `"github"`（或省略）时强制要求

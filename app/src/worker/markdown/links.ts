@@ -19,6 +19,11 @@ export interface LinkContext {
   // Authors in source files use the code in docs-root-relative links
   // (`/zh/getting-started`); we need both to strip either form.
   localeCode?: string;
+  // Source directory the page was read from, relative to docsRoot (e.g.
+  // "zh", or "en" for a repo whose default locale has its own directory).
+  // Absolute links into it (`/en/guide`, the VitePress form) resolve inside
+  // the repo.
+  localeSrcDir?: string;
   // True when the current page renders an index file (its URL is a
   // directory in URL space — e.g. "/vl-handbook" maps to
   // vl-handbook/index.md). Relative links from an index resolve INSIDE

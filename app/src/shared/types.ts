@@ -216,7 +216,8 @@ export function expandLocalesFromTranslate(config: VellumConfig): VellumConfig {
 }
 
 // Where this locale's source markdown lives, relative to the repo's docsRoot.
-// The default locale's content sits at the docs root with no subdirectory;
+// The repo's `localeDirs` wins when it names the locale. Otherwise the
+// default locale's content sits at the docs root with no subdirectory, and
 // every other locale lives under a subdir named after its short `code`
 // (e.g. `docs/zh/`, `docs/ja/`) — the long-standing repo convention,
 // preserved even when URLs use a richer BCP47 prefix like `zh-CN`.
@@ -225,8 +226,38 @@ export function expandLocalesFromTranslate(config: VellumConfig): VellumConfig {
 // first so a hand-translated file shipped in the repo wins ("fill gaps
 // only"). When that path returns nothing, the router falls back to the
 // default-locale source and runs it through the translation service.
-export function localeSourcePrefix(locale: LocaleConfig, defaultLocaleCode: string): string {
+export function localeSourcePrefix(
+  locale: Pick<LocaleConfig, "code">,
+  defaultLocaleCode: string,
+  repo: Pick<RepoConfig, "localeDirs">,
+): string {
+  const dir = repo.localeDirs?.[locale.code];
+  if (dir !== undefined) return dir.replace(/^\/+|\/+$/g, "");
   return locale.code === defaultLocaleCode ? "" : locale.code;
+}
+
+// The locale a source file belongs to, and its page path inside that
+// locale's directory. `rel` is relative to the docs root, without `.md`.
+// A file under a locale's directory belongs to that locale (the deepest
+// directory wins). Any other file belongs to the default locale when its
+// pages sit at the docs root, and to no locale when they have a directory
+// of their own.
+export function sourceLocale(
+  rel: string,
+  locales: Pick<LocaleConfig, "code">[],
+  defaultLocaleCode: string,
+  repo: Pick<RepoConfig, "localeDirs">,
+): { code: string; path: string } | null {
+  let best: { code: string; dir: string } | null = null;
+  for (const l of locales) {
+    const dir = localeSourcePrefix(l, defaultLocaleCode, repo);
+    if (dir && rel.startsWith(`${dir}/`) && (!best || dir.length > best.dir.length)) {
+      best = { code: l.code, dir };
+    }
+  }
+  if (best) return { code: best.code, path: rel.slice(best.dir.length + 1) };
+  if (localeSourcePrefix({ code: defaultLocaleCode }, defaultLocaleCode, repo)) return null;
+  return { code: defaultLocaleCode, path: rel };
 }
 
 export interface RepoVersion {
@@ -253,6 +284,16 @@ export interface RepoConfig {
   logo?: string;
   editLinkPattern?: string;
   versions?: RepoVersion[];
+  // Source directory of each locale's pages, relative to docsRoot, keyed by
+  // locale code. Locales left out keep the default layout: the default
+  // locale at the docs root, others in a directory named after their code.
+  // Set it when the default locale has its own directory, like `en/`.
+  localeDirs?: Record<string, string>;
+  // Path the repo's root URL redirects to, relative to the repo (e.g.
+  // "v0.4" sends /{locale}/{slug} to /{locale}/{slug}/v0.4). Use it when
+  // the docs root holds no real home page, such as docs versioned by
+  // directory.
+  landingPage?: string;
   // Local-source field: directory under the project root that holds the
   // markdown tree. Optional — defaults to `local-docs/{slug}`. Path is
   // relative to the project root and is resolved at build time by the Vite
