@@ -16,7 +16,7 @@
 import matter from "gray-matter";
 import type { Env } from "./env";
 import type { VellumConfig } from "../shared/types";
-import { localeSourcePrefix } from "../shared/types";
+import { sourceLocale } from "../shared/types";
 import { fetchSourceFile, fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
 import { readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
@@ -386,29 +386,22 @@ async function getOrBuildIndex(
 
   const localeConfig = site.site.locales.find((l) => l.code === localeCode);
   const localeUrlPrefix = localeConfig?.prefix ?? "";
-  // Source-side prefix can differ from the URL prefix (default locale lives
-  // at the docs root even when its URL is locale-prefixed).
-  const localeSrcPrefix = localeConfig
-    ? localeSourcePrefix(localeConfig, site.site.defaultLocale)
-    : "";
   const docs: IndexedDoc[] = [];
   // When docsRoot is empty / "/" (local-source repos or remote ones with
   // content at the source root), don't prefix-match — local tree paths are
   // like "index.md" not "/index.md", and the empty-string match would shadow
   // them otherwise.
   const rootPrefix = docsRootPrefix(repo.docsRoot);
-  const scoped = tree.filter(
-    (e) =>
-      e.type === "blob" &&
-      (!rootPrefix || e.path.startsWith(rootPrefix)) &&
-      e.path.endsWith(".md") &&
-      (localeSrcPrefix
-        ? e.path.includes(`/${localeSrcPrefix}/`) || e.path.startsWith(`${localeSrcPrefix}/`)
-        : !site.site.locales.some(
-            (l) =>
-              l.prefix && (e.path.includes(`/${l.prefix}/`) || e.path.startsWith(`${l.prefix}/`)),
-          )),
-  );
+  // This locale's files, each with its page path inside the locale's source
+  // directory (which can differ from the URL prefix: the default locale
+  // lives at the docs root even when its URL is locale-prefixed).
+  const scoped = tree.flatMap((e) => {
+    if (e.type !== "blob" || !e.path.endsWith(".md")) return [];
+    if (rootPrefix && !e.path.startsWith(rootPrefix)) return [];
+    const rel = e.path.slice(rootPrefix.length).replace(/\.md$/, "");
+    const owner = sourceLocale(rel, site.site.locales, site.site.defaultLocale, repo);
+    return owner?.code === localeCode ? [{ path: e.path, page: owner.path }] : [];
+  });
 
   // Limit corpus to keep cold-start tractable; large repos can re-tune.
   const MAX = 200;
@@ -416,7 +409,7 @@ async function getOrBuildIndex(
     scoped.slice(0, MAX).map(async (entry) => {
       const raw = await fetchSourceFile(env, repo, branch, entry.path, { ctx });
       if (!raw) return;
-      const url = pageUrl(entry.path, repo, localeSrcPrefix, localeUrlPrefix, repoSlug);
+      const url = pageUrl(entry.page, localeUrlPrefix, repoSlug);
       const built = extractIndexableContent(raw, entry.path, repo.displayName);
       docs.push({
         url,
@@ -578,20 +571,9 @@ function slugify(s: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function pageUrl(
-  path: string,
-  repo: { slug: string; docsRoot: string },
-  srcPrefix: string,
-  urlPrefix: string,
-  repoSlug: string,
-): string {
-  const rootPrefix = docsRootPrefix(repo.docsRoot);
-  const rel = (
-    rootPrefix && path.startsWith(rootPrefix) ? path.slice(rootPrefix.length) : path
-  ).replace(/\.md$/, "");
-  const stripped =
-    srcPrefix && rel.startsWith(`${srcPrefix}/`) ? rel.slice(srcPrefix.length + 1) : rel;
-  const final = stripped === "index" ? "" : stripped;
+// `page` is the path inside the locale's source directory, without `.md`.
+function pageUrl(page: string, urlPrefix: string, repoSlug: string): string {
+  const final = page === "index" ? "" : page;
   // Locale-first URL shape — matches the canonical form produced by router.ts.
   const base = `${urlPrefix ? `/${urlPrefix}` : ""}/${repoSlug}`;
   return `${base}/${final}`.replace(/\/+/g, "/").replace(/\/$/, "") || base;

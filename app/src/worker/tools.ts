@@ -10,7 +10,7 @@
 
 import type { Env } from "./env";
 import type { RepoConfig, VellumConfig } from "../shared/types";
-import { localeSourcePrefix } from "../shared/types";
+import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchSourceFile, fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
 import { markdownToPlain } from "./summarize";
 
@@ -243,7 +243,7 @@ async function fetchPage(args: Record<string, unknown>, tctx: ToolContext): Prom
   const localeConfig = tctx.site.site.locales.find((l) => l.code === locale);
   const localeUrlPrefix = localeConfig?.prefix ?? "";
   const localeSrcPrefix = localeConfig
-    ? localeSourcePrefix(localeConfig, tctx.site.site.defaultLocale)
+    ? localeSourcePrefix(localeConfig, tctx.site.site.defaultLocale, repo)
     : "";
   const branch = repoRef(repo);
 
@@ -302,28 +302,24 @@ async function listPages(args: Record<string, unknown>, tctx: ToolContext): Prom
   }
 
   const locale = pickLocale(args.locale, tctx);
-  // Tree paths follow the on-disk layout, so we filter with the source-side
-  // prefix (empty for default locale, short `code` for others), not the
-  // BCP47 URL prefix.
-  const localeConfig = tctx.site.site.locales.find((l) => l.code === locale);
-  const localeSrcPrefix = localeConfig
-    ? localeSourcePrefix(localeConfig, tctx.site.site.defaultLocale)
-    : "";
   const branch = repoRef(repo);
 
   const tree = await fetchSourceTree(tctx.env, repo, branch, { ctx: tctx.ctx });
   const docsPrefix = docsRootPrefix(repo.docsRoot);
-  const locPrefix = localeSrcPrefix ? `${localeSrcPrefix}/` : "";
+  const { locales, defaultLocale } = tctx.site.site;
 
+  // Tree paths follow the on-disk layout, so pages are matched to the
+  // locale's source directory, not the BCP47 URL prefix, and that directory
+  // is stripped.
   const pages = tree
     .filter((e) => e.type === "blob" && e.path.endsWith(".md"))
     .map((e) =>
       docsPrefix && e.path.startsWith(docsPrefix) ? e.path.slice(docsPrefix.length) : e.path,
     )
-    .map((p) => p.replace(/\.md$/, ""))
-    // Strip the locale prefix and the README/index special cases.
-    .filter((p) => (locPrefix ? p.startsWith(locPrefix) : !hasLocaleSrcPrefix(p, tctx.site)))
-    .map((p) => (locPrefix && p.startsWith(locPrefix) ? p.slice(locPrefix.length) : p))
+    .flatMap((p) => {
+      const owner = sourceLocale(p.replace(/\.md$/, ""), locales, defaultLocale, repo);
+      return owner?.code === locale ? [owner.path] : [];
+    })
     .filter((p) => p && !p.endsWith("/_includes") && !p.startsWith("_"))
     .slice(0, 200);
 
@@ -350,16 +346,6 @@ function pickLocale(argValue: unknown, tctx: ToolContext): string {
     if (hit) return hit.code;
   }
   return tctx.defaultLocale;
-}
-
-// Match against the source-side layout (subdir named after each non-default
-// locale's short `code`) — used to exclude translated pages when the caller
-// asked for the default locale.
-function hasLocaleSrcPrefix(path: string, site: VellumConfig): boolean {
-  return site.site.locales.some((l) => {
-    const src = localeSourcePrefix(l, site.site.defaultLocale);
-    return src && path.startsWith(`${src}/`);
-  });
 }
 
 function deriveTitle(pagePath: string): string {
