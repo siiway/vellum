@@ -509,7 +509,8 @@ Set these in `wrangler.jsonc#vars` (or `wrangler secret put` for secrets):
 | `VELLUM_GITHUB_TOKEN`      |       empty        | Bearer token for `raw.githubusercontent.com` and the GitHub API. Required for private repos and helps with rate limits on public ones. |
 | `VELLUM_WEBHOOK_SECRET`    |       empty        | Shared secret for `/api/webhook` HMAC signing. Required for webhook cache busting.                                                     |
 | `VELLUM_CACHE_TTL_SECONDS` |       `300`        | TTL for raw markdown / tree / sidebar entries.                                                                                         |
-| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | TTL for rendered HTML.                                                                                                                 |
+| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | How long a cached page stays fresh.                                                                                                    |
+| `VELLUM_STALE_TTL_SECONDS` |      `86400`       | How long a page past its fresh window is still served while it rebuilds in the background. `0` rebuilds on the request.                |
 | `VELLUM_KROKI_URL`         | `https://kroki.io` | Override the Kroki endpoint for mermaid SSR. Self-hosters can point at their own instance.                                             |
 
 KV is bound separately in `wrangler.jsonc#kv_namespaces`. Without it, the

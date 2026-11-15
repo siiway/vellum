@@ -22,7 +22,42 @@ import type { RepoConfig, VellumConfig, LocaleConfig, RouteContext } from "../sh
 import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchSourceTree, fetchSourceFile, repoRef, docsRootPrefix } from "./sources";
 import { translate, isMtTarget, readCachedTranslation } from "./translate";
+import type { TranslateResult } from "./translate";
 import { loadSidebar } from "./sidebar";
+import { invalidate } from "./cache";
+import { pageCacheKey } from "./page-key";
+
+// Translates one page into `locale` and stores the row. A copy of the page
+// cached before the row existed shows the untranslated source, so it's
+// dropped once a new row lands and the next read rebuilds with it.
+async function translatePageRow(args: {
+  env: Env;
+  ctx: ExecutionContext;
+  site: VellumConfig;
+  repoSlug: string;
+  branch: string;
+  pagePath: string;
+  locale: string;
+  source: string;
+}): Promise<TranslateResult> {
+  const { env, repoSlug, branch, pagePath, locale } = args;
+  const result = await translate({
+    env,
+    ctx: args.ctx,
+    site: args.site,
+    kind: "page",
+    key: `${repoSlug}@${branch}:${pagePath}`,
+    locale,
+    source: args.source,
+    awaitWrite: true,
+  });
+  if (result.stored) {
+    await invalidate(env, [
+      pageCacheKey({ repoSlug, version: { branch }, localeCode: locale, pagePath }),
+    ]);
+  }
+  return result;
+}
 
 // --- D1 job helpers ---------------------------------------------------------
 
@@ -433,15 +468,15 @@ async function handleStart(
                 source = await fetchPageSource(env, repo, branch, docsPrefix, pagePath, ctx);
               }
               if (source) {
-                const result = await translate({
+                const result = await translatePageRow({
                   env,
                   ctx,
                   site,
-                  kind: "page",
-                  key: `${repoSlug}@${branch}:${pagePath}`,
+                  repoSlug,
+                  branch,
+                  pagePath,
                   locale,
                   source,
-                  awaitWrite: true,
                 });
                 if (result.model) lastModel = result.model;
                 if (result.apiKeyHint) lastKeyHint = result.apiKeyHint;
@@ -686,15 +721,15 @@ export async function triggerSmartTranslation(
     }
     if (!src) return;
 
-    await translate({
+    await translatePageRow({
       env,
       ctx,
       site,
-      kind: "page",
-      key: `${repo.slug}@${branch}:${pagePath}`,
+      repoSlug: repo.slug,
+      branch,
+      pagePath,
       locale,
       source: src,
-      awaitWrite: true,
     });
   }
 

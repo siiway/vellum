@@ -437,7 +437,9 @@ function extractIndexableContent(
   let front: Record<string, unknown> = {};
   let body = raw;
   try {
-    const parsed = matter(raw);
+    // Options skip gray-matter's cache, which would keep every file for the
+    // isolate's lifetime.
+    const parsed = matter(raw, {});
     front = parsed.data as Record<string, unknown>;
     body = parsed.content;
   } catch {

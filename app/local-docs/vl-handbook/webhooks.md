@@ -5,7 +5,7 @@ description: "Set up cache invalidation on push, with HMAC verification."
 
 # GitHub webhooks
 
-Vellum's edge cache holds rendered HTML for ~60 seconds and raw markdown for
+Vellum's edge cache keeps a page fresh for ~60 seconds and raw markdown for
 ~5 minutes by default (see [Caching & deployment](./caching-and-deployment#cache-layers)).
 For repos that publish often, a GitHub `push` webhook lets you invalidate
 exactly the touched cache entries within milliseconds of a commit — readers
@@ -100,20 +100,34 @@ Two implementation details worth noting:
 
 ## What gets invalidated
 
-For each touched markdown file under `{docsRoot}/`, the worker drops:
+For each touched file under `{docsRoot}/`, the worker drops:
 
-| Cache key                                            | Purpose                             |
-| ---------------------------------------------------- | ----------------------------------- |
-| `raw:{owner}/{repo}@{branch}:{path}`                 | The raw markdown body.              |
-| `commit:{owner}/{repo}@{branch}:{path}`              | The "last updated" metadata.        |
-| `html:{slug}@{branch}:{locale}:{pagePath}` × locales | The rendered HTML for every locale. |
+| Cache key                            | Purpose                                                              |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `raw:{owner}/{repo}@{branch}:{path}` | The raw file: a page, an include, `vellum.json`, the VitePress config. |
+
+And for each touched markdown file:
+
+| Cache key                                             | Purpose                                    |
+| ----------------------------------------------------- | ------------------------------------------ |
+| `commit:{owner}/{repo}@{branch}:{path}`               | The "last updated" metadata.               |
+| `page1:{slug}@{branch}:{locale}:{pagePath}` × locales | The cached page, so the next read rebuilds it. |
 
 Plus, on every push regardless of which files changed:
 
 | Cache key                                    | Purpose                                    |
 | -------------------------------------------- | ------------------------------------------ |
 | `sidebar:{slug}@{branch}:{locale}` × locales | Cached sidebar (in case it moved).         |
+| `nav:{slug}@{branch}:{locale}` × locales     | Cached repo nav.                           |
+| `social:{slug}@{branch}`                     | Cached social links.                       |
+| `vue:{slug}@{branch}`                        | Cached Vue component registry.             |
+| `xrefmap:{slug}@{branch}`                    | Cached xref map.                           |
 | `tree:{owner}/{repo}@{branch}`               | Full repo tree (in case files were added). |
+
+Pages the push didn't touch keep their cached copy, including pages that
+pull in a changed file through `[!INCLUDE]` or `[!code-…]`. They pick up
+the change, like a changed sidebar or nav, the next time they're rebuilt:
+at most `VELLUM_HTML_TTL_SECONDS` plus one request later.
 
 If `site.translate` is configured, the worker also deletes every D1
 translation row whose key matches `{slug}@{branch}:*` — that covers
@@ -125,9 +139,11 @@ hourly cron handles those on its own staleness schedule. See
 ::: note Cache API caveat
 KV invalidation is global; the per-edge Cache API is local to each PoP. The
 worker drops the matching entries from both, but other PoPs that haven't
-seen the new request yet still hold the old Cache API entry until it
-TTLs out. In practice this means a reader in another region sees the old
-page for up to `VELLUM_HTML_TTL_SECONDS` seconds after a publish.
+seen the new request yet still hold the old Cache API entries until they
+TTL out. In practice this means a reader in another region can see the
+old page for up to `VELLUM_HTML_TTL_SECONDS` plus `VELLUM_CACHE_TTL_SECONDS`
+seconds after a publish: the page's fresh window, then rebuilds from that
+PoP's cached raw files until those expire.
 
 For an immediate global flush, run `bun run drop:cache` (this clears KV)
 and rotate the cache key prefix in `src/worker/cache.ts` (this orphans
@@ -141,8 +157,6 @@ the per-edge entries so they're written-anew).
 - **Mermaid SVGs** (`diagram:mermaid:{theme}:{sha256}`) — the cache key
   encodes the source so a diagram edit is its own new key; old keys roll
   out at their 7-day TTL.
-- **xref maps** (`xrefmap:{slug}@{branch}`) — bust on the next push since
-  a `xrefmap.yml` change touches the file directly.
 
 ## Troubleshooting
 
@@ -168,7 +182,7 @@ a fork rather than the source.
 
 ::: details Page still serves old content after the webhook fires
 The per-edge Cache API entry hasn't expired yet — see the note above.
-Wait for `VELLUM_HTML_TTL_SECONDS`, or hit the URL from a different
+Wait for `VELLUM_HTML_TTL_SECONDS` plus `VELLUM_CACHE_TTL_SECONDS`, or hit the URL from a different
 geographic location (e.g. via a different VPN exit) to see whether the
 local PoP is stale or it's actually still cached in KV.
 :::

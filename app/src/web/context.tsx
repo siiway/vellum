@@ -52,16 +52,16 @@ export function VellumProvider({
   children: ReactNode;
 }) {
   const [data, setData] = useState<BootstrapPayload>(initial);
-  // Prefer the value the head pre-script wrote onto <html data-theme>; it already
-  // resolved cookie -> prefers-color-scheme before paint. Fall back to whatever the
-  // server picked (SSR, no DOM available).
-  const [theme, setThemeState] = useState<"light" | "dark">(() => {
-    if (typeof document !== "undefined") {
-      const t = document.documentElement.dataset.theme;
-      if (t === "light" || t === "dark") return t;
-    }
-    return initial.initialTheme;
-  });
+  // Hydrate in the theme the server rendered, so the markup matches, then
+  // take the one the head pre-script put on <html data-theme> (cookie, else
+  // OS). They differ on a first visit or after an OS theme switch. The page
+  // CSS and FluentUI tokens already follow data-theme before this runs; the
+  // switch only updates theme-dependent JS such as icons and mermaid SVGs.
+  const [theme, setThemeState] = useState<"light" | "dark">(initial.initialTheme);
+  useEffect(() => {
+    const t = document.documentElement.dataset.theme;
+    if (t === "light" || t === "dark") setThemeState(t);
+  }, []);
   const [isNavigating, setNavigating] = useState(false);
   const lastFetch = useRef<AbortController | null>(null);
   // Tracks the URL whose payload we currently have rendered.
@@ -132,6 +132,27 @@ export function VellumProvider({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  // Payloads fetched ahead of a likely click (see the prefetch listeners
+  // below), keyed by payload URL. navigate() takes one instead of fetching.
+  const prefetches = useRef(new Map<string, { at: number; page: Promise<LoadedPage> }>());
+
+  const isRendered = (url: URL) =>
+    url.pathname === renderedRef.current.pathname && url.search === renderedRef.current.search;
+
+  const prefetch = useCallback((url: URL) => {
+    if (isRendered(url)) return;
+    const key = payloadUrl(url);
+    const now = Date.now();
+    for (const [k, v] of prefetches.current) {
+      if (now - v.at > PREFETCH_TTL_MS) prefetches.current.delete(k);
+    }
+    if (prefetches.current.has(key)) return;
+    const page = fetchPage(key);
+    // A failed prefetch is dropped; navigate() then fetches on its own.
+    page.catch(() => prefetches.current.delete(key));
+    prefetches.current.set(key, { at: now, page });
+  }, []);
+
   const navigate = useCallback(
     async (
       href: string,
@@ -145,9 +166,7 @@ export function VellumProvider({
 
       // If we already have this page's payload rendered, treat it as in-page nav:
       // jump to hash, optionally update history, but don't refetch.
-      const sameAsRendered =
-        url.pathname === renderedRef.current.pathname && url.search === renderedRef.current.search;
-      if (sameAsRendered) {
+      if (isRendered(url)) {
         if (!opts.skipHistory) {
           history[opts.replace ? "replaceState" : "pushState"](null, "", url.toString());
         }
@@ -160,31 +179,34 @@ export function VellumProvider({
       lastFetch.current = ac;
       setNavigating(true);
       try {
-        const dataUrl = new URL(url.toString());
-        dataUrl.searchParams.set("_data", "1");
-        const res = await fetch(dataUrl.toString(), {
-          signal: ac.signal,
-          headers: { accept: "application/json" },
-        });
-        if (!res.ok) {
+        const dataUrl = payloadUrl(url);
+        const prefetched = prefetches.current.get(dataUrl);
+        prefetches.current.delete(dataUrl);
+        const loaded =
+          prefetched && Date.now() - prefetched.at <= PREFETCH_TTL_MS
+            ? await prefetched.page
+            : await fetchPage(dataUrl, ac.signal);
+        // A later navigation took over while this one was loading.
+        if (ac.signal.aborted) return;
+        if (!loaded.payload) {
           // Fallback: hard-load the URL.
           window.location.href = url.toString();
           return;
         }
-        const payload = (await res.json()) as BootstrapPayload;
+        const payload = loaded.payload;
         // Keep current theme so the user's toggle survives navigation.
         payload.initialTheme = theme;
         // When the server redirected (a repo's landing page, a legacy URL),
         // show where the reader actually landed.
-        if (res.redirected) {
-          const landed = new URL(res.url);
+        if (loaded.redirected) {
+          const landed = new URL(loaded.url);
           landed.searchParams.delete("_data");
           landed.hash = url.hash;
           if (landed.origin === url.origin) url = landed;
         }
         // popstate already changed the URL for us - don't touch history there.
         // A redirect still has to replace the entry it left behind.
-        if (!opts.skipHistory || res.redirected) {
+        if (!opts.skipHistory || loaded.redirected) {
           history[opts.replace || opts.skipHistory ? "replaceState" : "pushState"](
             { vellum: true },
             "",
@@ -274,31 +296,42 @@ export function VellumProvider({
     function onClick(e: MouseEvent) {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
         return;
-      let el: HTMLElement | null = e.target as HTMLElement;
-      while (el && el !== document.body) {
-        if (el.tagName === "A") break;
-        el = el.parentElement;
-      }
-      if (!el || el.tagName !== "A") return;
-      const anchor = el as HTMLAnchorElement;
-      const href = anchor.getAttribute("href");
-      if (!href) return;
-      // Skip if user marked it as non-routed, opens new tab, or downloads.
-      if (anchor.target && anchor.target !== "_self") return;
-      if (anchor.hasAttribute("download")) return;
-      if (anchor.dataset.noRouter === "true") return;
-
-      const url = new URL(href, window.location.href);
-      if (url.origin !== window.location.origin) return;
-      // Skip API + asset paths.
-      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/assets/")) return;
-
+      const url = routableLink(e.target);
+      if (!url) return;
       e.preventDefault();
       navigate(url.toString());
     }
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
   }, [navigate]);
+
+  // Fetch a link's payload when the reader shows intent to follow it: a
+  // pointer resting on it, a touch, or keyboard focus. The click then
+  // renders from the prefetched payload instead of waiting on the network.
+  useEffect(() => {
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    if (conn?.saveData) return;
+    let timer: number | undefined;
+    function onHover(e: Event) {
+      window.clearTimeout(timer);
+      const url = routableLink(e.target);
+      // Skip links the pointer only passes over.
+      if (url) timer = window.setTimeout(() => prefetch(url), PREFETCH_HOVER_MS);
+    }
+    function onIntent(e: Event) {
+      const url = routableLink(e.target);
+      if (url) prefetch(url);
+    }
+    document.addEventListener("pointerover", onHover);
+    document.addEventListener("touchstart", onIntent, { passive: true });
+    document.addEventListener("focusin", onIntent);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("pointerover", onHover);
+      document.removeEventListener("touchstart", onIntent);
+      document.removeEventListener("focusin", onIntent);
+    };
+  }, [prefetch]);
 
   const locale = data.route.localeCode;
   const tFn = useCallback(
@@ -311,6 +344,54 @@ export function VellumProvider({
     [data, theme, themeMode, setThemeMode, navigate, isNavigating, tFn],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+// How long a prefetched payload may stand in for a fresh fetch.
+const PREFETCH_TTL_MS = 30_000;
+// How long the pointer rests on a link before its payload is prefetched.
+const PREFETCH_HOVER_MS = 80;
+
+// A payload fetch, with what navigate() needs to know about the response.
+interface LoadedPage {
+  // Null when the response wasn't OK; navigate() then hard-loads the page.
+  payload: BootstrapPayload | null;
+  redirected: boolean;
+  url: string;
+}
+
+// The JSON payload URL for a page URL.
+function payloadUrl(url: URL): string {
+  const data = new URL(url.toString());
+  data.hash = "";
+  data.searchParams.set("_data", "1");
+  return data.toString();
+}
+
+async function fetchPage(dataUrl: string, signal?: AbortSignal): Promise<LoadedPage> {
+  const res = await fetch(dataUrl, { signal, headers: { accept: "application/json" } });
+  const payload = res.ok ? ((await res.json()) as BootstrapPayload) : null;
+  return { payload, redirected: res.redirected, url: res.url };
+}
+
+// The URL to navigate to client-side for an event on `target`, or null when
+// it isn't on an internal page link and the browser should handle it.
+function routableLink(target: EventTarget | null): URL | null {
+  let el = target instanceof Element ? target : null;
+  while (el && el !== document.body && el.tagName !== "A") el = el.parentElement;
+  if (!el || el.tagName !== "A") return null;
+  const anchor = el as HTMLAnchorElement;
+  const href = anchor.getAttribute("href");
+  if (!href) return null;
+  // Skip if user marked it as non-routed, opens new tab, or downloads.
+  if (anchor.target && anchor.target !== "_self") return null;
+  if (anchor.hasAttribute("download")) return null;
+  if (anchor.dataset.noRouter === "true") return null;
+
+  const url = new URL(href, window.location.href);
+  if (url.origin !== window.location.origin) return null;
+  // Skip API + asset paths.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/assets/")) return null;
+  return url;
 }
 
 function scrollToHash(slug: string) {

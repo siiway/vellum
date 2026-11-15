@@ -10,7 +10,7 @@
 import type { Env } from "./env";
 import type { RepoConfig } from "../shared/types";
 import { fetchSourceFile, docsRootPrefix } from "./sources";
-import { readCache, writeCache } from "./cache";
+import { cached } from "./cache";
 import { ttlSeconds } from "./env";
 
 export interface XrefEntry {
@@ -32,23 +32,31 @@ export async function loadXrefMap(
   ctx?: ExecutionContext,
 ): Promise<XrefMap | null> {
   const cacheKey = `xrefmap:${repo.slug}@${branch}`;
-  const cached = await readCache<XrefMap | null>(env, cacheKey);
-  if (cached !== null) return cached;
-
-  for (const file of CANDIDATE_PATHS) {
-    const path = `${docsRootPrefix(repo.docsRoot)}${file}`;
-    const raw = await fetchSourceFile(env, repo, branch, path, { ctx });
-    if (!raw) continue;
-    const map = file.endsWith(".json") ? parseJson(raw) : parseYaml(raw);
-    if (map) {
-      await writeCache(env, cacheKey, map, ttlSeconds(env, "raw"), ctx);
-      return map;
-    }
-  }
-
-  // Negative cache so we don't re-walk the repo on every page render.
-  await writeCache(env, cacheKey, null, 300, ctx);
-  return null;
+  // A repo without a map is cached as null too, so pages don't re-probe the
+  // candidate files on every render.
+  return cached(
+    env,
+    cacheKey,
+    (map) => (map ? ttlSeconds(env, "raw") : 300),
+    async () => {
+      const prefix = docsRootPrefix(repo.docsRoot);
+      const pending = CANDIDATE_PATHS.map((file) =>
+        fetchSourceFile(env, repo, branch, `${prefix}${file}`, { ctx }),
+      );
+      for (const p of pending) p.catch(() => {});
+      // First candidate, in order, that exists and parses wins. A failed
+      // fetch ahead of it throws, so nothing is cached and the next render
+      // retries; one behind it doesn't matter.
+      for (let i = 0; i < CANDIDATE_PATHS.length; i++) {
+        const raw = await pending[i]!;
+        if (!raw) continue;
+        const map = CANDIDATE_PATHS[i]!.endsWith(".json") ? parseJson(raw) : parseYaml(raw);
+        if (map) return map;
+      }
+      return null;
+    },
+    ctx,
+  );
 }
 
 function parseJson(raw: string): XrefMap | null {

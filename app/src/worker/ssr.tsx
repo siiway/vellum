@@ -5,10 +5,12 @@ import { renderToString } from "react-dom/server";
 import {
   RendererProvider,
   SSRProvider,
+  createCSSRuleFromTheme,
   createDOMRenderer,
   renderToStyleElements,
 } from "@fluentui/react-components";
 import { App } from "../web/App";
+import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import type { Env } from "./env";
 import { getClientAssets } from "./assets";
@@ -50,9 +52,13 @@ export async function renderPage(
 
   const assets = await getClientAssets(env);
   const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
-  const jsTags = assets.js
-    .map((src) => `<script type="module" src="${src}" defer></script>`)
-    .join("");
+  // Module scripts never block parsing and run after it, so the entry goes in
+  // <head> where the browser finds it first. The preloads fetch the chunks it
+  // imports in parallel with it rather than after it has been parsed.
+  const jsTags = [
+    ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
+    ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
+  ].join("");
 
   // Cloudflare Turnstile loader. Only included when the AI Summary feature is
   // configured WITH a sitekey — the script costs ~30KB and is useless without
@@ -164,18 +170,27 @@ html[data-theme="dark"] .shiki span[style*="--shiki-dark-text-decoration"]{text-
 }
 `;
 
-  // Theme resolution runs synchronously in <head> before first paint. Priority:
+  // Theme resolution runs synchronously in <head> before first paint and
+  // sets <html data-theme>. Priority:
   //   1. Explicit `vellum-theme` cookie (set by the toggle button) — wins always.
-  //   2. `vellum-theme-auto` cookie — written by a previous run of this script
-  //      so the server can SSR with the right FluentUI tokens. If the OS theme
-  //      shifted since we last persisted (e.g. user toggled dark mode mid-day),
-  //      we update the cookie + reload so the SSR matches what the user expects.
-  //   3. First-ever visit (neither cookie present): detect via matchMedia, write
-  //      the auto cookie, and `location.replace()` to reload. The reload swap
-  //      is in-flight before the rest of the document parses, so the user sees
-  //      a near-instant re-fetch rather than a light-themed flash.
+  //   2. The OS preference. The script stores it in the `vellum-theme-auto`
+  //      cookie so the next request is SSR'd in that theme.
+  // When the result differs from the theme the server rendered (a first
+  // visit, or the OS switched since the last one), nothing reloads: the
+  // page CSS keys off [data-theme], `themeTokenCss` below covers FluentUI's
+  // tokens, and the client switches its own state after hydration.
   const serverTheme = payload.initialTheme;
-  const themeScript = `(function(){try{var c=document.cookie;var m=c.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){document.documentElement.dataset.theme=m[1];return;}var os=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var a=c.match(/(?:^|; )vellum-theme-auto=(light|dark)/);if(!a){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';location.replace(location.href);return;}if(a[1]!==os){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';location.replace(location.href);return;}document.documentElement.dataset.theme=a[1];}catch(e){document.documentElement.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
+  const themeScript = `(function(){var d=document.documentElement;try{var c=document.cookie;var m=c.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){d.dataset.theme=m[1];return;}var os=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.theme=os;var a=c.match(/(?:^|; )vellum-theme-auto=(light|dark)/);if(!a||a[1]!==os){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';}}catch(e){d.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
+
+  // FluentProvider SSRs only the server theme's tokens. This rule carries
+  // the other theme's, applied when the script above picked it. It outranks
+  // FluentProvider's own `.fui-FluentProviderR0` rule, and once the client
+  // has switched themes the two agree.
+  const otherTheme = serverTheme === "dark" ? "light" : "dark";
+  const themeTokenCss = createCSSRuleFromTheme(
+    `html[data-theme="${otherTheme}"] .fui-FluentProvider`,
+    createVellumTheme(otherTheme === "dark", site.themeColor),
+  );
 
   return `<!doctype html>
 <html lang="${escapeAttr(toBcp47(payload.route.localeCode, payload.config))}" data-theme="${payload.initialTheme}">
@@ -188,13 +203,14 @@ ${seoHead}
   ${site.favicon ? `<link rel="icon" type="image/svg+xml" href="${escapeAttr(site.favicon)}">` : ""}
   <style id="vellum-base">${baseCss}</style>
   ${styleHtml}
+  <style id="vellum-theme-tokens">${themeTokenCss}</style>
   ${cssLinks}
+  ${jsTags}
   ${turnstileTag}
 </head>
 <body>
   <div id="vellum-root">${html}</div>
   <script id="__VELLUM_DATA__" type="application/json">${safePayload}</script>
-  ${jsTags}
 </body>
 </html>`;
 }

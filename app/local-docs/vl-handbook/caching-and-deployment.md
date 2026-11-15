@@ -10,32 +10,63 @@ description: "Edge cache layers, KV setup, webhooks, and deploying to Cloudflare
 Vellum uses a layered edge cache, all of it routed through
 [`src/worker/cache.ts`](https://github.com/siiway/vellum/blob/main/app/src/worker/cache.ts):
 
-1. **L1 — Cache API.** Per-edge, automatic, free. Every cacheable read goes
-   through it first and gets a sub-millisecond hit when warm.
-2. **L2 — KV namespace** (optional). Global, durable, manually invalidatable
+1. **L0 — isolate memory.** Per Worker isolate, for at most 30 seconds.
+   Repeat reads in a warm isolate skip even the Cache API.
+2. **L1 — Cache API.** Per-edge, automatic, free. Gets a sub-millisecond
+   hit when warm.
+3. **L2 — KV namespace** (optional). Global, durable, manually invalidatable
    by key. Used as a fallback when L1 misses.
+
+A read tries the layers in that order and copies a hit into the faster
+ones. Misses are cached too: a file GitHub answers 404 for is remembered for
+60 seconds, and a repo without an `xrefmap.yml` for 5 minutes, so a page
+render doesn't re-probe every optional file each time.
 
 Without KV bound, the worker still works fine — just with per-edge caches
 only, so a hit in eu-west doesn't speed up subsequent requests in us-east.
+
+### Page cache
+
+Pages are served from a cache of their bootstrap payload: the rendered
+markdown, sidebar, nav and the rest of what the page shows. An entry is
+fresh for `VELLUM_HTML_TTL_SECONDS`. After that, for up to
+`VELLUM_STALE_TTL_SECONDS` more, it's still served at once while the worker
+rebuilds it in the background, and the next reader gets the new version.
+Only the first request for a page, or one after both windows have passed,
+waits for a render.
+
+- Client-side navigation (`?_data=1`) reads the same entry as the HTML.
+- Rendered HTML is cached per host and theme and reused while it matches
+  the payload.
+- HTML and JSON responses carry an `ETag`. A browser revalidating an
+  unchanged page gets a bodiless `304`.
+- A deploy that changes the client bundles never serves HTML that links
+  the old ones: the bundle hashes are part of the HTML's cache key.
+
+Set `VELLUM_STALE_TTL_SECONDS` to `0` to rebuild on the request whenever an
+entry is past its fresh window.
 
 ### What's cached
 
 | Key prefix                         | What                                                            | TTL                                                                      |
 | ---------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `raw:`                             | Markdown / theme / config files from GitHub                     | `VELLUM_CACHE_TTL_SECONDS` (default 300s)                                |
+| `raw:`                             | Markdown / theme / config files from GitHub, and 404s           | `VELLUM_CACHE_TTL_SECONDS` (default 300s); 60s for a 404                 |
 | `commit:`                          | Last-commit metadata                                            | `VELLUM_CACHE_TTL_SECONDS`                                               |
 | `tree:`                            | Full repo file tree (used for sidebar fallback + search corpus) | `VELLUM_CACHE_TTL_SECONDS`                                               |
 | `sidebar:`                         | Parsed sidebar per repo+locale                                  | `VELLUM_CACHE_TTL_SECONDS`                                               |
+| `nav:` / `social:`                 | Per-repo nav per locale, and per-repo social links              | `VELLUM_CACHE_TTL_SECONDS`                                               |
 | `index:`                           | Search index per repo+locale                                    | `VELLUM_CACHE_TTL_SECONDS × 4` (~20 min)                                 |
 | `xrefmap:`                         | Per-repo uid → href map                                         | `VELLUM_CACHE_TTL_SECONDS`                                               |
 | `diagram:mermaid:{theme}:{sha256}` | Pre-rendered mermaid SVGs                                       | 7 days (long; cache key encodes the source so invalidation is automatic) |
 | `vue:`                             | Per-repo Vue component registry                                 | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `html:`                            | Fully-rendered HTML for a page                                  | `VELLUM_HTML_TTL_SECONDS` (default 60s)                                  |
+| `page1:`                           | Page payload per repo+locale+page (see [Page cache](#page-cache)) | Fresh for `VELLUM_HTML_TTL_SECONDS` (default 60s), then served stale for up to `VELLUM_STALE_TTL_SECONDS` (default 1 day) |
+| `html5:`                           | Rendered HTML per host+theme, reused while it matches `page1:`  | Same as `page1:`                                                         |
 
 ::: tip TTLs are knobs
-The defaults trade a 60-second propagation lag for very high cache hit
-rates. Crank both up if you publish rarely; cut them down if you publish
-hot.
+The defaults trade a short propagation lag for very high cache hit rates:
+after a publish, a page shows its old version until its fresh window has
+passed and a reader has triggered the rebuild. Crank the TTLs up if you
+publish rarely; cut them down if you publish hot.
 :::
 
 ## Binding KV

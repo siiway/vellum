@@ -1,50 +1,32 @@
-// HTTP request dispatcher. Resolves URL -> repo + locale + page,
-// pulls markdown from GitHub, renders, and SSRs the React shell.
+// HTTP request dispatcher. Resolves URL -> repo + locale + page, gets the
+// page's payload from page.ts (cached), and answers with JSON or SSR'd HTML.
 
 import type { Env } from "./env";
 import type {
   BootstrapPayload,
   ErrorState,
   LocaleConfig,
-  RepoConfig,
   RouteContext,
   VellumConfig,
 } from "../shared/types";
-import { expandLocalesFromTranslate, localeSourcePrefix, sourceLocale } from "../shared/types";
+import { expandLocalesFromTranslate, sourceLocale } from "../shared/types";
 import config from "../../vellum.config.json";
-import {
-  fetchSourceFile,
-  fetchSourceTree,
-  fetchSourceLastCommit,
-  repoRef,
-  docsRootPrefix,
-} from "./sources";
-import { normalizeInternal, renderMarkdown } from "./markdown/index";
-import { renderMermaidThemed } from "./markdown/diagrams";
-import { extractCodeSlice, type CodeIncludeMeta } from "./markdown/ops-includes";
-import { loadXrefMap } from "./xrefmap";
-import { highlightCode } from "./markdown/highlight";
-import type { Block } from "../shared/markdown";
-import type { LinkContext } from "./markdown/links";
-import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
+import { fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
 import { renderPage } from "./ssr";
-import { readCache, writeCache } from "./cache";
-import { ttlSeconds } from "./env";
+import { getClientAssets } from "./assets";
+import { readEntry, writeCache } from "./cache";
+import { staleSeconds, ttlSeconds } from "./env";
+import { loadPage, resolveTranslatedLocales } from "./page";
+import { pageCacheKey } from "./page-key";
 import { handleWebhook } from "./webhook";
 import { handleSearch } from "./search";
 import { handleSummarize } from "./summarize";
 import { handleAsk } from "./ask";
-import {
-  translateSiteConfig,
-  translateUiStrings,
-  listTranslatedLocalesForPage,
-  isMtTarget,
-  readCachedTranslation,
-} from "./translate";
+import { translateSiteConfig, translateUiStrings } from "./translate";
 import { handleMcp } from "./mcp";
-import { handleTranslateRepo, triggerSmartTranslation } from "./translate-repo";
+import { handleTranslateRepo } from "./translate-repo";
 import { handleAiSession } from "./session";
-import { handleVueComponentRequest, loadVueComponents } from "./vue";
+import { handleVueComponentRequest } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
 import { baseUiStrings, t as translate } from "../shared/i18n";
 
@@ -107,8 +89,9 @@ export async function dispatch(
     }
   }
 
-  // `/{prefix}/{homepageRepo}` (slug form of the landing page) redirects to
-  // `/{prefix}` so the short form is the only canonical URL. Sub-pages
+  // `/{prefix}/{homepageRepo}` and `/{prefix}/{homepageRepo}/index` (slug
+  // forms of the landing page) redirect to `/{prefix}` so the short form is
+  // the only canonical URL. Sub-pages
   // (`/{prefix}/{homepageRepo}/<slug>`) keep their slug-prefixed URL and
   // resolve normally via resolveRoute below.
   const homepageSlugRedirect = matchHomepageRepoIndex(path);
@@ -486,9 +469,11 @@ function makeHomepageIndexRoute(localeCode: string, localePrefix: string): Route
   };
 }
 
-// Matches `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}` exactly
-// (no sub-page). Returns the short canonical they should redirect to, or
-// null when the path isn't a homepage-repo index.
+// Matches `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}`, with or
+// without a trailing `/index` (no other sub-page). Returns the short
+// canonical they should redirect to, or null when the path isn't a
+// homepage-repo index. The page cache relies on this: the landing page and
+// `/{homepageRepo}/index` share a cache key, so only one may be served.
 function matchHomepageRepoIndex(pathname: string): string | null {
   const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
   if (!parts.length || !parts[0]) return null;
@@ -499,7 +484,8 @@ function matchHomepageRepoIndex(pathname: string): string | null {
     localePrefix = locale.prefix;
     rest = rest.slice(1);
   }
-  if (rest.length !== 1 || rest[0] !== SITE.site.homepageRepo) return null;
+  if (rest[0] !== SITE.site.homepageRepo) return null;
+  if (rest.length > 2 || (rest.length === 2 && rest[1] !== "index")) return null;
   return localePrefix ? `/${localePrefix}` : "/";
 }
 
@@ -557,13 +543,13 @@ async function renderRoute(
   route: RouteContext,
 ): Promise<Response> {
   const url = new URL(request.url);
-  // SPA navigation requests come in with `?_data=1` (or `Accept: application/json`)
-  // and want the bootstrap payload without the HTML envelope.
-  // JSON mode is signaled by `?_data=1` ONLY. We used to also accept Accept:
-  // application/json, but that made the JSON-vs-HTML distinction invisible to
-  // Cloudflare's edge cache (cache keys are URL-only by default), so a cached
-  // JSON response could leak into a later HTML request for the same URL.
-  // Keying by `_data=1` keeps the two cache entries cleanly separated.
+  // SPA navigation requests come in with `?_data=1` and want the bootstrap
+  // payload without the HTML envelope. JSON mode is signaled by `?_data=1`
+  // ONLY. We used to also accept Accept: application/json, but that made the
+  // JSON-vs-HTML distinction invisible to Cloudflare's edge cache (cache keys
+  // are URL-only by default), so a cached JSON response could leak into a
+  // later HTML request for the same URL. Keying by `_data=1` keeps the two
+  // cache entries cleanly separated.
   const wantsJson = url.searchParams.get("_data") === "1";
 
   // A repo whose docs root holds no real home page sends its root URL to the
@@ -576,91 +562,9 @@ async function renderRoute(
     return Response.redirect(dest.toString(), 302);
   }
 
-  // Cache key includes the hostname so multi-host deployments don't pollute
-  // each other's cached HTML — the SEO head now embeds absolute URLs derived
-  // from the request origin, so the rendered bytes are host-specific. Theme is
-  // part of the key too: FluentUI's CSS-in-JS tokens are baked into the SSR
-  // HTML, so a dark-mode page can't be reused for a light-mode visitor.
-  const initialTheme = pickTheme(request);
-  const htmlKey = `html4:${url.host}:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}:${initialTheme}`;
-  if (!wantsJson) {
-    const cachedHtml = await readCache<string>(env, htmlKey);
-    if (cachedHtml) {
-      return new Response(cachedHtml, {
-        status: 200,
-        headers: htmlHeaders(env),
-      });
-    }
-  }
-
-  // URL-side prefix (what appears in URLs and matches URL segments) and
-  // source-side prefix (where files live on disk) are decoupled — the
-  // default locale's files sit at the docs root regardless of whether its
-  // URL prefix is set. See `localeSourcePrefix` for the rationale.
-  const localeConfig = SITE.site.locales.find((l) => l.code === route.localeCode);
-  const localeUrlPath = localeConfig?.prefix ?? "";
-  const localeSrcPath = localeConfig
-    ? localeSourcePrefix(localeConfig, SITE.site.defaultLocale, route.repo)
-    : "";
-  const defaultSrcPath = localeSourcePrefix(
-    { code: SITE.site.defaultLocale },
-    SITE.site.defaultLocale,
-    route.repo,
-  );
-  const candidates = pageCandidates(route.repo, localeSrcPath, route.pagePath);
-
-  let source: string | null = null;
-  let matchedPath: string | null = null;
-  let machineTranslated = false;
-  let translationAttempted = false;
-  for (const c of candidates) {
-    const s = await fetchSourceFile(env, route.repo, route.version.branch, c, {
-      ctx,
-    });
-    if (s) {
-      source = s;
-      matchedPath = c;
-      break;
-    }
-  }
-
-  // Machine-translation fallback. When the requested locale is listed in
-  // `site.translate.targets` and no hand-translated file was found, check
-  // the D1 cache for a pre-translated version. Cache hit → serve it with
-  // machineTranslated:true. Cache miss → serve the default-locale source
-  // immediately (no blocking provider call) and kick off a background
-  // translation via triggerSmartTranslation(). The banner shows
-  // "Translating, you can view this page in …" while the provider runs;
-  // on the next visit the cache hit path serves the translation instantly.
-  if (!source && isMtTarget(SITE, route.localeCode)) {
-    const defaultCandidates = pageCandidates(route.repo, defaultSrcPath, route.pagePath);
-    for (const c of defaultCandidates) {
-      const s = await fetchSourceFile(env, route.repo, route.version.branch, c, { ctx });
-      if (s) {
-        translationAttempted = true;
-        matchedPath = c;
-        const pageKey = `${route.repoSlug}@${route.version.branch}:${route.pagePath}`;
-
-        // Fast path: check D1 cache first (no provider call).
-        const cached = await readCachedTranslation(env, "page", pageKey, route.localeCode);
-        if (cached) {
-          source = cached;
-          machineTranslated = true;
-        } else {
-          // Non-blocking: serve source immediately so the reader doesn't
-          // wait for the provider. The banner shows "Translating, you can
-          // view this page in [already-translated languages]". Background
-          // translation fills the cache for the next visit.
-          source = s;
-          machineTranslated = false;
-          ctx.waitUntil(triggerSmartTranslation(env, ctx, SITE, route, s));
-        }
-        break;
-      }
-    }
-  }
-
-  if (!source || !matchedPath) {
+  const { entry, status } = await loadPage(env, ctx, SITE, route);
+  const build = entry.value;
+  if (!build.found) {
     // Build "did you mean" suggestions by scanning the repo tree for similarly-named pages.
     const suggestions = await suggestPages(env, ctx, route);
     return errorPage(
@@ -671,282 +575,89 @@ async function renderRoute(
         status: 404,
         title: translate(route.localeCode, "ui.notFound.title"),
         message: translate(route.localeCode, "ui.notFound.message"),
-        hint: `Tried: ${candidates.map((c) => `${sourceLabel(route.repo)}:${c}`).join("\n       ")}`,
+        hint: `Tried: ${build.candidates.map((c) => `${sourceLabel(route.repo)}:${c}`).join("\n       ")}`,
         suggestions,
       },
       route,
     );
   }
 
-  // Locale-first base: `/{localeUrlPath}/{repoSlug}`. Cross-repo xrefs (`@slug/...`)
-  // resolve into the SAME locale as the current page, so a zh page linking
-  // `@prism/foo` lands on `/zh/prism/foo`.
-  const repoUrlBase = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${route.repoSlug}`;
-  // For the landing page (canonical `/{localeUrlPath}` served from the
-  // homepageRepo's index), the relative-link resolver still needs to anchor
-  // at the repo slug — otherwise `./foo` becomes `/{prefix}/foo` instead of
-  // `/{prefix}/{homepageRepo}/foo`. Use the slug-rooted URL here while
-  // keeping the short canonical URL elsewhere (SEO, URL bar, sitemap).
-  const isShortHomepageCanonical =
-    route.repoSlug === SITE.site.homepageRepo &&
-    route.pagePath === "index" &&
-    (route.canonicalUrl === "/" || route.canonicalUrl === `/${localeUrlPath}`);
-  const linkContext: LinkContext = {
-    currentUrl: isShortHomepageCanonical ? repoUrlBase : route.canonicalUrl,
-    repoUrlBase,
-    localePrefix: localeUrlPath,
-    localeCode: route.localeCode,
-    // The directory the page was read from; the MT fallback reads the
-    // default locale's.
-    localeSrcDir: translationAttempted ? defaultSrcPath : localeSrcPath,
-    // `drivers/index.md` served at `/repo/drivers` is a directory page too.
-    pageIsIndex: route.pagePath === "index" || matchedPath.endsWith("/index.md"),
-    resolveXref: (slug, rest) => {
-      const r = SITE.repos.find((x) => x.slug === slug);
-      if (!r) return null;
-      const base = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`;
-      return `${base}/${rest.replace(/\.md$/, "")}`.replace(/\/+/g, "/");
-    },
-  };
-
-  // OPS xrefmap loader — prefetched in parallel with the main page so the inline
-  // xref resolver can be synchronous. Best-effort: a missing/malformed map just
-  // means xref tokens render as monospace fallback text.
-  const xrefMap = await loadXrefMap(env, route.repo, route.version.branch, ctx).catch(() => null);
-
-  // OPS [!INCLUDE]: resolve a path relative to the current page back through
-  // renderMarkdown so nested directives keep working. Guarded with a tiny
-  // depth counter to stop accidental cycles. Same context is reused for code
-  // includes — they only need the raw file bytes.
-  const includeBaseDir = matchedPath.replace(/\/[^/]+$/, "");
-  const rendered = await renderMarkdown({
-    source,
-    linkContext,
-    // Render mermaid blocks server-side via Kroki — both light + dark palettes
-    // so the client can swap instantly without a fresh fetch when the user
-    // toggles theme. Either side may come back null on Kroki failure; the
-    // client component falls back to its own mermaid bundle then.
-    renderDiagram: (code) => renderMermaidThemed(code, env, ctx),
-    resolveInclude: (path) =>
-      resolveInclude(env, ctx, route, includeBaseDir, path, linkContext, xrefMap),
-    resolveCodeInclude: (meta) => resolveCodeInclude(env, ctx, route, includeBaseDir, meta),
-    resolveXref: xrefMap
-      ? (uid) => {
-          const hit = xrefMap.byUid[uid];
-          return hit ? { href: hit.href, name: hit.name } : null;
-        }
-      : undefined,
-  });
-
-  // Frontmatter often carries page links (VitePress `hero.actions[].link`, `features[].link`)
-  // that haven't gone through the markdown link rewriter. Resolve them so HomeLayout
-  // doesn't have to know about the repo URL layout.
-  rewriteFrontmatterLinks(rendered.frontmatter, linkContext);
-
-  const [sidebar, repoNav, repoComponents, repoSocialFromSource] = await Promise.all([
-    loadSidebar(
-      env,
-      route.repo,
-      route.version.branch,
-      localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
-      SITE.site.defaultLocale,
-      ctx,
-      SITE,
-    ),
-    loadRepoNav(
-      env,
-      route.repo,
-      route.version.branch,
-      localeConfig ?? { code: route.localeCode, label: route.localeCode, prefix: "" },
-      SITE.site.defaultLocale,
-      ctx,
-      SITE,
-    ),
-    loadVueComponents(env, route.repo, route.version.branch, ctx),
-    loadRepoSocialLinks(env, route.repo, route.version.branch, ctx),
-  ]);
-  // Social-link resolution: prefer what we extracted from the repo's own
-  // vellum.json / VitePress config; fall back to the per-repo config in
-  // vellum.config.json (RepoConfig.socialLinks). The site-level fallback is
-  // applied client-side in NavBar so we don't have to ship redundant data.
-  const repoSocialLinks =
-    repoSocialFromSource ?? (route.repo.socialLinks?.length ? route.repo.socialLinks : null);
-  const { prev, next } = neighbors(sidebar, route);
-
-  const editUrl = route.repo.editLinkPattern
-    ? route.repo.editLinkPattern.replace(":path", relativeDocsPath(matchedPath, route.repo))
-    : undefined;
-
-  // Last updated: ask GitHub commits API in the background; don't block first paint on it.
-  let lastUpdated: BootstrapPayload["page"]["meta"]["lastUpdated"] = null;
-  try {
-    const commit = await fetchSourceLastCommit(env, route.repo, route.version.branch, matchedPath, {
-      ctx,
-    });
-    if (commit) lastUpdated = commit;
-  } catch {
-    // Non-fatal.
-  }
-
-  // `initialTheme` already computed above for the cache key — reused here.
-
-  // Translate site config strings (tagline, repo displayName/description,
-  // nav text) for machine-translated locales so the NavBar, brand crumb,
-  // and home-page repo cards render in the reader's locale. site.title and
-  // site.footer are intentionally not translated.
-  // Translated UI dictionary baked into the bootstrap payload so the client
-  // `t()` resolves shell strings (search labels, AI Summary chrome, etc.)
-  // into the requested locale without a code change.
-  const [localizedSite, uiStrings] = await Promise.all([
-    translateSiteConfig(env, ctx, SITE, route.localeCode),
-    translateUiStrings(env, ctx, SITE, route.localeCode, baseUiStrings as Record<string, string>),
-  ]);
-
-  // Title resolution:
-  //   frontmatter.title > first h1 > hero.name (for `layout: home` pages) > repo display name (for index) > derived from path
-  const heroObj = rendered.frontmatter?.hero;
-  const heroName =
-    heroObj && typeof heroObj === "object"
-      ? ((heroObj as Record<string, unknown>).name as string | undefined)
-      : undefined;
-  // For the index page, fall back to the translated repo displayName so the
-  // `<title>` and hero match the rest of the localized chrome.
-  const localizedRepo = localizedSite.repos.find((r) => r.slug === route.repoSlug) ?? route.repo;
-  const finalTitle =
-    rendered.title ||
-    heroName ||
-    (route.pagePath === "index" ? localizedRepo.displayName : titleFromPath(route.pagePath));
-
-  // Description: frontmatter.description > frontmatter.hero.tagline > repo.description
-  const heroTagline =
-    heroObj && typeof heroObj === "object"
-      ? ((heroObj as Record<string, unknown>).tagline as string | undefined)
-      : undefined;
-  const finalDescription =
-    rendered.description ||
-    heroTagline ||
-    (route.pagePath === "index" ? localizedRepo.description : undefined);
-
-  const payload: BootstrapPayload = {
-    config: localizedSite,
-    route,
-    sidebar,
-    repoNav,
-    uiStrings,
-    repoSocialLinks,
-    repoComponents,
-    initialTheme,
-    page: {
-      ast: rendered.ast,
-      meta: {
-        title: finalTitle,
-        description: finalDescription,
-        frontmatter: rendered.frontmatter,
-        outline: rendered.outline,
-        editUrl,
-        lastUpdated,
-        prev,
-        next,
-        machineTranslated,
-        translationAttempted,
-        translatedLocales: await resolveTranslatedLocales(env, SITE, route),
-      },
-    },
-  };
+  // FluentUI's CSS-in-JS tokens are baked into the SSR HTML, so the theme
+  // cookie picks the HTML. The JSON carries it too; the client overrides it.
+  const initialTheme = pickTheme(request);
+  const payload: BootstrapPayload = { ...build.payload, initialTheme };
+  // Changes whenever the page cache rebuilds the payload.
+  const version = entry.storedAt.toString(36);
 
   if (wantsJson) {
-    return new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": `public, max-age=${ttlSeconds(env, "html")}`,
-        // Belt and suspenders against any cache that does key on Accept.
-        vary: "Accept",
-        "x-vellum": "edge-json",
-      },
-    });
+    const etag = `W/"${version}-${initialTheme}"`;
+    const headers: Record<string, string> = {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `public, max-age=${ttlSeconds(env, "html")}`,
+      // Belt and suspenders against any cache that does key on Accept.
+      vary: "Accept",
+      etag,
+      "x-vellum": "edge-json",
+      "x-vellum-cache": status,
+    };
+    if (matchesEtag(request, etag)) return new Response(null, { status: 304, headers });
+    return new Response(JSON.stringify(payload), { status: 200, headers });
   }
 
-  const html = await renderPage(env, payload, request);
-  // Cache rendered HTML for a short window; webhooks bust it.
-  ctx.waitUntil(writeCache(env, htmlKey, html, ttlSeconds(env, "html"), ctx));
+  const assets = await getClientAssets(env);
+  const etag = `W/"${version}-${initialTheme}-${assets.id}"`;
+  const headers: Record<string, string> = {
+    ...htmlHeaders(env),
+    etag,
+    "x-vellum-cache": status,
+  };
+  if (matchesEtag(request, etag)) return new Response(null, { status: 304, headers });
 
-  return new Response(html, {
-    status: 200,
-    headers: htmlHeaders(env),
-  });
+  // Rendered HTML is keyed by host (the SEO head embeds absolute URLs from
+  // the request origin), theme and client build (it links the hashed
+  // bundles), and is reused only while the payload it came from is current.
+  const htmlKey = `html5:${url.host}:${initialTheme}:${assets.id}:${pageCacheKey(route)}`;
+  const cachedHtml = await readEntry<{ html: string; page: number }>(env, htmlKey, ctx);
+  let html: string;
+  if (cachedHtml && cachedHtml.value.page === entry.storedAt) {
+    html = cachedHtml.value.html;
+  } else {
+    html = await renderPage(env, payload, request);
+    ctx.waitUntil(
+      writeCache(
+        env,
+        htmlKey,
+        { html, page: entry.storedAt },
+        ttlSeconds(env, "html") + staleSeconds(env),
+        ctx,
+      ),
+    );
+  }
+  return new Response(html, { status: 200, headers });
 }
 
-function htmlHeaders(env: Env): HeadersInit {
+// True when the request's If-None-Match names `etag` (weak comparison).
+function matchesEtag(request: Request, etag: string): boolean {
+  const header = request.headers.get("if-none-match");
+  if (!header) return false;
+  const bare = (tag: string) => tag.trim().replace(/^W\//, "");
+  return header.split(",").some((tag) => tag.trim() === "*" || bare(tag) === bare(etag));
+}
+
+function htmlHeaders(env: Env): Record<string, string> {
   const ttl = ttlSeconds(env, "html");
   return {
     "content-type": "text/html; charset=utf-8",
     // `private`: the SSR'd HTML is theme-personalized (cookies decide which
     // FluentUI tokens are baked in), so shared caches can't reuse it across
-    // users. `no-cache`: the browser still stores the response but must
-    // revalidate on every navigation — without this, a `location.replace()`
-    // from the theme-detection pre-script returns the same cached light
-    // HTML and the reload loop never escapes. The CDN edge layer keeps
-    // `s-maxage` for repeated identical requests; the worker's own cache
-    // (theme-keyed) handles the hot path on the server side.
+    // users. `no-cache`: the browser keeps the response but revalidates it
+    // on every navigation, so a theme change or a new deploy shows up at
+    // once; the ETag turns an unchanged page into a bodiless 304. The
+    // worker's own page cache handles the hot path on the server side.
     "cache-control": `private, no-cache, s-maxage=${ttl * 4}, stale-while-revalidate=${ttl * 10}`,
     vary: "Accept, Cookie",
     "x-vellum": "edge-ssr",
   };
-}
-
-// Build the list of locales that can resolve this page right now:
-//   - The default locale (always — that's where the source lives).
-//   - Every hand-curated non-default locale declared in `site.locales`.
-//     We assume the author has shipped the page; if they didn't, the link
-//     simply 404s — same outcome as the picker without this filter.
-//   - Every machine-translated locale that has a cached row in D1 for this
-//     specific page key. This skips MT locales that have never been
-//     visited (and thus would trigger a fresh model call instead of
-//     resolving instantly).
-//
-// Used to populate `PageMeta.translatedLocales`, consumed by the
-// MachineTranslatedBanner so its inline "view this page in" list only
-// advertises locales the reader can actually navigate to.
-async function resolveTranslatedLocales(
-  env: Env,
-  site: VellumConfig,
-  route: { repoSlug: string; version: { branch: string }; pagePath: string },
-): Promise<string[]> {
-  const handCurated = site.site.locales.filter((l) => !l.machineTranslated).map((l) => l.code);
-  const cached = await listTranslatedLocalesForPage(
-    env,
-    route.repoSlug,
-    route.version.branch,
-    route.pagePath,
-  );
-  // De-dupe — the default locale is in handCurated; cached entries don't
-  // include it since the source is the source, not a translation row.
-  return [...new Set([...handCurated, ...cached])];
-}
-
-function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {
-  const base = docsRootPrefix(repo.docsRoot);
-  const loc = localePath ? `${localePath}/` : "";
-  const path = pagePath.replace(/^\/+/, "");
-  const list = new Set<string>();
-  list.add(`${base}${loc}${path}.md`);
-  list.add(`${base}${loc}${path}/index.md`);
-  if (path === "index") {
-    list.add(`${base}${loc}index.md`);
-    list.add(`${base}${loc}README.md`);
-  }
-  return [...list].map((p) => p.replace(/\/+/g, "/"));
-}
-
-function relativeDocsPath(matched: string, repo: RepoConfig): string {
-  const base = docsRootPrefix(repo.docsRoot);
-  return matched.startsWith(base) ? matched.slice(base.length) : matched;
-}
-
-function titleFromPath(p: string): string {
-  const name = p.split("/").pop() ?? p;
-  return name.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function pickTheme(request: Request): "light" | "dark" {
@@ -1081,23 +792,6 @@ async function suggestPages(
     });
   } catch {
     return [];
-  }
-}
-
-// Walks frontmatter and rewrites any `link` property under hero.actions[] and features[].
-// Mutates in place. External / hash / xref links are passed through by normalizeInternal.
-function rewriteFrontmatterLinks(front: Record<string, unknown>, ctx: LinkContext): void {
-  const hero = front.hero as { actions?: Array<{ link?: string }> } | undefined;
-  if (hero?.actions) {
-    for (const action of hero.actions) {
-      if (typeof action.link === "string") action.link = normalizeInternal(action.link, ctx);
-    }
-  }
-  const features = front.features as Array<{ link?: string }> | undefined;
-  if (Array.isArray(features)) {
-    for (const f of features) {
-      if (typeof f.link === "string") f.link = normalizeInternal(f.link, ctx);
-    }
   }
 }
 
@@ -1394,73 +1088,6 @@ async function renderTranslateTasksPage(
   });
 }
 
-// OPS [!INCLUDE]: fetch the referenced markdown and re-render through the
-// same pipeline so directives nested inside the include (more includes,
-// mermaid, xref, …) keep working. We pass `null` for xref/include resolvers
-// after the first level to break runaway recursion cheaply — a real cycle
-// guard would require threading a depth counter through the renderMarkdown
-// API, which is overkill for a feature that authors rarely abuse.
-async function resolveInclude(
-  env: Env,
-  ctx: ExecutionContext,
-  route: RouteContext,
-  baseDir: string,
-  relPath: string,
-  linkContext: LinkContext,
-  xrefMap: { byUid: Record<string, { href: string; name?: string }> } | null,
-): Promise<Block[] | null> {
-  const path = resolveRelativePath(baseDir, relPath);
-  if (!path) return null;
-  const source = await fetchSourceFile(env, route.repo, route.version.branch, path, { ctx });
-  if (!source) return null;
-
-  const innerRendered = await renderMarkdown({
-    source,
-    linkContext,
-    renderDiagram: (code) => renderMermaidThemed(code, env, ctx),
-    // Deliberately omit recursive include resolvers — see comment above.
-    resolveXref: xrefMap
-      ? (uid) => {
-          const hit = xrefMap.byUid[uid];
-          return hit ? { href: hit.href, name: hit.name } : null;
-        }
-      : undefined,
-  });
-  return innerRendered.ast.blocks;
-}
-
-// OPS [!code-lang]: fetch the source file, slice per the directive, syntax-
-// highlight, and return a code block ready to splice into the parent AST.
-async function resolveCodeInclude(
-  env: Env,
-  ctx: ExecutionContext,
-  route: RouteContext,
-  baseDir: string,
-  meta: CodeIncludeMeta,
-): Promise<Extract<Block, { type: "code" }> | null> {
-  const path = resolveRelativePath(baseDir, meta.path);
-  if (!path) return null;
-  const source = await fetchSourceFile(env, route.repo, route.version.branch, path, { ctx });
-  if (!source) return null;
-
-  const slice = extractCodeSlice(source, meta);
-  const html = await highlightCode(slice.code, meta.lang);
-  // highlightCode wraps in scaffolding; extract just the inner <pre> like ast.ts does.
-  const start = html.indexOf("<pre");
-  const end = html.lastIndexOf("</pre>");
-  const inner = start >= 0 && end >= 0 ? html.slice(start, end + "</pre>".length) : html;
-
-  return {
-    type: "code",
-    lang: meta.lang,
-    filename: meta.filename ?? path.split("/").pop(),
-    showLineNumbers: false,
-    highlightLines: slice.highlightLines,
-    code: slice.code,
-    html: inner,
-  };
-}
-
 // Human-readable source label for the 404 hint. "local:slug" for local repos
 // and "owner/repo" for GitHub-backed ones — matches the way authors think of
 // each in their config files.
@@ -1472,23 +1099,6 @@ function sourceLabel(repo: {
 }): string {
   if (repo.source === "local") return `local:${repo.slug}`;
   return `${repo.owner ?? "?"}/${repo.repo ?? "?"}`;
-}
-
-// Collapse `../` segments against a docs-root-relative directory. Returns null
-// when the result escapes the repo root (defence against `../../../etc/passwd`
-// style traversal in author-controlled INCLUDE paths).
-function resolveRelativePath(baseDir: string, relPath: string): string | null {
-  const parts = `${baseDir}/${relPath}`.split("/").filter((p) => p && p !== ".");
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === "..") {
-      if (!out.length) return null;
-      out.pop();
-    } else {
-      out.push(p);
-    }
-  }
-  return out.join("/");
 }
 
 function similarity(a: string, b: string): number {

@@ -7,6 +7,10 @@ export interface Env {
   VELLUM_WEBHOOK_SECRET?: string;
   VELLUM_CACHE_TTL_SECONDS?: string;
   VELLUM_HTML_TTL_SECONDS?: string;
+  // How long a page outlives VELLUM_HTML_TTL_SECONDS in the page cache. In
+  // that window it's served at once and rebuilt in the background. "0"
+  // always rebuilds on the request.
+  VELLUM_STALE_TTL_SECONDS?: string;
   // AI Summary (Microsoft Learn-style). The provider and model are selected
   // in vellum.config.json (site.aiSummary); credentials and the optional AI
   // binding live here so they can be scoped per-environment via wrangler
@@ -45,4 +49,12 @@ export function ttlSeconds(env: Env, key: "raw" | "html"): number {
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   return key === "raw" ? 300 : 60;
+}
+
+// Seconds a page may be served stale past its fresh window. Default one day.
+export function staleSeconds(env: Env): number {
+  const raw = env.VELLUM_STALE_TTL_SECONDS;
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  return 86400;
 }

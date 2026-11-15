@@ -62,6 +62,28 @@ export async function fetchSourceFile(
   return fetchGitHubRaw(env, repo.owner, repo.repo, ref, path, opts);
 }
 
+// Fetches every candidate at once and returns the first, in list order, that
+// exists and isn't empty: the answer trying them one by one would give, but
+// returned as soon as that candidate and the ones ahead of it are in, without
+// waiting on the rest. An error on a candidate ahead of the first hit is
+// rethrown, as the one-by-one walk would have.
+export async function fetchFirstSourceFile(
+  env: Env,
+  repo: RepoConfig,
+  ref: string,
+  paths: string[],
+  opts: SourceFetchOptions = {},
+): Promise<{ path: string; text: string } | null> {
+  const pending = paths.map((p) => fetchSourceFile(env, repo, ref, p, opts));
+  // The ones after the hit may still fail once we've returned.
+  for (const p of pending) p.catch(() => {});
+  for (let i = 0; i < pending.length; i++) {
+    const text = await pending[i]!;
+    if (text) return { path: paths[i]!, text };
+  }
+  return null;
+}
+
 export async function fetchSourceTree(
   env: Env,
   repo: RepoConfig,

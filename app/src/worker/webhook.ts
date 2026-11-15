@@ -1,13 +1,14 @@
 // GitHub webhook handler. Validates the HMAC signature and invalidates cache entries
-// for any markdown files that changed.
+// for the files and pages a push changed.
 
 import type { Env } from "./env";
 import { invalidate } from "./cache";
 import { invalidateForRepo } from "./translate";
 import { docsRootPrefix } from "./sources";
+import { pageCacheKey } from "./page-key";
 import config from "../../vellum.config.json";
-import { expandLocalesFromTranslate } from "../shared/types";
-import type { VellumConfig } from "../shared/types";
+import { expandLocalesFromTranslate, sourceLocale } from "../shared/types";
+import type { RepoConfig, VellumConfig } from "../shared/types";
 
 const SITE: VellumConfig = expandLocalesFromTranslate(config as VellumConfig);
 
@@ -67,22 +68,40 @@ export async function handleWebhook(
 
   const rootPrefix = docsRootPrefix(repo.docsRoot);
   const keys: string[] = [];
+  const pagePaths = new Set<string>();
   for (const p of touched) {
-    if (!p.endsWith(".md")) continue;
     if (rootPrefix && !p.startsWith(rootPrefix)) continue;
+    // Every file under the docs root: pages, includes, vellum.json, the
+    // VitePress config and theme.
     keys.push(`raw:${repo.owner}/${repo.repo}@${branch}:${p}`);
+    if (!p.endsWith(".md")) continue;
     keys.push(`commit:${repo.owner}/${repo.repo}@${branch}:${p}`);
-    const pagePath = pageKeyFromFile(p, rootPrefix);
-    if (pagePath) {
-      for (const locale of SITE.site.locales) {
-        keys.push(`html:${repo.slug}@${branch}:${locale.code}:${pagePath.path}`);
-      }
+    for (const pagePath of pagePathsForFile(p.slice(rootPrefix.length), repo)) {
+      pagePaths.add(pagePath);
     }
   }
-  // Always bust sidebar + tree on any push so changes to navigation show up.
+  // Cached page payloads, for every locale: machine-translated locales
+  // render from the default locale's files.
+  for (const pagePath of pagePaths) {
+    for (const locale of SITE.site.locales) {
+      keys.push(
+        pageCacheKey({
+          repoSlug: repo.slug,
+          version: { branch },
+          localeCode: locale.code,
+          pagePath,
+        }),
+      );
+    }
+  }
+  // Navigation and per-repo config can change with any push.
   for (const locale of SITE.site.locales) {
     keys.push(`sidebar:${repo.slug}@${branch}:${locale.code}`);
+    keys.push(`nav:${repo.slug}@${branch}:${locale.code}`);
   }
+  keys.push(`social:${repo.slug}@${branch}`);
+  keys.push(`vue:${repo.slug}@${branch}`);
+  keys.push(`xrefmap:${repo.slug}@${branch}`);
   keys.push(`tree:${repo.owner}/${repo.repo}@${branch}`);
 
   ctx.waitUntil(invalidate(env, keys));
@@ -94,23 +113,23 @@ export async function handleWebhook(
   return Response.json({ invalidated: keys.length });
 }
 
-function pageKeyFromFile(
-  absPath: string,
-  rootPrefix: string,
-): { locale: string; path: string } | null {
-  const rel = (
-    rootPrefix && absPath.startsWith(rootPrefix) ? absPath.slice(rootPrefix.length) : absPath
-  ).replace(/\.md$/, "");
-  // Locale prefix detection by config
-  for (const l of SITE.site.locales) {
-    if (l.prefix && rel.startsWith(`${l.prefix}/`)) {
-      return {
-        locale: l.code,
-        path: rel.slice(l.prefix.length + 1) || "index",
-      };
-    }
-  }
-  return { locale: SITE.site.defaultLocale, path: rel || "index" };
+// The page paths (the URL part after the repo slug) that can be served from
+// a markdown file, given relative to the docs root: the inverse of the page
+// builder's candidate list. Every file serves its own path; `guide/index.md`
+// also serves `guide`, and a root `README.md` also serves `index`.
+function pagePathsForFile(rel: string, repo: RepoConfig): string[] {
+  const owner = sourceLocale(
+    rel.replace(/\.md$/, ""),
+    SITE.site.locales,
+    SITE.site.defaultLocale,
+    repo,
+  );
+  if (!owner) return [];
+  const path = owner.path;
+  const paths = [path];
+  if (path.endsWith("/index")) paths.push(path.slice(0, -"/index".length));
+  if (path === "README") paths.push("index");
+  return paths;
 }
 
 async function verifySignature(secret: string, body: string, header: string): Promise<boolean> {

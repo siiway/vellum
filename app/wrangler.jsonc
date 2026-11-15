@@ -6,6 +6,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// Browser-only packages that SSR reaches through client components but
+	// never runs. Swapping them for a stub keeps several megabytes out of the
+	// Worker bundle, which every cold start has to load.
+	"alias": {
+		"mermaid": "./src/worker/browser-only.ts",
+		"vue": "./src/worker/browser-only.ts",
+		"vue3-sfc-loader": "./src/worker/browser-only.ts"
+	},
 	"assets": {
 		"directory": "./dist/client",
 		"binding": "ASSETS",
@@ -18,7 +26,8 @@
 		// "VELLUM_GITHUB_TOKEN": "",
 		// "VELLUM_WEBHOOK_SECRET": "",
 		"VELLUM_CACHE_TTL_SECONDS": "300",
-		"VELLUM_HTML_TTL_SECONDS": "60"
+		"VELLUM_HTML_TTL_SECONDS": "60",
+		"VELLUM_STALE_TTL_SECONDS": "86400"
 		// AI Summary credentials: VELLUM_AI_API_KEY, VELLUM_AI_BASE_URL, and
 		// VELLUM_TURNSTILE_SECRET are intentionally NOT listed here. Configure
 		// them via `wrangler secret put` so they don't leak into the public

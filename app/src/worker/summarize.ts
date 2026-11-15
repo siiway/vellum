@@ -208,7 +208,8 @@ interface PlainPage {
 // throw the result away. A regex pass is two orders of magnitude cheaper.
 export function markdownToPlain(source: string): PlainPage {
   // Pull frontmatter out so its YAML scalars don't end up in the prose.
-  const { content, data } = matter(source);
+  // Options skip gray-matter's cache, which keeps every source it sees.
+  const { content, data } = matter(source, {});
   const fmTitle = typeof data.title === "string" ? data.title.trim() : null;
 
   let s = content;
