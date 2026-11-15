@@ -124,9 +124,10 @@ Plus, on every push regardless of which files changed:
 | `xrefmap:{slug}@{branch}`                    | Cached xref map.                           |
 | `tree:{owner}/{repo}@{branch}`               | Full repo tree (in case files were added). |
 
-Pages the push didn't touch keep their cached copy. One that shows the
-changed sidebar or nav picks it up the next time it's rebuilt, at most
-`VELLUM_HTML_TTL_SECONDS` plus one request later.
+Pages the push didn't touch keep their cached copy, including pages that
+pull in a changed file through `[!INCLUDE]` or `[!code-…]`. They pick up
+the change, like a changed sidebar or nav, the next time they're rebuilt:
+at most `VELLUM_HTML_TTL_SECONDS` plus one request later.
 
 If `site.translate` is configured, the worker also deletes every D1
 translation row whose key matches `{slug}@{branch}:*` — that covers

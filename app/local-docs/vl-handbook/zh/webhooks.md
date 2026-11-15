@@ -118,8 +118,9 @@ const hex = [...new Uint8Array(mac)]
 | `xrefmap:{slug}@{branch}`                    | 缓存的 xref 映射。                        |
 | `tree:{owner}/{repo}@{branch}`               | 完整仓库文件树（以防有新增文件）。        |
 
-这次 push 没有触及的页面会保留各自的缓存。显示了侧边栏或导航变化的页面，
-会在下次重建时拿到新内容，最晚在 `VELLUM_HTML_TTL_SECONDS` 之后的下一次请求。
+这次 push 没有触及的页面会保留各自的缓存，包括通过 `[!INCLUDE]` 或
+`[!code-…]` 引用了被改文件的页面。它们和侧边栏、导航的变化一样，会在下次重建时
+拿到新内容，最晚在 `VELLUM_HTML_TTL_SECONDS` 之后的下一次请求。
 
 ::: note Cache API 的注意点
 KV 失效是全局的；PoP 级 Cache API 只对单 PoP 生效。Worker 会同时清掉

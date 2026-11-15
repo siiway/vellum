@@ -207,15 +207,20 @@ export async function writeCache<T>(
 
 export async function invalidate(env: Env, keys: string[]): Promise<void> {
   for (const k of keys) memoryDelete(k);
-  if (env.VELLUM_CACHE) {
-    await Promise.all(keys.map((k) => env.VELLUM_CACHE!.delete(k)));
-  }
+  // Every delete runs, so a failing KV call can't leave the Cache API copy
+  // behind or the other way round.
+  const ops: Promise<unknown>[] = [];
+  if (env.VELLUM_CACHE) ops.push(...keys.map((k) => env.VELLUM_CACHE!.delete(k)));
   try {
     const cache = defaultCache();
-    await Promise.all(keys.map((k) => cache.delete(keyToCacheRequest(k))));
+    ops.push(...keys.map((k) => cache.delete(keyToCacheRequest(k))));
   } catch {
-    // ignore
+    // Cache API unavailable (e.g. local dev with miniflare quirks).
   }
+  const results = await Promise.allSettled(ops);
+  const failed = results.filter((r) => r.status === "rejected").length;
+  if (failed)
+    console.error(`[vellum] cache invalidation: ${failed} of ${ops.length} deletes failed`);
 }
 
 // --- Request-scoped de-duplication -----------------------------------------

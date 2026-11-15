@@ -83,6 +83,9 @@ export interface TranslateResult {
   model?: string;
   apiKeyHint?: string;
   attempted: boolean;
+  // True when this call wrote a new translation row to D1. Only known with
+  // `awaitWrite`; false otherwise.
+  stored?: boolean;
 }
 
 // Translate a single source string (markdown for `page`, JSON for `sidebar`/
@@ -181,11 +184,18 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
       model: result.model,
       refreshed_at: Date.now(),
     })
-      .then(() => console.log(`${tag} cached`))
-      .catch((err) => console.warn(`${tag} cache write failed: ${(err as Error).message}`));
+      .then(() => {
+        console.log(`${tag} cached`);
+        return true;
+      })
+      .catch((err) => {
+        console.warn(`${tag} cache write failed: ${(err as Error).message}`);
+        return false;
+      });
 
+    let stored = false;
     if (args.awaitWrite) {
-      await writePromise;
+      stored = await writePromise;
     } else {
       args.ctx.waitUntil(writePromise);
     }
@@ -194,6 +204,7 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
       model: result.model,
       apiKeyHint: result.apiKeyHint,
       attempted: true,
+      stored,
     };
   } catch (err) {
     console.warn(`${tag} provider failed: ${(err as Error).message}`);

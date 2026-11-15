@@ -40,14 +40,15 @@ export async function loadXrefMap(
     (map) => (map ? ttlSeconds(env, "raw") : 300),
     async () => {
       const prefix = docsRootPrefix(repo.docsRoot);
-      const texts = await Promise.all(
-        CANDIDATE_PATHS.map((file) =>
-          fetchSourceFile(env, repo, branch, `${prefix}${file}`, { ctx }),
-        ),
+      const pending = CANDIDATE_PATHS.map((file) =>
+        fetchSourceFile(env, repo, branch, `${prefix}${file}`, { ctx }),
       );
-      // First candidate that exists and parses wins.
+      for (const p of pending) p.catch(() => {});
+      // First candidate, in order, that exists and parses wins. A failed
+      // fetch ahead of it throws, so nothing is cached and the next render
+      // retries; one behind it doesn't matter.
       for (let i = 0; i < CANDIDATE_PATHS.length; i++) {
-        const raw = texts[i];
+        const raw = await pending[i]!;
         if (!raw) continue;
         const map = CANDIDATE_PATHS[i]!.endsWith(".json") ? parseJson(raw) : parseYaml(raw);
         if (map) return map;

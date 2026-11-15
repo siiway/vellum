@@ -5,7 +5,7 @@ import type { Env } from "./env";
 import { invalidate } from "./cache";
 import { invalidateForRepo } from "./translate";
 import { docsRootPrefix } from "./sources";
-import { pageCacheKey } from "./page";
+import { pageCacheKey } from "./page-key";
 import config from "../../vellum.config.json";
 import { expandLocalesFromTranslate, sourceLocale } from "../shared/types";
 import type { RepoConfig, VellumConfig } from "../shared/types";
@@ -114,8 +114,9 @@ export async function handleWebhook(
 }
 
 // The page paths (the URL part after the repo slug) that can be served from
-// a markdown file, given relative to the docs root. `guide/index.md` serves
-// both `guide` and `guide/index`; a root `README.md` serves `index`.
+// a markdown file, given relative to the docs root: the inverse of the page
+// builder's candidate list. Every file serves its own path; `guide/index.md`
+// also serves `guide`, and a root `README.md` also serves `index`.
 function pagePathsForFile(rel: string, repo: RepoConfig): string[] {
   const owner = sourceLocale(
     rel.replace(/\.md$/, ""),
@@ -125,9 +126,10 @@ function pagePathsForFile(rel: string, repo: RepoConfig): string[] {
   );
   if (!owner) return [];
   const path = owner.path;
-  if (path === "index" || path === "README") return ["index"];
-  if (path.endsWith("/index")) return [path, path.slice(0, -"/index".length)];
-  return [path];
+  const paths = [path];
+  if (path.endsWith("/index")) paths.push(path.slice(0, -"/index".length));
+  if (path === "README") paths.push("index");
+  return paths;
 }
 
 async function verifySignature(secret: string, body: string, header: string): Promise<boolean> {

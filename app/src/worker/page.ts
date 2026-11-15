@@ -39,22 +39,12 @@ import {
   translateUiStrings,
 } from "./translate";
 import { triggerSmartTranslation } from "./translate-repo";
+import { pageCacheKey } from "./page-key";
 
 export type PageBuild =
   | { found: true; payload: BootstrapPayload }
   // `candidates` are the source paths that were tried, for the 404 hint.
   | { found: false; candidates: string[] };
-
-type PageKeyRoute = Pick<RouteContext, "repoSlug" | "localeCode" | "pagePath"> & {
-  version: { branch: string };
-};
-
-// Cache key for a page's payload. The payload doesn't depend on the host or
-// the theme, so one entry serves every host, both themes, HTML and JSON.
-// Bump the version when the payload's shape changes.
-export function pageCacheKey(route: PageKeyRoute): string {
-  return `page1:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}`;
-}
 
 // The page's payload through the stale-while-revalidate cache. 404s aren't
 // cached. The payload's `initialTheme` is a placeholder; callers set it per

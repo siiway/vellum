@@ -16,7 +16,8 @@ import { renderPage } from "./ssr";
 import { getClientAssets } from "./assets";
 import { readEntry, writeCache } from "./cache";
 import { staleSeconds, ttlSeconds } from "./env";
-import { loadPage, pageCacheKey, resolveTranslatedLocales } from "./page";
+import { loadPage, resolveTranslatedLocales } from "./page";
+import { pageCacheKey } from "./page-key";
 import { handleWebhook } from "./webhook";
 import { handleSearch } from "./search";
 import { handleSummarize } from "./summarize";
@@ -88,8 +89,9 @@ export async function dispatch(
     }
   }
 
-  // `/{prefix}/{homepageRepo}` (slug form of the landing page) redirects to
-  // `/{prefix}` so the short form is the only canonical URL. Sub-pages
+  // `/{prefix}/{homepageRepo}` and `/{prefix}/{homepageRepo}/index` (slug
+  // forms of the landing page) redirect to `/{prefix}` so the short form is
+  // the only canonical URL. Sub-pages
   // (`/{prefix}/{homepageRepo}/<slug>`) keep their slug-prefixed URL and
   // resolve normally via resolveRoute below.
   const homepageSlugRedirect = matchHomepageRepoIndex(path);
@@ -467,9 +469,11 @@ function makeHomepageIndexRoute(localeCode: string, localePrefix: string): Route
   };
 }
 
-// Matches `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}` exactly
-// (no sub-page). Returns the short canonical they should redirect to, or
-// null when the path isn't a homepage-repo index.
+// Matches `/{homepageRepo}` and `/{localePrefix}/{homepageRepo}`, with or
+// without a trailing `/index` (no other sub-page). Returns the short
+// canonical they should redirect to, or null when the path isn't a
+// homepage-repo index. The page cache relies on this: the landing page and
+// `/{homepageRepo}/index` share a cache key, so only one may be served.
 function matchHomepageRepoIndex(pathname: string): string | null {
   const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
   if (!parts.length || !parts[0]) return null;
@@ -480,7 +484,8 @@ function matchHomepageRepoIndex(pathname: string): string | null {
     localePrefix = locale.prefix;
     rest = rest.slice(1);
   }
-  if (rest.length !== 1 || rest[0] !== SITE.site.homepageRepo) return null;
+  if (rest[0] !== SITE.site.homepageRepo) return null;
+  if (rest.length > 2 || (rest.length === 2 && rest[1] !== "index")) return null;
   return localePrefix ? `/${localePrefix}` : "/";
 }
 
