@@ -11,31 +11,56 @@ Vellum 采用分层的边缘缓存，全部通过
 [`src/worker/cache.ts`](https://github.com/siiway/vellum/blob/main/app/src/worker/cache.ts)
 统一走线：
 
-1. **L1 —— Cache API。** 单 PoP，自动，免费。每次可缓存的读取首先经过它，
-   命中时是亚毫秒级。
-2. **L2 —— KV 命名空间**（可选）。全局、持久，按 key 可手动失效。
+1. **L0 —— isolate 内存。** 每个 Worker isolate 各自一份，最多保留 30 秒。
+   热 isolate 里的重复读取连 Cache API 都不用走。
+2. **L1 —— Cache API。** 单 PoP，自动，免费。命中时是亚毫秒级。
+3. **L2 —— KV 命名空间**（可选）。全局、持久，按 key 可手动失效。
    L1 未命中时回退到它。
+
+读取按上面的顺序逐层查找，命中后会把结果复制到更快的层。未命中也会被缓存：
+GitHub 返回 404 的文件会被记住 60 秒，没有 `xrefmap.yml` 的仓库会被记住
+5 分钟，这样渲染页面时不必每次都重新探测那些可选文件。
 
 不绑定 KV 时 worker 仍可正常工作——只是缓存仅按 PoP 存在，
 eu-west 上的一次命中并不会让随后 us-east 的请求更快。
+
+### 页面缓存
+
+页面从其 bootstrap payload 的缓存中返回：渲染好的 markdown、侧边栏、导航，
+以及页面上展示的其它内容。一个条目在 `VELLUM_HTML_TTL_SECONDS` 内是新鲜的。
+此后最多再过 `VELLUM_STALE_TTL_SECONDS`，它仍会被立即返回，同时 worker
+在后台重建它，下一位读者拿到的就是新版本。只有页面的第一次请求，或者两个
+时间窗都过去之后的请求，才需要等待渲染。
+
+- 客户端导航（`?_data=1`）与 HTML 读取同一个条目。
+- 渲染好的 HTML 按主机和主题缓存，只要仍与 payload 对应就会被复用。
+- HTML 和 JSON 响应都带 `ETag`。浏览器重新验证一个没有变化的页面时，
+  会得到一个没有正文的 `304`。
+- 更换了客户端 bundle 的部署永远不会返回仍链接旧 bundle 的 HTML：
+  bundle 的哈希是 HTML 缓存 key 的一部分。
+
+把 `VELLUM_STALE_TTL_SECONDS` 设为 `0`，条目一旦过了新鲜期就在请求时重建。
 
 ### 缓存的内容
 
 | Key 前缀                            | 内容                                                     | TTL                                                                          |
 | ----------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `raw:`                              | 来自 GitHub 的 markdown / 主题 / 配置文件                 | `VELLUM_CACHE_TTL_SECONDS`（默认 300s）                                       |
+| `raw:`                              | 来自 GitHub 的 markdown / 主题 / 配置文件，以及 404      | `VELLUM_CACHE_TTL_SECONDS`（默认 300s）；404 为 60s                            |
 | `commit:`                           | 最近一次提交的元数据                                       | `VELLUM_CACHE_TTL_SECONDS`                                                   |
 | `tree:`                             | 仓库完整文件树（用于侧边栏回退 + 搜索语料）                 | `VELLUM_CACHE_TTL_SECONDS`                                                   |
 | `sidebar:`                          | 按仓库 + 语言解析好的侧边栏                                | `VELLUM_CACHE_TTL_SECONDS`                                                   |
+| `nav:` / `social:`                  | 按仓库 + 语言的导航，以及按仓库的社交链接                  | `VELLUM_CACHE_TTL_SECONDS`                                                   |
 | `index:`                            | 按仓库 + 语言的搜索索引                                    | `VELLUM_CACHE_TTL_SECONDS × 4`（约 20 分钟）                                 |
 | `xrefmap:`                          | 按仓库的 uid → href 映射                                   | `VELLUM_CACHE_TTL_SECONDS`                                                   |
 | `diagram:mermaid:{theme}:{sha256}`  | 预渲染的 mermaid SVG                                       | 7 天（长；key 已编码源内容，失效是自动的）                                  |
 | `vue:`                              | 按仓库的 Vue 组件注册表                                    | `VELLUM_CACHE_TTL_SECONDS`                                                   |
-| `html:`                             | 一个页面完整渲染好的 HTML                                  | `VELLUM_HTML_TTL_SECONDS`（默认 60s）                                         |
+| `page1:`                            | 按仓库 + 语言 + 页面的页面 payload（见[页面缓存](#页面缓存)） | 新鲜期 `VELLUM_HTML_TTL_SECONDS`（默认 60s），之后最多再以陈旧状态返回 `VELLUM_STALE_TTL_SECONDS`（默认 1 天） |
+| `html5:`                            | 按主机 + 主题渲染好的 HTML，与 `page1:` 对应时复用          | 同 `page1:`                                                                  |
 
 ::: tip TTL 是可调旋钮
-默认值在 60 秒传播延迟与极高的缓存命中率之间权衡。如果你发布得少
-就把它们调大；如果发布得很频繁就调小。
+默认值在较短的传播延迟与极高的缓存命中率之间权衡：发布之后，页面会继续
+显示旧版本，直到它的新鲜期过去、并有读者触发了重建。如果你发布得少
+就把 TTL 调大；如果发布得很频繁就调小。
 :::
 
 ## 绑定 KV

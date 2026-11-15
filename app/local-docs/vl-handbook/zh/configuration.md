@@ -491,7 +491,8 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
 | `VELLUM_GITHUB_TOKEN`      |        空          | `raw.githubusercontent.com` 与 GitHub API 的鉴权 token。私有仓库必填；公开仓库设置后能避免触碰限流。                                          |
 | `VELLUM_WEBHOOK_SECRET`    |        空          | `/api/webhook` 用于 HMAC 签名的共享密钥。需要 webhook 缓存失效时必填。                                                                        |
 | `VELLUM_CACHE_TTL_SECONDS` |       `300`        | 原始 markdown / 文件树 / 侧边栏等条目的 TTL。                                                                                                 |
-| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | 渲染好的 HTML 的 TTL。                                                                                                                        |
+| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | 缓存的页面保持新鲜的时长。                                                                                                                    |
+| `VELLUM_STALE_TTL_SECONDS` |      `86400`       | 页面过了新鲜期之后，在后台重建期间仍继续返回的时长。`0` 表示在请求时重建。                                                                    |
 | `VELLUM_KROKI_URL`         | `https://kroki.io` | 覆盖 mermaid SSR 使用的 Kroki 端点。自部署用户可以指向自己的实例。                                                                            |
 
 KV 在 `wrangler.jsonc#kv_namespaces` 中单独绑定。没有 KV 时 worker

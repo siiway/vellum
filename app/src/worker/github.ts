@@ -2,8 +2,12 @@
 // All network reads go through here so callers benefit from the layered cache.
 
 import type { Env } from "./env";
-import { readCache, writeCache } from "./cache";
+import { cached, dedupe, readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
+
+// How long a miss (404, failed commit lookup) is remembered. Short, so a
+// file added without a webhook shows up within a minute.
+const MISS_TTL_SECONDS = 60;
 
 interface FetchOptions {
   ctx?: ExecutionContext;
@@ -30,33 +34,32 @@ export async function fetchRaw(
   opts: FetchOptions = {},
 ): Promise<string | null> {
   const key = `raw:${owner}/${repo}@${ref}:${path}`;
-  if (!opts.bypassCache) {
-    const hit = await readCache<string | null>(env, key);
-    if (hit !== null) return hit;
-  }
+  const ttl = (body: string | null) => (body === null ? MISS_TTL_SECONDS : ttlSeconds(env, "raw"));
+  const load = async (): Promise<string | null> => {
+    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`;
+    const res = await fetch(url, {
+      headers: env.VELLUM_GITHUB_TOKEN
+        ? {
+            authorization: `Bearer ${env.VELLUM_GITHUB_TOKEN}`,
+            "user-agent": "vellum-worker",
+          }
+        : { "user-agent": "vellum-worker" },
+      cf: { cacheEverything: true, cacheTtl: 60 },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      // Not cached: a GitHub hiccup shouldn't stick.
+      throw new Error(`GitHub raw ${owner}/${repo}/${path}@${ref} failed: ${res.status}`);
+    }
+    return res.text();
+  };
 
-  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`;
-  const res = await fetch(url, {
-    headers: env.VELLUM_GITHUB_TOKEN
-      ? {
-          authorization: `Bearer ${env.VELLUM_GITHUB_TOKEN}`,
-          "user-agent": "vellum-worker",
-        }
-      : { "user-agent": "vellum-worker" },
-    cf: { cacheEverything: true, cacheTtl: 60 },
-  });
-
-  if (res.status === 404) {
-    await writeCache(env, key, null, 60, opts.ctx);
-    return null;
+  if (opts.bypassCache) {
+    const body = await load();
+    await writeCache(env, key, body, ttl(body), opts.ctx);
+    return body;
   }
-  if (!res.ok) {
-    throw new Error(`GitHub raw ${owner}/${repo}/${path}@${ref} failed: ${res.status}`);
-  }
-
-  const body = await res.text();
-  await writeCache(env, key, body, ttlSeconds(env, "raw"), opts.ctx);
-  return body;
+  return cached(env, key, ttl, load, opts.ctx);
 }
 
 export interface CommitInfo {
@@ -75,39 +78,39 @@ export async function fetchLastCommit(
   opts: FetchOptions = {},
 ): Promise<CommitInfo | null> {
   const key = `commit:${owner}/${repo}@${ref}:${path}`;
-  if (!opts.bypassCache) {
-    const hit = await readCache<CommitInfo | null>(env, key);
-    if (hit !== null) return hit;
-  }
-
-  const url = `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&per_page=1`;
-  const res = await fetch(url, {
-    headers: {
-      ...authHeaders(env),
-      accept: "application/vnd.github+json",
-    },
-    cf: { cacheEverything: true, cacheTtl: 300 },
-  });
-  if (!res.ok) {
-    await writeCache(env, key, null, 60, opts.ctx);
-    return null;
-  }
-  const arr = (await res.json()) as Array<{
-    sha: string;
-    commit: { author?: { date?: string; name?: string } };
-  }>;
-  const first = arr[0];
-  if (!first) {
-    await writeCache(env, key, null, 60, opts.ctx);
-    return null;
-  }
-  const info: CommitInfo = {
-    sha: first.sha,
-    iso: first.commit.author?.date ?? new Date().toISOString(),
-    author: first.commit.author?.name,
+  const ttl = (info: CommitInfo | null) =>
+    info === null ? MISS_TTL_SECONDS : ttlSeconds(env, "raw");
+  // Any failure, rate limiting included, is remembered as "no commit" for a
+  // minute rather than retried on every render.
+  const load = async (): Promise<CommitInfo | null> => {
+    const url = `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&per_page=1`;
+    const res = await fetch(url, {
+      headers: {
+        ...authHeaders(env),
+        accept: "application/vnd.github+json",
+      },
+      cf: { cacheEverything: true, cacheTtl: 300 },
+    });
+    if (!res.ok) return null;
+    const arr = (await res.json()) as Array<{
+      sha: string;
+      commit: { author?: { date?: string; name?: string } };
+    }>;
+    const first = arr[0];
+    if (!first) return null;
+    return {
+      sha: first.sha,
+      iso: first.commit.author?.date ?? new Date().toISOString(),
+      author: first.commit.author?.name,
+    };
   };
-  await writeCache(env, key, info, ttlSeconds(env, "raw"), opts.ctx);
-  return info;
+
+  if (opts.bypassCache) {
+    const info = await load();
+    await writeCache(env, key, info, ttl(info), opts.ctx);
+    return info;
+  }
+  return cached(env, key, ttl, load, opts.ctx);
 }
 
 export interface RepoTreeEntry {
@@ -130,7 +133,18 @@ export async function fetchRepoTree(
     const hit = await readCache<RepoTreeEntry[]>(env, key);
     if (hit) return hit;
   }
+  return dedupe(opts.ctx, key, () => loadRepoTree(env, owner, repo, ref, key, opts));
+}
 
+// A failed lookup returns [] without caching it, so the next request retries.
+async function loadRepoTree(
+  env: Env,
+  owner: string,
+  repo: string,
+  ref: string,
+  key: string,
+  opts: FetchOptions,
+): Promise<RepoTreeEntry[]> {
   // Step 1: resolve ref to a tree SHA.
   const branchRes = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/branches/${encodeURIComponent(ref)}`,

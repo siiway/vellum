@@ -296,7 +296,10 @@ function processHomeFrontmatter(front: Record<string, unknown>, linkContext: Lin
 export async function renderMarkdown(input: RenderInput): Promise<RenderOutput> {
   const { source, linkContext, renderDiagram, resolveInclude, resolveCodeInclude, resolveXref } =
     input;
-  const parsed = matter(source);
+  // The options object turns off gray-matter's cache, which hands every
+  // parse of the same text one shared `data` object: processHomeFrontmatter
+  // mutates it, so a second render would escape its output again.
+  const parsed = matter(source, {});
   const front = parsed.data as Record<string, unknown>;
   const body = parsed.content;
 

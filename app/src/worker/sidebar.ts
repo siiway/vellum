@@ -18,8 +18,8 @@ import type {
   VellumConfig,
 } from "../shared/types";
 import { localeSourcePrefix, sourceLocale } from "../shared/types";
-import { fetchSourceFile, fetchSourceTree, docsRootPrefix } from "./sources";
-import { readCache, writeCache } from "./cache";
+import { fetchFirstSourceFile, fetchSourceFile, fetchSourceTree, docsRootPrefix } from "./sources";
+import { dedupe, readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
 import { translateBundle } from "./translate";
 import { isRecord, readVitePressConfig, themeConfigField } from "./vitepress-config";
@@ -205,18 +205,25 @@ async function tryLoadNative(
 }
 
 // The repo's VitePress config, read statically (see vitepress-config.ts).
-async function loadVitePressConfig(
+// The sidebar, nav and social-link loaders all ask for it during one page
+// render; `dedupe` has them share one fetch and one parse.
+function loadVitePressConfig(
   env: Env,
   repo: RepoConfig,
   branch: string,
   ctx?: ExecutionContext,
 ): Promise<Record<string, unknown> | null> {
-  const base = `${docsRootPrefix(repo.docsRoot)}.vitepress/config`;
-  for (const ext of [".mts", ".ts", ".mjs", ".js"]) {
-    const text = await fetchSourceFile(env, repo, branch, `${base}${ext}`, { ctx });
-    if (text) return readVitePressConfig(text);
-  }
-  return null;
+  return dedupe(ctx, `vitepress-config:${repo.slug}@${branch}`, async () => {
+    const base = `${docsRootPrefix(repo.docsRoot)}.vitepress/config`;
+    const found = await fetchFirstSourceFile(
+      env,
+      repo,
+      branch,
+      [".mts", ".ts", ".mjs", ".js"].map((ext) => `${base}${ext}`),
+      { ctx },
+    );
+    return found ? readVitePressConfig(found.text) : null;
+  });
 }
 
 // VitePress keys `locales` by the locale's top-level source directory (`zh`)

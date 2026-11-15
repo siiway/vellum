@@ -62,6 +62,28 @@ export async function fetchSourceFile(
   return fetchGitHubRaw(env, repo.owner, repo.repo, ref, path, opts);
 }
 
+// Fetches every candidate at once and returns the first, in list order, that
+// exists and isn't empty. Same answer as trying them one by one, in the time
+// of the slowest fetch instead of the sum. An error on a candidate ahead of
+// the first hit is rethrown, as the one-by-one walk would have.
+export async function fetchFirstSourceFile(
+  env: Env,
+  repo: RepoConfig,
+  ref: string,
+  paths: string[],
+  opts: SourceFetchOptions = {},
+): Promise<{ path: string; text: string } | null> {
+  const results = await Promise.allSettled(
+    paths.map((p) => fetchSourceFile(env, repo, ref, p, opts)),
+  );
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]!;
+    if (r.status === "rejected") throw r.reason;
+    if (r.value) return { path: paths[i]!, text: r.value };
+  }
+  return null;
+}
+
 export async function fetchSourceTree(
   env: Env,
   repo: RepoConfig,

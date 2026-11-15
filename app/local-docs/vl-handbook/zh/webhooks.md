@@ -5,7 +5,7 @@ description: "用 push 事件让缓存失效，附带 HMAC 校验。"
 
 # GitHub webhook
 
-Vellum 的边缘缓存默认保留渲染好的 HTML 约 60 秒、原始 markdown 约 5 分钟
+Vellum 的边缘缓存默认让页面保持新鲜约 60 秒、保留原始 markdown 约 5 分钟
 （见 [缓存与部署](./caching-and-deployment#缓存层级)）。
 对发布频繁的仓库，GitHub `push` webhook 可以让你在提交后毫秒内
 精准失效相关缓存——读者立刻看到新内容，不必等 TTL。
@@ -94,26 +94,40 @@ const hex = [...new Uint8Array(mac)]
 
 ## 哪些会被失效
 
-对每个被触及的、位于 `{docsRoot}/` 下的 markdown 文件，worker 会清掉：
+对每个被触及的、位于 `{docsRoot}/` 下的文件，worker 会清掉：
 
-| 缓存 key                                             | 用途                                  |
-| ---------------------------------------------------- | ------------------------------------- |
-| `raw:{owner}/{repo}@{branch}:{path}`                 | 原始 markdown 内容。                  |
-| `commit:{owner}/{repo}@{branch}:{path}`              | "最近更新" 元数据。                   |
-| `html:{slug}@{branch}:{locale}:{pagePath}` × locales | 每种语言下渲染好的 HTML。             |
+| 缓存 key                             | 用途                                                          |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `raw:{owner}/{repo}@{branch}:{path}` | 原始文件：页面、被引入的文件、`vellum.json`、VitePress 配置。 |
+
+对每个被触及的 markdown 文件，还会清掉：
+
+| 缓存 key                                              | 用途                                   |
+| ----------------------------------------------------- | -------------------------------------- |
+| `commit:{owner}/{repo}@{branch}:{path}`               | "最近更新" 元数据。                    |
+| `page1:{slug}@{branch}:{locale}:{pagePath}` × locales | 缓存的页面，下次读取时会重建。         |
 
 此外，无论哪些文件改动，每次 push 都会清掉：
 
 | 缓存 key                                     | 用途                                      |
 | -------------------------------------------- | ----------------------------------------- |
 | `sidebar:{slug}@{branch}:{locale}` × locales | 缓存的侧边栏（以防有文件移动）。          |
+| `nav:{slug}@{branch}:{locale}` × locales     | 缓存的仓库导航。                          |
+| `social:{slug}@{branch}`                     | 缓存的社交链接。                          |
+| `vue:{slug}@{branch}`                        | 缓存的 Vue 组件注册表。                   |
+| `xrefmap:{slug}@{branch}`                    | 缓存的 xref 映射。                        |
 | `tree:{owner}/{repo}@{branch}`               | 完整仓库文件树（以防有新增文件）。        |
+
+这次 push 没有触及的页面会保留各自的缓存。显示了侧边栏或导航变化的页面，
+会在下次重建时拿到新内容，最晚在 `VELLUM_HTML_TTL_SECONDS` 之后的下一次请求。
 
 ::: note Cache API 的注意点
 KV 失效是全局的；PoP 级 Cache API 只对单 PoP 生效。Worker 会同时清掉
 两边匹配的条目，但其它还没见到新请求的 PoP 仍然持有旧的 Cache API
 条目，直到它们各自 TTL 到期。实际上这意味着另一个区域的读者在
-发布后最多还会看到 `VELLUM_HTML_TTL_SECONDS` 秒的旧页面。
+发布后最多还会看到 `VELLUM_HTML_TTL_SECONDS` 加 `VELLUM_CACHE_TTL_SECONDS`
+秒的旧页面：先是页面的新鲜期，之后的重建仍会读到该 PoP 缓存的原始文件，
+直到它们过期。
 
 要立刻全局清空，跑 `bun run drop:cache`（清掉 KV），然后轮换
 `src/worker/cache.ts` 里的缓存 key 前缀（让 PoP 级条目失去引用，
@@ -126,8 +140,6 @@ KV 失效是全局的；PoP 级 Cache API 只对单 PoP 生效。Worker 会同�
   比每次 push 都重走语料库便宜得多。
 - **Mermaid SVG**（`diagram:mermaid:{theme}:{sha256}`）——缓存 key
   编码了源内容，所以图编辑就是新的 key；旧 key 会在 7 天 TTL 到期后下线。
-- **xref 映射**（`xrefmap:{slug}@{branch}`）——会在下一次 push 时被
-  失效，因为 `xrefmap.yml` 改动会直接 touch 这个文件。
 
 ## 排障
 
@@ -151,7 +163,7 @@ push payload 里的 `repository.full_name`（已转小写）与已配置仓库�
 
 ::: details Webhook 触发后页面仍然返回旧内容
 PoP 级 Cache API 条目还没过期——见上面那条 note。等
-`VELLUM_HTML_TTL_SECONDS` 秒，或者从另一个地理位置访问 URL
+`VELLUM_HTML_TTL_SECONDS` 加 `VELLUM_CACHE_TTL_SECONDS` 秒，或者从另一个地理位置访问 URL
 （例如换一个 VPN 出口）来判断是本地 PoP 陈旧，还是 KV 里真的还
 缓存着旧内容。
 :::
