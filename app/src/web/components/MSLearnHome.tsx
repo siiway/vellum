@@ -51,7 +51,6 @@ import { useCallback, useState, type ComponentType, type ReactNode } from "react
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
-import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 
 // --- Types ---------------------------------------------------------------
 
@@ -402,7 +401,6 @@ export function MSLearnHome() {
 
   return (
     <main className={styles.root}>
-      <MachineTranslatedBanner />
       <HeroSection hero={front.hero} styles={styles} />
       {hasItems(front.getStarted) && (
         <CardGridSection section={front.getStarted} variant="iconChip" styles={styles} />

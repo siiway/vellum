@@ -22,12 +22,7 @@ import { VueIslands } from "./VueIslands";
 import { SearchPage } from "./SearchPage";
 import { HomeLayout } from "./HomeLayout";
 import { MSLearnHome } from "./MSLearnHome";
-import { AISummary } from "./AISummary";
-import { AskAI } from "./AskAI";
-import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 import { LanguagesPage } from "./LanguagesPage";
-import { TranslateTasksPage } from "./TranslateTasksPage";
-import { TranslationProgressBanner } from "./TranslationProgressBanner";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
 // (Ctrl+K / "/"), so its chunk is never SSRed and the Suspense boundary lives
@@ -99,7 +94,6 @@ export function Layout() {
   const styles = useStyles();
   const { data, t } = useVellum();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [askAiOpen, setAskAiOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Close the mobile sidebar after any navigation. Without this, clicking a
@@ -130,31 +124,19 @@ export function Layout() {
   const isSearch = layoutKind === "search";
   const isMsLearn = layoutKind === "ms-learn";
   const isLanguages = layoutKind === "languages";
-  const isTranslateTasks = layoutKind === "translate-tasks";
 
   return (
     <div className={styles.shell}>
       <LoadingBar />
       <NavBar
         onOpenSearch={() => setSearchOpen(true)}
-        // Hide the Ask AI button on landing-page layouts (home, ms-learn) —
-        // those pages are summaries / hero content, not where readers ask
-        // detailed questions. NavBar drops the button when this is
-        // undefined.
-        onOpenAskAi={
-          isHome || isMsLearn || isLanguages || isTranslateTasks
-            ? undefined
-            : () => setAskAiOpen(true)
-        }
         onOpenSidebar={
-          !isHome && !isSearch && !isMsLearn && !isLanguages && !isTranslateTasks
+          !isHome && !isSearch && !isMsLearn && !isLanguages
             ? () => setSidebarOpen(true)
             : undefined
         }
       />
-      {isTranslateTasks ? (
-        <TranslateTasksPage />
-      ) : isLanguages ? (
+      {isLanguages ? (
         <LanguagesPage />
       ) : isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state
@@ -188,8 +170,6 @@ export function Layout() {
                   )}
                 </header>
               )}
-              <MachineTranslatedBanner />
-              <AISummary />
               <MarkdownAst ast={page.ast} />
               <PageFooter meta={page.meta} siteFooter={config.site.footer} />
             </article>
@@ -237,8 +217,6 @@ export function Layout() {
           </DrawerBody>
         </Drawer>
       )}
-      <AskAI open={askAiOpen} onOpenChange={setAskAiOpen} />
-      <TranslationProgressBanner />
       <VueIslands />
     </div>
   );

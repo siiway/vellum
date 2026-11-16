@@ -41,19 +41,6 @@ Request → Worker → Source (GitHub raw or local ASSETS)
   BreadcrumbList, TechArticle), `/robots.txt`, `/sitemap.xml`.
 - **Edge cache + KV.** Layered cache through `cache.ts`; GitHub `push`
   webhook invalidates exactly the touched entries.
-- **AI Summary.** Microsoft Learn-style pill button below the page title
-  streams a model-generated summary over SSE. Pluggable provider — Workers
-  AI, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Together…), or
-  Anthropic. Optional Cloudflare Turnstile gate. Per-page summaries cached
-  in KV for 7 days. See
-  [Configuration → AI Summary](./app/local-docs/vl-handbook/configuration.md#ai-summary).
-- **Ask AI about this docs.** Chat drawer launched from the NavBar. The AI
-  has docs tools (`search_docs`, `fetch_page`, `list_repos`, `list_pages`)
-  so it can walk the site to answer a question instead of relying on the
-  current page alone. Visitor picks the scope (current repo / whole site)
-  in the drawer header. The same tools are exposed over JSON-RPC at
-  **`/api/mcp`** so Claude Desktop / ChatGPT Connectors / any MCP client
-  can query the docs directly.
 
 ## Quick start
 
@@ -117,7 +104,6 @@ app/
   src/
     worker/         # Cloudflare Worker — routing, source fetching, markdown
                     #   pipeline, SSR, search, sitemap, webhook
-      db/migrations/  # D1 migrations for the translations database
     web/            # React client — Layout, NavBar, Sidebar, Outline,
                     #   SearchDialog, SearchPage, MarkdownAst renderer
     shared/         # Types + i18n dictionary shared between worker and client

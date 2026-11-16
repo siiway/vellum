@@ -11,10 +11,10 @@ name: Deploy
 #
 # The prek hooks from app/prek.toml (file checks, prettier, eslint, typecheck,
 # build) run first, so a failure stops the deploy before anything reaches
-# production. Pending D1 migrations are applied before publishing.
+# production.
 #
 # Requires CLOUDFLARE_API_TOKEN (repository or `production` Environment secret)
-# scoped to the SiiWay account with: Workers Scripts:Edit, D1:Edit, Workers KV
+# scoped to the SiiWay account with: Workers Scripts:Edit, Workers KV
 # Storage:Edit, plus Workers Routes:Edit and Zone:Read on the zone, because
 # production is attached to custom domains.
 
@@ -23,8 +23,8 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Never cancel a deploy mid-run (it may be between migrating and publishing).
-# A newer run waits for the current one instead.
+# Never cancel a deploy mid-run. A newer run waits for the current one
+# instead.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -72,9 +72,6 @@ jobs:
 
       - name: Push hooks (typecheck, build and NOTICE.md)
         run: bunx prek run -c prek.toml --all-files --hook-stage pre-push --color=always
-
-      - name: Apply D1 migrations
-        run: bunx wrangler d1 migrations apply vellum-translations --remote
 
       - name: Deploy
         run: bunx wrangler deploy

@@ -74,8 +74,7 @@ export interface SearchHit {
 // Docs index one canonical term per concept; readers almost never type the
 // canonical one. The alias map expands each query term to a small pool of
 // synonyms / abbreviations / canonical names that the docs author is more
-// likely to have used. Same vocabulary as the AI prompt's "examples of the
-// kind of leap to make" list — both paths benefit from the same coverage.
+// likely to have used.
 //
 // Matching an alias scores LESS than matching the primary term so the
 // original word still wins when both are present. Aliases are also folded

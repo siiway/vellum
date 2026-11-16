@@ -32,7 +32,6 @@ import {
 import { useEffect, useState } from "react";
 import { useVellum, type ThemeMode } from "../context";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
-import { AskAiButton } from "./AskAI";
 import { Segmented } from "./Segmented";
 
 // Shell header in the Prism style: a solid strip of the page canvas with a
@@ -256,14 +255,13 @@ const useStyles = makeStyles({
 
 export interface NavBarProps {
   onOpenSearch: () => void;
-  onOpenAskAi?: () => void;
   // When set, NavBar renders a hamburger button that calls this — used to
   // open the mobile sidebar Drawer on narrow viewports. Layout passes
   // `undefined` for layouts that don't have a sidebar (home, search).
   onOpenSidebar?: () => void;
 }
 
-export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps) {
+export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
   const styles = useStyles();
   const { data, navigate, t } = useVellum();
   const { site } = data.config;
@@ -401,7 +399,6 @@ export function NavBar({ onOpenSearch, onOpenAskAi, onOpenSidebar }: NavBarProps
           aria-label={t("ui.search")}
           className={styles.searchIconBtn}
         />
-        {onOpenAskAi && <AskAiButton onClick={onOpenAskAi} />}
         <LocalePicker />
         <SocialLinks />
         <ThemeSwitch />
@@ -572,20 +569,10 @@ function LocalePicker() {
     navigate(linkFor(localeCode));
   }
 
-  // Only show locales that have a translation for the current page.
-  // Always include the current locale so the reader can't lose their
-  // position even if translatedLocales is stale or incomplete.
-  const available = data.page.meta.translatedLocales;
-  const translated = available
-    ? data.config.site.locales.filter((l) => available.includes(l.code) || l.code === currentLocale)
-    : data.config.site.locales;
-
-  // Sort: current locale first, then human-translated, then machine-
-  // translated. Within each tier, alphabetical by label.
-  const sorted = [...translated].sort((a, b) => {
+  // Sort: current locale first, then alphabetical by label.
+  const sorted = [...data.config.site.locales].sort((a, b) => {
     if (a.code === currentLocale) return -1;
     if (b.code === currentLocale) return 1;
-    if (a.machineTranslated !== b.machineTranslated) return a.machineTranslated ? 1 : -1;
     return a.label.localeCompare(b.label);
   });
   const overflow = sorted.length > LOCALE_DROPDOWN_LIMIT;

@@ -111,7 +111,7 @@ And for each touched markdown file:
 | Cache key                                             | Purpose                                    |
 | ----------------------------------------------------- | ------------------------------------------ |
 | `commit:{owner}/{repo}@{branch}:{path}`               | The "last updated" metadata.               |
-| `page1:{slug}@{branch}:{locale}:{pagePath}` × locales | The cached page, so the next read rebuilds it. |
+| `page2:{slug}@{branch}:{locale}:{pagePath}` × locales | The cached page, so the next read rebuilds it. |
 
 Plus, on every push regardless of which files changed:
 
@@ -128,13 +128,6 @@ Pages the push didn't touch keep their cached copy, including pages that
 pull in a changed file through `[!INCLUDE]` or `[!code-…]`. They pick up
 the change, like a changed sidebar or nav, the next time they're rebuilt:
 at most `VELLUM_HTML_TTL_SECONDS` plus one request later.
-
-If `site.translate` is configured, the worker also deletes every D1
-translation row whose key matches `{slug}@{branch}:*` — that covers
-`page`, `frontmatter`, `sidebar`, and `repo-nav` rows for the pushed
-repo. Top-level rows (`ui:v1`, `site:v1`) aren't repo-scoped; the
-hourly cron handles those on its own staleness schedule. See
-[Internationalisation → Machine translation → Refresh](./i18n#refresh).
 
 ::: note Cache API caveat
 KV invalidation is global; the per-edge Cache API is local to each PoP. The

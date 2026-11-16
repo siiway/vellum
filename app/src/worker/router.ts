@@ -9,32 +9,22 @@ import type {
   RouteContext,
   VellumConfig,
 } from "../shared/types";
-import { expandLocalesFromTranslate, sourceLocale } from "../shared/types";
+import { sourceLocale } from "../shared/types";
 import config from "../../vellum.config.json";
 import { fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
 import { renderPage } from "./ssr";
 import { getClientAssets } from "./assets";
 import { readEntry, writeCache } from "./cache";
 import { staleSeconds, ttlSeconds } from "./env";
-import { loadPage, resolveTranslatedLocales } from "./page";
+import { loadPage } from "./page";
 import { pageCacheKey } from "./page-key";
 import { handleWebhook } from "./webhook";
 import { handleSearch } from "./search";
-import { handleSummarize } from "./summarize";
-import { handleAsk } from "./ask";
-import { translateSiteConfig, translateUiStrings } from "./translate";
-import { handleMcp } from "./mcp";
-import { handleTranslateRepo } from "./translate-repo";
-import { handleAiSession } from "./session";
 import { handleVueComponentRequest } from "./vue";
 import { handleRobots, handleSitemap } from "./sitemap";
-import { baseUiStrings, t as translate } from "../shared/i18n";
+import { t as translate } from "../shared/i18n";
 
-// Merge `site.translate.targets` into `site.locales` so the rest of the worker
-// — router, sidebar, search, sitemap — treats machine-translated locales as
-// first-class. Author-declared locales win on conflict; new entries get a
-// label from BUILTIN_LOCALE_LABELS (or the code) and machineTranslated:true.
-const SITE: VellumConfig = expandLocalesFromTranslate(config as VellumConfig);
+const SITE: VellumConfig = config as VellumConfig;
 
 export async function dispatch(
   request: Request,
@@ -47,13 +37,7 @@ export async function dispatch(
   // API surface.
   if (path === "/api/webhook" && request.method === "POST") return handleWebhook(request, env, ctx);
   if (path === "/api/search") return handleSearch(request, env, ctx, SITE);
-  if (path === "/api/summarize") return handleSummarize(request, env, ctx, SITE);
-  if (path === "/api/ask") return handleAsk(request, env, ctx, SITE);
-  if (path === "/api/ai/session")
-    return handleAiSession(request, env, SITE.site.aiChat?.turnstileSiteKey);
-  if (path === "/api/mcp") return handleMcp(request, env, ctx, SITE);
   if (path === "/api/vue") return handleVueComponentRequest(request, env, ctx, SITE);
-  if (path === "/api/translate-repo") return handleTranslateRepo(request, env, ctx, SITE);
   if (path === "/api/health") return Response.json({ ok: true, version: "0.1.0" });
 
   // SEO infrastructure. robots.txt is static and origin-aware; sitemap.xml
@@ -164,12 +148,7 @@ export async function dispatch(
   // from the site config in the bootstrap payload.
   const languagesRoute = matchLanguagesRoute(path);
   if (languagesRoute) {
-    return renderLanguagesPage(env, ctx, request, languagesRoute);
-  }
-
-  const translateTasksRoute = matchTranslateTasksRoute(path);
-  if (translateTasksRoute) {
-    return renderTranslateTasksPage(env, ctx, request, translateTasksRoute);
+    return renderLanguagesPage(env, request, languagesRoute);
   }
 
   const route = resolveRoute(path);
@@ -344,8 +323,7 @@ function addLocalePrefixToPath(pathname: string, prefix: string): string {
   // Reserved: keep search/languages/api/sitemap/etc. routed to themselves
   // under the new prefix. `api` is already short-circuited; this is
   // belt-and-braces.
-  const reserved =
-    first === "search" || first === "languages" || first === "translate-tasks" || first === "api";
+  const reserved = first === "search" || first === "languages" || first === "api";
   const isRepo = SITE.repos.some((r) => r.slug === first);
   if (reserved || isRepo) {
     return `/${prefix}/${parts.join("/")}`;
@@ -388,13 +366,7 @@ function detectHomepageShortcut(pathname: string): string | null {
 
   if (!rest.length || !rest[0]) return null;
   // Reserved virtual routes — never rewrite these into the homepage repo.
-  if (
-    rest[0] === "search" ||
-    rest[0] === "languages" ||
-    rest[0] === "translate-tasks" ||
-    rest[0] === "api"
-  )
-    return null;
+  if (rest[0] === "search" || rest[0] === "languages" || rest[0] === "api") return null;
 
   // Bail when the first non-locale segment IS a real repo slug — normal
   // resolveRoute will handle it.
@@ -911,7 +883,6 @@ function matchLanguagesRoute(
 
 async function renderLanguagesPage(
   env: Env,
-  ctx: ExecutionContext,
   request: Request,
   match: { localeCode: string; canonicalUrl: string },
 ): Promise<Response> {
@@ -928,37 +899,11 @@ async function renderLanguagesPage(
     ({ label: stubRepo.branch, branch: stubRepo.branch } as RouteContext["version"]);
 
   // Per-locale title/description so the SSR <title> reads in the right language.
-  const [localizedSite, uiStrings] = await Promise.all([
-    translateSiteConfig(env, ctx, SITE, match.localeCode),
-    translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
-  ]);
-
-  // Parse ?page= to determine which page the reader came from, so we can
-  // compute translatedLocales for that specific page. The languages page
-  // uses this to show per-locale status badges (translated, not yet, etc.).
-  let translatedLocales: string[] | undefined;
-  const pageParam = url.searchParams.get("page");
-  if (pageParam && pageParam.startsWith("/") && !pageParam.includes("..")) {
-    const pageParts = pageParam.replace(/^\/+/, "").split("/").filter(Boolean);
-    if (pageParts.length >= 1) {
-      const targetRepo = SITE.repos.find((r) => r.slug === pageParts[0]);
-      if (targetRepo) {
-        const targetBranch = repoRef(targetRepo);
-        const targetPage = pageParts.length > 1 ? pageParts.slice(1).join("/") : "index";
-        translatedLocales = await resolveTranslatedLocales(env, SITE, {
-          repoSlug: targetRepo.slug,
-          version: { branch: targetBranch },
-          pagePath: targetPage,
-        });
-      }
-    }
-  }
-
   const title = translate(match.localeCode, "ui.languages.title");
   const description = translate(match.localeCode, "ui.languages.subtitle");
 
   const payload: BootstrapPayload = {
-    config: localizedSite,
+    config: SITE,
     route: {
       repoSlug: stubRepo.slug,
       repo: stubRepo,
@@ -969,7 +914,6 @@ async function renderLanguagesPage(
     },
     sidebar: [],
     initialTheme,
-    uiStrings,
     page: {
       ast: { blocks: [] },
       meta: {
@@ -977,7 +921,6 @@ async function renderLanguagesPage(
         description,
         frontmatter: { layout: "languages" },
         outline: [],
-        translatedLocales,
       },
     },
   };
@@ -1001,89 +944,6 @@ async function renderLanguagesPage(
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-vellum": "edge-languages",
-    },
-  });
-}
-
-function matchTranslateTasksRoute(
-  pathname: string,
-): { localeCode: string; canonicalUrl: string } | null {
-  const parts = pathname.replace(/^\/+/, "").replace(/\/+$/, "").split("/");
-  if (parts.length === 1 && parts[0] === "translate-tasks") {
-    return { localeCode: SITE.site.defaultLocale, canonicalUrl: "/translate-tasks" };
-  }
-  if (parts.length === 2 && parts[1] === "translate-tasks") {
-    const locale = SITE.site.locales.find((l) => l.prefix && l.prefix === parts[0]);
-    if (locale) {
-      return {
-        localeCode: locale.code,
-        canonicalUrl: `/${locale.prefix}/translate-tasks`,
-      };
-    }
-  }
-  return null;
-}
-
-async function renderTranslateTasksPage(
-  env: Env,
-  ctx: ExecutionContext,
-  request: Request,
-  match: { localeCode: string; canonicalUrl: string },
-): Promise<Response> {
-  const url = new URL(request.url);
-  const wantsJson = url.searchParams.get("_data") === "1";
-  const initialTheme = pickTheme(request);
-
-  const stubRepo = SITE.repos[0]!;
-  const stubVersion =
-    stubRepo.versions?.find((v) => v.default) ??
-    ({ label: stubRepo.branch, branch: stubRepo.branch } as RouteContext["version"]);
-
-  const [localizedSite, uiStrings] = await Promise.all([
-    translateSiteConfig(env, ctx, SITE, match.localeCode),
-    translateUiStrings(env, ctx, SITE, match.localeCode, baseUiStrings as Record<string, string>),
-  ]);
-
-  const title = translate(match.localeCode, "ui.translateTasks.title");
-
-  const payload: BootstrapPayload = {
-    config: localizedSite,
-    route: {
-      repoSlug: stubRepo.slug,
-      repo: stubRepo,
-      version: stubVersion,
-      localeCode: match.localeCode,
-      pagePath: "translate-tasks",
-      canonicalUrl: match.canonicalUrl,
-    },
-    sidebar: [],
-    initialTheme,
-    uiStrings,
-    page: {
-      ast: { blocks: [] },
-      meta: {
-        title,
-        frontmatter: { layout: "translate-tasks" },
-        outline: [],
-      },
-    },
-  };
-
-  if (wantsJson) {
-    return new Response(JSON.stringify(payload), {
-      headers: {
-        "content-type": "application/json",
-        "cache-control": "no-store",
-      },
-    });
-  }
-
-  const html = await renderPage(env, payload, request);
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
     },
   });
 }

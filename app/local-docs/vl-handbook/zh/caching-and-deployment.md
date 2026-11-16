@@ -54,8 +54,8 @@ eu-west 上的一次命中并不会让随后 us-east 的请求更快。
 | `xrefmap:`                          | 按仓库的 uid → href 映射                                   | `VELLUM_CACHE_TTL_SECONDS`                                                   |
 | `diagram:mermaid:{theme}:{sha256}`  | 预渲染的 mermaid SVG                                       | 7 天（长；key 已编码源内容，失效是自动的）                                  |
 | `vue:`                              | 按仓库的 Vue 组件注册表                                    | `VELLUM_CACHE_TTL_SECONDS`                                                   |
-| `page1:`                            | 按仓库 + 语言 + 页面的页面 payload（见[页面缓存](#页面缓存)） | 新鲜期 `VELLUM_HTML_TTL_SECONDS`（默认 60s），之后最多再以陈旧状态返回 `VELLUM_STALE_TTL_SECONDS`（默认 1 天） |
-| `html5:`                            | 按主机 + 主题渲染好的 HTML，与 `page1:` 对应时复用          | 同 `page1:`                                                                  |
+| `page2:`                            | 按仓库 + 语言 + 页面的页面 payload（见[页面缓存](#页面缓存)） | 新鲜期 `VELLUM_HTML_TTL_SECONDS`（默认 60s），之后最多再以陈旧状态返回 `VELLUM_STALE_TTL_SECONDS`（默认 1 天） |
+| `html5:`                            | 按主机 + 主题渲染好的 HTML，与 `page2:` 对应时复用          | 同 `page2:`                                                                  |
 
 ::: tip TTL 是可调旋钮
 默认值在较短的传播延迟与极高的缓存命中率之间权衡：发布之后，页面会继续

@@ -59,8 +59,8 @@ entry is past its fresh window.
 | `xrefmap:`                         | Per-repo uid → href map                                         | `VELLUM_CACHE_TTL_SECONDS`                                               |
 | `diagram:mermaid:{theme}:{sha256}` | Pre-rendered mermaid SVGs                                       | 7 days (long; cache key encodes the source so invalidation is automatic) |
 | `vue:`                             | Per-repo Vue component registry                                 | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `page1:`                           | Page payload per repo+locale+page (see [Page cache](#page-cache)) | Fresh for `VELLUM_HTML_TTL_SECONDS` (default 60s), then served stale for up to `VELLUM_STALE_TTL_SECONDS` (default 1 day) |
-| `html5:`                           | Rendered HTML per host+theme, reused while it matches `page1:`  | Same as `page1:`                                                         |
+| `page2:`                           | Page payload per repo+locale+page (see [Page cache](#page-cache)) | Fresh for `VELLUM_HTML_TTL_SECONDS` (default 60s), then served stale for up to `VELLUM_STALE_TTL_SECONDS` (default 1 day) |
+| `html5:`                           | Rendered HTML per host+theme, reused while it matches `page2:`  | Same as `page2:`                                                         |
 
 ::: tip TTLs are knobs
 The defaults trade a short propagation lag for very high cache hit rates:
