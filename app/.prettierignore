@@ -2,6 +2,7 @@
 # would churn diffs every build.
 dist
 .wrangler
+.sources
 node_modules
 bun.lock
 package-lock.json

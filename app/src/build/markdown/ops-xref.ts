@@ -3,7 +3,7 @@
 //   <xref:System.Console.WriteLine>             -- displays the resolved name
 //   [Console](xref:System.Console)              -- displays the link text
 //
-// Resolution is done by the host (worker) via a per-repo xrefmap (typically
+// Resolution is done by the host (the build) via a per-repo xrefmap (typically
 // xrefmap.yml at the docs root, format documented at
 // https://dotnet.github.io/docfx/docs/links-and-cross-references.html).
 // When the host hasn't loaded a map or the uid is unresolved, the renderer

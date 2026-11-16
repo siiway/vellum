@@ -37,6 +37,11 @@
           "type": "string",
           "description": "Brand name shown in the NavBar and as the SSR <title> suffix."
         },
+        "url": {
+          "type": "string",
+          "description": "Public origin of the site, e.g. \"https://docs.example.com\". Used for absolute canonical / Open Graph / hreflang URLs and the sitemap; without it those URLs stay root-relative and no sitemap is written.",
+          "pattern": "^https?://[^/]+$"
+        },
         "tagline": {
           "type": "string",
           "description": "Short subtitle shown on the landing page hero."
@@ -62,7 +67,7 @@
         },
         "homepageRepo": {
           "type": "string",
-          "description": "Slug of the repo whose root acts as the site's landing page. `/` redirects here, and the NavBar brand link points here with the current locale preserved."
+          "description": "Slug of the repo whose root acts as the site's landing page, served at /{locale prefix}. The NavBar brand link points here with the current locale preserved."
         },
         "defaultLocale": {
           "type": "string",
@@ -106,7 +111,7 @@
       "properties": {
         "code": {
           "type": "string",
-          "description": "Locale code (e.g. \"en\", \"zh\", \"ja\"). Used in cache keys and i18n lookup."
+          "description": "Locale code (e.g. \"en\", \"zh\", \"ja\"). Used for i18n lookup and as the default source directory of non-default locales."
         },
         "label": {
           "type": "string",
@@ -196,7 +201,7 @@
             "github",
             "local"
           ],
-          "description": "Where the markdown lives. \"github\" (default) reads from raw.githubusercontent.com; \"local\" reads from local-docs/{slug}/ bundled into the worker's ASSETS at build time.",
+          "description": "Where the markdown lives. \"github\" (default) clones the GitHub repo at build time; \"local\" reads from local-docs/{slug}/ in this repository.",
           "default": "github"
         },
         "owner": {
@@ -209,7 +214,7 @@
         },
         "branch": {
           "type": "string",
-          "description": "Default branch to fetch from. Used as the cache key suffix and as the fallback when no `versions[]` is declared."
+          "description": "Branch the build clones. Used when no `versions[]` is declared."
         },
         "docsRoot": {
           "type": "string",
@@ -237,7 +242,7 @@
           "items": {
             "$ref": "#/definitions/RepoVersion"
           },
-          "description": "Optional version selector. Default version is used when no version is encoded in the URL."
+          "description": "Optional versions. The build renders the default one (or the first)."
         },
         "localeDirs": {
           "type": "object",
@@ -382,5 +387,5 @@
   },
   "$id": "https://siiway.org/vellum/site-schema.json",
   "title": "Vellum site config",
-  "description": "Top-level config consumed by the Vellum worker. Generated from src/shared/types.ts by scripts/gen-site-schema.ts — edit the types or that script's OVERRIDES table, not this file."
+  "description": "Top-level config consumed by the Vellum build. Generated from src/shared/types.ts by scripts/gen-site-schema.ts — edit the types or that script's OVERRIDES table, not this file."
 }

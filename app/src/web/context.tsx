@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { BootstrapPayload } from "../shared/types";
+import { canonicalHref, payloadPath } from "../shared/paths";
 import { t as translate, type MessageKey } from "../shared/i18n";
 
 // useLayoutEffect on the server logs a warning and runs nothing. We need its sync
@@ -64,6 +65,11 @@ export function VellumProvider({
   }, []);
   const [isNavigating, setNavigating] = useState(false);
   const lastFetch = useRef<AbortController | null>(null);
+  // The page on screen, for callbacks that outlive a render.
+  const dataRef = useRef(initial);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
   // Tracks the URL whose payload we currently have rendered.
   // On `popstate` the browser has *already* mutated window.location to the
   // destination URL before our listener fires, so we can't compare against
@@ -84,8 +90,7 @@ export function VellumProvider({
   const firstRenderRef = useRef(true);
 
   // The explicit `vellum-theme` cookie is the reader's choice; without it the
-  // page follows the OS (the head pre-script keeps `vellum-theme-auto` in sync
-  // so SSR renders the matching tokens). Read on the client only: the mode is
+  // page follows the OS. Read on the client only: the mode is
   // shown inside a popover that isn't part of the SSR markup, so there is no
   // hydration mismatch.
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
@@ -105,7 +110,6 @@ export function VellumProvider({
       document.documentElement.dataset.theme = next;
       if (mode === "system") {
         document.cookie = "vellum-theme=; path=/; max-age=0; samesite=lax";
-        document.cookie = `vellum-theme-auto=${next}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
       } else {
         document.cookie = `vellum-theme=${mode}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
       }
@@ -116,15 +120,13 @@ export function VellumProvider({
 
   // Track OS-level theme changes while following the system (no vellum-theme
   // cookie). The head pre-script picks the initial value; this listener keeps
-  // the page in sync if the OS toggles light/dark mid-session, and refreshes
-  // the auto cookie so the next SSR matches.
+  // the page in sync if the OS toggles light/dark mid-session.
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => {
       if (/(?:^|; )vellum-theme=(light|dark)/.test(document.cookie)) return;
       const next = e.matches ? "dark" : "light";
-      document.cookie = `vellum-theme-auto=${next}; path=/; max-age=${THEME_COOKIE_MAX_AGE}; samesite=lax`;
       setThemeState(next);
       document.documentElement.dataset.theme = next;
     };
@@ -134,12 +136,15 @@ export function VellumProvider({
 
   // Payloads fetched ahead of a likely click (see the prefetch listeners
   // below), keyed by payload URL. navigate() takes one instead of fetching.
-  const prefetches = useRef(new Map<string, { at: number; page: Promise<LoadedPage> }>());
+  const prefetches = useRef(
+    new Map<string, { at: number; page: Promise<BootstrapPayload | null> }>(),
+  );
 
   const isRendered = (url: URL) =>
     url.pathname === renderedRef.current.pathname && url.search === renderedRef.current.search;
 
-  const prefetch = useCallback((url: URL) => {
+  const prefetch = useCallback((link: URL) => {
+    const url = canonicalUrl(link, dataRef.current);
     if (isRendered(url)) return;
     const key = payloadUrl(url);
     const now = Date.now();
@@ -162,11 +167,19 @@ export function VellumProvider({
         skipHistory?: boolean;
       } = {},
     ) => {
-      let url = new URL(href, window.location.href);
+      // Links that would redirect (no locale, a short locale code, a repo's
+      // landing page) go straight to their page, in the reader's locale.
+      const url = canonicalUrl(new URL(href, window.location.href), dataRef.current);
 
       // If we already have this page's payload rendered, treat it as in-page nav:
       // jump to hash, optionally update history, but don't refetch.
       if (isRendered(url)) {
+        // A click back to this page cancels a navigation still loading.
+        if (lastFetch.current) {
+          lastFetch.current.abort();
+          lastFetch.current = null;
+          setNavigating(false);
+        }
         if (!opts.skipHistory) {
           history[opts.replace ? "replaceState" : "pushState"](null, "", url.toString());
         }
@@ -182,32 +195,23 @@ export function VellumProvider({
         const dataUrl = payloadUrl(url);
         const prefetched = prefetches.current.get(dataUrl);
         prefetches.current.delete(dataUrl);
-        const loaded =
+        const payload =
           prefetched && Date.now() - prefetched.at <= PREFETCH_TTL_MS
             ? await prefetched.page
             : await fetchPage(dataUrl, ac.signal);
         // A later navigation took over while this one was loading.
         if (ac.signal.aborted) return;
-        if (!loaded.payload) {
-          // Fallback: hard-load the URL.
+        if (!payload) {
+          // No payload: a redirect, a 404 or the root locale picker. Load
+          // the URL itself so the browser gets the real response.
           window.location.href = url.toString();
           return;
         }
-        const payload = loaded.payload;
         // Keep current theme so the user's toggle survives navigation.
         payload.initialTheme = theme;
-        // When the server redirected (a repo's landing page, a legacy URL),
-        // show where the reader actually landed.
-        if (loaded.redirected) {
-          const landed = new URL(loaded.url);
-          landed.searchParams.delete("_data");
-          landed.hash = url.hash;
-          if (landed.origin === url.origin) url = landed;
-        }
         // popstate already changed the URL for us - don't touch history there.
-        // A redirect still has to replace the entry it left behind.
-        if (!opts.skipHistory || loaded.redirected) {
-          history[opts.replace || opts.skipHistory ? "replaceState" : "pushState"](
+        if (!opts.skipHistory) {
+          history[opts.replace ? "replaceState" : "pushState"](
             { vellum: true },
             "",
             url.toString(),
@@ -351,26 +355,24 @@ const PREFETCH_TTL_MS = 30_000;
 // How long the pointer rests on a link before its payload is prefetched.
 const PREFETCH_HOVER_MS = 80;
 
-// A payload fetch, with what navigate() needs to know about the response.
-interface LoadedPage {
-  // Null when the response wasn't OK; navigate() then hard-loads the page.
-  payload: BootstrapPayload | null;
-  redirected: boolean;
-  url: string;
+// The canonical URL of an internal link (see canonicalHref).
+function canonicalUrl(url: URL, data: BootstrapPayload): URL {
+  const out = new URL(url);
+  out.pathname = canonicalHref(url.pathname, data.config, data.route.localeCode);
+  return out;
 }
 
-// The JSON payload URL for a page URL.
+// The JSON payload URL for a page URL. The query string and hash don't
+// change the payload.
 function payloadUrl(url: URL): string {
-  const data = new URL(url.toString());
-  data.hash = "";
-  data.searchParams.set("_data", "1");
-  return data.toString();
+  return new URL(payloadPath(url.pathname), url.origin).toString();
 }
 
-async function fetchPage(dataUrl: string, signal?: AbortSignal): Promise<LoadedPage> {
+// The page's payload, or null when it has none (navigate() then hard-loads
+// the page).
+async function fetchPage(dataUrl: string, signal?: AbortSignal): Promise<BootstrapPayload | null> {
   const res = await fetch(dataUrl, { signal, headers: { accept: "application/json" } });
-  const payload = res.ok ? ((await res.json()) as BootstrapPayload) : null;
-  return { payload, redirected: res.redirected, url: res.url };
+  return res.ok ? ((await res.json()) as BootstrapPayload) : null;
 }
 
 // The URL to navigate to client-side for an event on `target`, or null when
@@ -389,8 +391,8 @@ function routableLink(target: EventTarget | null): URL | null {
 
   const url = new URL(href, window.location.href);
   if (url.origin !== window.location.origin) return null;
-  // Skip API + asset paths.
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/assets/")) return null;
+  // Skip build output that isn't a page.
+  if (url.pathname.startsWith("/_vellum/") || url.pathname.startsWith("/assets/")) return null;
   return url;
 }
 

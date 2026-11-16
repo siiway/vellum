@@ -5,7 +5,7 @@ description: "vellum.config.json 的每个字段都有解释，附带示例。"
 
 # 配置参考
 
-Vellum 启动时只读一个文件：`app/vellum.config.json`。它的形状
+Vellum 的构建只读一个文件：`app/vellum.config.json`。它的形状
 被位于 `src/shared/site-schema.json` 的 JSON Schema 完整描述——只要在
 文件顶部保留 `"$schema": "./src/shared/site-schema.json"` 这一行，现代
 编辑器就会在编辑配置时自动补全和校验。
@@ -39,7 +39,7 @@ Vellum 启动时只读一个文件：`app/vellum.config.json`。它的形状
 | 字段            | 必填 | 说明                                                                       |
 | --------------- | :--: | -------------------------------------------------------------------------- |
 | `title`         |  ✓   | NavBar 中的品牌名以及 `<title>` 后缀。                                     |
-| `homepageRepo`  |  ✓   | 充当主页的仓库 slug。`/` 会重定向到这里。                                  |
+| `homepageRepo`  |  ✓   | 充当主页的仓库 slug，主页位于 `/{prefix}`。                                |
 | `defaultLocale` |  ✓   | URL 中没有语言前缀时使用的语言代码。                                       |
 | `locales`       |  ✓   | `[ { code, label, prefix } ]`。`prefix` 为空表示该语言位于每个仓库的根。   |
 | `tagline`       |      | 在 `home` 布局的落地页上显示。                                             |
@@ -47,6 +47,11 @@ Vellum 启动时只读一个文件：`app/vellum.config.json`。它的形状
 | `favicon`       |      | favicon 的 URL。                                                           |
 | `themeColor`    |      | 强调色（按钮、链接、焦点）及 `<meta name="theme-color">`，例如 `#0078d4`。 |
 | `footer`        |      | 每个页面底部展示的页脚文字。                                               |
+| `url`           |      | 站点的公开源地址，例如 `https://docs.example.com`。见下文。                |
+
+`url` 让每个页面 head 中的 canonical、Open Graph 和 hreflang URL 成为绝对地址，
+sitemap 也需要它。没有它时这些 URL 保持为以根开头的相对地址，`og:url` 会被省略，
+构建也不会写出 `sitemap.xml`。
 
 ::: tip 一个主页，多种来源
 把 `homepageRepo` 指向一个使用 `layout: ms-learn` 的本地源仓库，就能得到
@@ -68,12 +73,12 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
 | `source`          |      | `"github"`（默认）或 `"local"`。详见 [数据源](./sources)。                    |
 | `owner`           | ✓¹   | GitHub 用户/组织名。仅当 `source: "github"` 时必填。                          |
 | `repo`            | ✓¹   | GitHub 仓库名。仅当 `source: "github"` 时必填。                               |
-| `branch`          | ✓¹   | 默认分支。仅当 `source: "github"` 时必填。会用作缓存 key 的后缀。             |
+| `branch`          | ✓¹   | 构建克隆的分支。仅当 `source: "github"` 时必填。                              |
 | `localPath`       |      | 覆盖默认的 `local-docs/{slug}`。仅适用于本地源。                              |
 | `description`     |      | 仓库主页上显示的简介，也是 SSR meta description 的回退。                      |
 | `logo`            |      | 仓库级别的 logo URL。                                                         |
 | `editLinkPattern` |      | "编辑此页面" 的模板——`:path` 会被替换成文档根的相对路径。                     |
-| `versions`        |      | 可选的版本选择器。`[ { label, branch, default? } ]`。                         |
+| `versions`        |      | 可选。`[ { label, branch, default? } ]`；构建渲染默认的那一个。               |
 | `localeDirs`      |      | 各语言代码对应的源目录。详见 [国际化](./i18n#每个仓库的内容布局)。            |
 | `landingPage`     |      | 仓库根 URL 重定向到的路径，例如按目录分版本的文档用 `"v0.4"`。                |
 | `hideInBrand`     |      | 在站点标题后隐藏该仓库的 displayName 面包屑。对主页仓库很有用。               |
@@ -119,28 +124,15 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
 
 ## 环境变量
 
-把它们放进 `wrangler.jsonc#vars`（或对敏感数据使用 `wrangler secret put`）：
+构建时从环境中读取这些变量：
 
-| 变量                       |       默认值       | 用途                                                                                                                                          |
-| -------------------------- | :----------------: | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VELLUM_GITHUB_TOKEN`      |        空          | `raw.githubusercontent.com` 与 GitHub API 的鉴权 token。私有仓库必填；公开仓库设置后能避免触碰限流。                                          |
-| `VELLUM_WEBHOOK_SECRET`    |        空          | `/api/webhook` 用于 HMAC 签名的共享密钥。需要 webhook 缓存失效时必填。                                                                        |
-| `VELLUM_CACHE_TTL_SECONDS` |       `300`        | 原始 markdown / 文件树 / 侧边栏等条目的 TTL。                                                                                                 |
-| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | 缓存的页面保持新鲜的时长。                                                                                                                    |
-| `VELLUM_STALE_TTL_SECONDS` |      `86400`       | 页面过了新鲜期之后，在后台重建期间仍继续返回的时长。`0` 表示在请求时重建。                                                                    |
-| `VELLUM_KROKI_URL`         | `https://kroki.io` | 覆盖 mermaid SSR 使用的 Kroki 端点。自部署用户可以指向自己的实例。                                                                            |
+| 变量                  |       默认值       | 用途                                                               |
+| --------------------- | :----------------: | ------------------------------------------------------------------ |
+| `VELLUM_GITHUB_TOKEN` |         空         | 克隆私有仓库用的令牌。公开仓库不需要。                             |
+| `VELLUM_KROKI_URL`    | `https://kroki.io` | 覆盖渲染 mermaid 使用的 Kroki 端点。自部署用户可以指向自己的实例。 |
 
-KV 在 `wrangler.jsonc#kv_namespaces` 中单独绑定。没有 KV 时 worker
-仍可工作——只会退化为仅使用 PoP 级别的 Cache API。
-
-## 绑定
-
-除了环境变量，worker 还需要这些 Cloudflare 绑定：
-
-| 绑定                     |                资源                | 必填用途                                                                       |
-| ------------------------ | :--------------------------------: | ------------------------------------------------------------------------------ |
-| `ASSETS`                 | `[assets]`                         | 静态客户端 JS / CSS。始终必填。                                                |
-| `VELLUM_CACHE`           | `[[kv_namespaces]]`                | 跨区域持久缓存。可选——没有时退回到仅 PoP 级别的 Cache API。                  |
+在 GitHub Actions 中，把 `VELLUM_GITHUB_TOKEN` 设为仓库 secret，工作流会把它
+传给构建。部署后的站点不需要任何变量或绑定：它只有静态资源。
 
 ## 重新生成 schema
 

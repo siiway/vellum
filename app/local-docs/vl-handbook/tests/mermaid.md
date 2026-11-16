@@ -5,7 +5,7 @@ description: SSR via Kroki for both palettes; client falls back to mermaid.js if
 
 # Mermaid Diagrams
 
-The worker pre-renders each diagram against Kroki in both light and dark themes
+The build pre-renders each diagram against Kroki in both light and dark themes
 and ships both SVGs in the bootstrap payload. Toggling the theme swaps them
 instantly. If Kroki was unreachable, the client downloads the ~600KB mermaid
 runtime and renders client-side.
@@ -14,26 +14,28 @@ runtime and renders client-side.
 
 ```mermaid
 flowchart LR
-    A[Request] --> B{Source?}
-    B -->|github| C[raw.githubusercontent.com]
-    B -->|local| D[env.ASSETS]
+    A[Build] --> B{Source?}
+    B -->|github| C[git clone]
+    B -->|local| D[local-docs/]
     C --> E[Render]
     D --> E
-    E --> F[SSR HTML]
+    E --> F[Static HTML]
 ```
 
 ## Sequence diagram
 
 ```mermaid
 sequenceDiagram
-    participant Browser
-    participant Worker
+    participant Build
     participant GitHub
-    Browser->>Worker: GET /prism/page
-    Worker->>GitHub: fetch raw markdown
-    GitHub-->>Worker: markdown body
-    Worker->>Worker: parse + render AST
-    Worker-->>Browser: SSR HTML + bootstrap payload
+    participant Cloudflare
+    participant Browser
+    Build->>GitHub: clone docs repo
+    GitHub-->>Build: markdown
+    Build->>Build: parse + render HTML
+    Build->>Cloudflare: deploy static assets
+    Browser->>Cloudflare: GET /en-US/prism/page
+    Cloudflare-->>Browser: HTML + bootstrap payload
     Browser->>Browser: hydrate
 ```
 

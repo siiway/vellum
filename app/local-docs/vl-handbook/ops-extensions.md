@@ -195,8 +195,7 @@ Resolved uids render as external links; unresolved uids render as a dashed
 monospace box so the author sees the broken reference at a glance.
 
 ::: tip Performance
-The xrefmap is loaded once per page render in parallel with the markdown
-fetch, then cached in KV / Cache API alongside the raw files. A page with
-50 xrefs doesn't cost 50 round trips — they're all served from the
+The xrefmap is loaded once per repo per build and kept in memory. A page
+with 50 xrefs doesn't cost 50 lookups — they're all served from the
 in-memory map.
 :::

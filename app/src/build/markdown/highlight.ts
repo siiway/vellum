@@ -1,15 +1,15 @@
-// Shiki-based code highlighting that runs in the Worker.
-// One highlighter per isolate. It starts with just the two themes; each
-// grammar loads the first time a code block uses it, so a fresh isolate
-// pays for the languages on the page rather than all of LANGS. Built on
-// `shiki/core` with per-language imports, so the Worker bundle carries only
-// the grammars in LANGS and the two themes, not Shiki's full set.
+// Shiki-based code highlighting for the build.
+// One highlighter per build. It starts with just the two themes; each
+// grammar loads the first time a code block uses it, so a build pays for the
+// languages its pages use rather than all of LANGS. Built on `shiki/core`
+// with per-language imports, so only the grammars in LANGS and the two themes
+// can load, not Shiki's full set.
 //
-// Engine choice: the default Oniguruma engine ships as a WASM module and instantiates
-// it via `WebAssembly.instantiate` — which Cloudflare Workers blocks at runtime
-// ("Wasm code generation disallowed by embedder"). Using the pure-JS regex engine
-// avoids that path entirely. It's marginally less accurate on a handful of exotic
-// TextMate patterns; for the languages we ship it's indistinguishable in output.
+// Engine choice: the pure-JS regex engine rather than the default Oniguruma
+// WASM one, picked when this ran in a Cloudflare Worker (which blocks WASM
+// compilation) and kept so the output doesn't shift. It's marginally less
+// accurate on a handful of exotic TextMate patterns; for the languages we ship
+// it's indistinguishable in output.
 
 import {
   createHighlighterCore,
@@ -33,7 +33,7 @@ import {
 type GrammarModule = Promise<{ default: LanguageRegistration[] }>;
 
 // Comprehensive language set: the name an author writes -> Shiki language
-// id. Each grammar adds a few KB to the worker bundle, but for a docs
+// id. Each grammar adds a few KB to the build, but for a docs
 // platform that has to render *whatever* an author writes, narrow lists are
 // the worse trade. Categories rather than alphabetical so adding new ones
 // stays straightforward.
@@ -186,7 +186,7 @@ const LANGS: Record<string, string> = {
 // Grammar modules by Shiki language id: the languages in LANGS plus the ones
 // their modules import. A module brings the grammars it embeds statically;
 // `ensureLanguage` loads the ones it embeds by reference from this table.
-// Only these grammars end up in the Worker bundle.
+// Only these grammars can load.
 const GRAMMARS: Record<string, () => GrammarModule> = {
   apache: () => import("shiki/langs/apache.mjs"),
   applescript: () => import("shiki/langs/applescript.mjs"),
@@ -557,7 +557,7 @@ export async function highlightCode(rawCode: string, info: string): Promise<stri
         //   // [!code focus]           — focus mode (dim everything else)
         //   // [!code error] / warning — error/warning markers
         //   // [!code word:foo]        — inline-highlight the word "foo"
-        // The styling for the resulting classes lives in src/worker/ssr.tsx's
+        // The styling for the resulting classes lives in src/build/ssr.tsx's
         // base CSS so the output works without client-side JS.
         transformerNotationDiff({ matchAlgorithm: "v3" }),
         transformerNotationHighlight({ matchAlgorithm: "v3" }),

@@ -140,8 +140,8 @@ export function Layout() {
         <LanguagesPage />
       ) : isSearch ? (
         // Full-page cross-repo search. The component owns its own URL state
-        // (?q=, ?repo=) and uses /api/search?repo=* under the hood. Imported
-        // eagerly (not lazy) so any SSR error surfaces in the worker logs.
+        // (?q=, ?repo=) and searches every repo (repo=*). Imported
+        // eagerly (not lazy) so any SSR error fails the build.
         <SearchPage />
       ) : isMsLearn ? (
         // Microsoft Learn-style landing page: hero with search + product/role

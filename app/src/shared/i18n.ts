@@ -1,6 +1,6 @@
 // Tiny i18n dictionary used by the UI shell (NavBar, Sidebar, Outline, PageFooter,
 // SearchDialog, ErrorPage, etc.). Markdown body translations come from the source
-// repo - this is for the chrome the worker controls.
+// repo - this is for the chrome Vellum controls.
 
 export type LocaleCode = "en" | "zh" | string;
 

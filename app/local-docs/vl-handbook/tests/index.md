@@ -5,7 +5,7 @@ description: One page per feature so you can spot regressions visually.
 
 # Feature Tests
 
-These pages exercise every renderer the worker supports. Open them in pairs
+These pages exercise every renderer the build supports. Open them in pairs
 (light + dark, en + zh) and skim for visual regressions when working on the
 renderer or markdown pipeline.
 

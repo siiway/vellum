@@ -1,11 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
-import { localDocsPlugin } from "./scripts/vite-local-docs";
 import { bundledPackagesPlugin } from "./scripts/vite-packages";
 
 export default defineConfig({
-  plugins: [react(), localDocsPlugin(), bundledPackagesPlugin()],
+  plugins: [react(), bundledPackagesPlugin()],
   resolve: {
     alias: {
       "@web": resolve(__dirname, "src/web"),
@@ -15,7 +14,8 @@ export default defineConfig({
   build: {
     outDir: "dist/client",
     emptyOutDir: true,
-    manifest: "manifest.json",
+    // .vite/manifest.json, read by the page build and not deployed.
+    manifest: true,
     rollupOptions: {
       input: resolve(__dirname, "src/web/hydrate.tsx"),
       output: {
@@ -41,6 +41,6 @@ export default defineConfig({
     target: "es2022",
     cssCodeSplit: false,
   },
-  // Allow Worker code to be type-checked alongside; Vite ignores non-input files.
+  // The build code (src/build) is type-checked alongside; Vite ignores non-input files.
   appType: "custom",
 });

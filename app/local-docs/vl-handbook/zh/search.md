@@ -5,29 +5,33 @@ description: "单仓库对话框与跨仓库整页搜索。"
 
 # 搜索
 
-Vellum 提供两种搜索界面，背后是同一个 `/api/search` 端点：
+Vellum 提供两种搜索界面，都在读者的浏览器里运行同一套搜索：
 
 1. 一个 **命令面板对话框**（Ctrl K / Cmd K / `/`），作用范围限定为当前
    仓库。
-2. 一个位于 `/search` 的 **整页搜索**，会跨站点内的每个仓库展开。
+2. 一个位于 `/{locale}/search` 的 **整页搜索**，会跨站点内的每个仓库展开。
 
 ## 索引是怎样工作的
 
-`src/worker/search.ts` 在首次请求时按仓库 + 语言构建一份微型倒排索引：
+构建时为每个仓库的每种语言写一份索引，位于
+`/_vellum/search/{locale}/{repo}.json`
+（[`src/build/search-index.ts`](https://github.com/siiway/vellum/blob/main/app/src/build/search-index.ts)）：
 
-1. 走源数据树（GitHub trees API 或本地的 `manifest.json`）。
-2. 过滤出当前语言下、位于 `docsRoot` 内的 Markdown 文件。
-3. 并发拉取每个文件（最多 200 个），抽取可搜索文本：frontmatter 的
-   `title` / `description` / hero 块 + 剥离了 markdown 标记的正文。
-4. 把结果缓存进 KV / Cache API，TTL 为 `VELLUM_CACHE_TTL_SECONDS × 4`，
-   于是后续在同一仓库内的查询只花 O(query) 的时间。
+1. 取该仓库在该语言下的页面，也就是构建会渲染的那些页面。
+2. 抽取每个页面的可搜索文本：frontmatter 的 `title` / `description` /
+   hero 块 + 剥离了 markdown 标记的正文，并按标题切分成小节。
+3. 每份索引最多保留 200 个页面，每个页面保留前 12,000 个字符。
+
+第一次搜索时会拉取所需的索引；打分
+（[`src/shared/search.ts`](https://github.com/siiway/vellum/blob/main/app/src/shared/search.ts)）
+在浏览器里进行。打分代码是一个单独的小 chunk，只有在有人搜索时才会加载。
 
 打分故意做得很简单：标题命中 5 分，正文命中 1 分。降序排序，
 单仓库截到前 10，跨仓库截到前 30。
 
 ::: note 为什么不上花哨的索引器
 一个 50 页仓库的完整索引不到 50KB。更聪明的打分（BM25、语义嵌入）
-对这种规模收益有限，反而会显著拉长冷启动。当前实现的冷启动约 500ms。
+对这种规模收益有限，反而会让下载量和代码都变大。
 :::
 
 ## 对话框
@@ -45,8 +49,8 @@ Vellum 提供两种搜索界面，背后是同一个 `/api/search` 端点：
 
 ## 整页搜索
 
-URL：`/search`（非默认语言下是 `/{locale}/search`）。这个页面由 worker
-声明自己的布局——没有 markdown、没有侧边栏 / 大纲，占满整个视口。
+URL：`/{locale}/search`（`/search` 会重定向到默认语言的搜索页）。这个页面是
+构建为每种语言写出的空外壳——没有 markdown、没有侧边栏 / 大纲，占满整个视口。
 
 作者可以链到一个预填查询：
 
@@ -62,46 +66,37 @@ URL：`/search`（非默认语言下是 `/{locale}/search`）。这个页面由 
 - URL 通过 `history.replaceState` 保持同步，刷新 / 分享时查询不丢失。
 - 当前分组的 tab 选择通过 localStorage 持久化。
 
-## API 表面
+## 索引文件
 
-`GET /api/search` 返回 JSON。参数：
-
-| 参数     | 必填 | 说明                                                                       |
-| -------- | :--: | -------------------------------------------------------------------------- |
-| `q`      |  ✓   | 搜索关键字。                                                               |
-| `repo`   |      | 限定到的仓库 slug，或 `*` 表示跨仓库。默认为 `homepageRepo`。               |
-| `locale` |      | 语言代码。默认为 `defaultLocale`。                                         |
-| `limit`  |      | 每个仓库的最大命中数（被限制在 1–50）。默认 10。                           |
-| `all`    |      | 设为 `1` 是 `repo=*` 的快捷写法。                                          |
-
-响应：
+`/_vellum/search/{locale}/{repo}.json` 是一个静态文件：
 
 ```json
 {
-  "hits": [
+  "docs": [
     {
-      "url": "/repo-slug/page-path",
+      "url": "/en-US/repo-slug/page-path",
       "title": "Page title",
-      "excerpt": "...<mark>highlighted term</mark>...",
-      "repo": "repo-slug",
-      "repoDisplayName": "Repo Display Name"
+      "text": "Searchable text of the whole page…",
+      "sections": [{ "slug": "install", "title": "Install", "offset": 120 }]
     }
   ]
 }
 ```
+
+`robots.txt` 会阻止爬虫访问 `/_vellum/`。
 
 ## 从搜索中排除页面
 
 目前还没有显式的 `noindex` 标志。要从搜索中排除某页，二选一：
 
 - 把它移出 `docsRoot`。
-- 在路径中标记为 `_internal`（索引器会跳过 `_*` 目录下的任何文件，
-  假定它们是 partial 或私有产物——这不是硬约束，请用查询确认）。
+- 把它放进以 `_` 开头的目录（或以 `_` 开头命名）。构建把这些视为 partial：
+  既不渲染，也不索引。
 
 正式的 `frontmatter.noindex: true` 标志已在路线图上。
 
 ## 调优
 
-如果你有大仓库（> 200 个 markdown 文件），把 `src/worker/search.ts` 中
-的 `MAX` 常量调大。当前的限制是有意保守的，因为冷启动时间随语料库
-线性增长。
+如果你有大仓库（> 200 个 markdown 文件），把 `src/build/search-index.ts`
+中的 `MAX_DOCS` 调大。这个限制是有意保守的，因为读者第一次搜索时要下载
+整份索引。

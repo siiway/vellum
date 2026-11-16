@@ -1,18 +1,19 @@
 # Vellum
 
-A Microsoft Open Publishing System-style multi-repo docs platform on
-Cloudflare Workers, with full VitePress markdown support and a FluentUI v9
-shell.
+A Microsoft Open Publishing System-style multi-repo docs platform, built to
+a static site on Cloudflare Workers, with full VitePress markdown support and
+a FluentUI v9 shell.
 
-One Worker serves Markdown from any combination of GitHub repositories and
-local files, parses it server-side (containers, OPS extensions, Shiki, Kroki
-mermaid, MathJax), and renders a React app that hydrates from the same SSR
-payload.
+The build reads Markdown from any combination of GitHub repositories and
+local files, parses it (containers, OPS extensions, Shiki, Kroki mermaid,
+MathJax), and pre-renders every page to HTML, with a React app that hydrates
+from the same payload. Cloudflare serves the result as static assets; no code
+runs per request.
 
 ```
-Request → Worker → Source (GitHub raw or local ASSETS)
-                 → Markdown → AST → SSR HTML + JSON payload
-                 → Cache (per-edge + optional KV)
+Build → Sources (git clone of each GitHub repo, local files)
+      → Markdown → AST → HTML + JSON payload per page
+      → dist/site → wrangler deploy (Workers static assets)
 ```
 
 ## Highlights
@@ -24,23 +25,23 @@ Request → Worker → Source (GitHub raw or local ASSETS)
 - **Full Microsoft Learn / OPS extension set.** Triple-colon
   image/video/row/column/zone/moniker, DocFX tabs, `[!INCLUDE]`,
   `[!code-<lang>]` with `#region` markers, `<xref:Uid>` resolution.
-- **Server-side highlighting.** Shiki with ~100 grammars; line numbers,
+- **Build-time highlighting.** Shiki with ~100 grammars; line numbers,
   filename badges, line highlights/focus/diff via `@shikijs/transformers`.
-- **Server-side diagrams.** Mermaid rendered through Kroki in both light
+- **Build-time diagrams.** Mermaid rendered through Kroki in both light
   and dark palettes — theme switching is instant, no client mermaid bundle
   needed when both palettes are populated.
 - **First-class i18n.** Locale-first URLs (`/zh/repo/page`), translated site
   chrome, hreflang alternates in the SEO head, sitemap with `xhtml:link`
   siblings.
 - **Search.** Per-repo Ctrl-K dialog plus a full-page `/search` that fans
-  out across every repo. Advanced query syntax (`"phrase"`, `-exclude`,
-  `title:`, `repo:`).
+  out across every repo, over indexes the build writes. Advanced query syntax
+  (`"phrase"`, `-exclude`, `title:`, `repo:`).
 - **React in Markdown.** Drop FluentUI primitives directly into `.md`
   files — they mount as real components, not inert HTML.
 - **SEO out of the box.** Open Graph + Twitter Card + JSON-LD (WebSite,
   BreadcrumbList, TechArticle), `/robots.txt`, `/sitemap.xml`.
-- **Edge cache + KV.** Layered cache through `cache.ts`; GitHub `push`
-  webhook invalidates exactly the touched entries.
+- **Static and incremental.** No runtime, no cache to purge. `bun run update`
+  re-renders only the docs repos whose commit changed.
 
 ## Quick start
 
@@ -48,11 +49,12 @@ Request → Worker → Source (GitHub raw or local ASSETS)
 git clone https://github.com/siiway/vellum.git
 cd vellum/app
 bun install
-bun run dev          # http://127.0.0.1:8787
+bun run dev          # build, then serve on http://127.0.0.1:8787
 ```
 
 The default `vellum.config.json` wires up some real SiiWay projects plus this
-handbook, so the dev server is useful with zero edits.
+handbook, so the dev server is useful with zero edits. The build clones the
+GitHub-backed docs repos, so it needs `git` and network access.
 
 To deploy to your own Cloudflare account:
 
@@ -60,9 +62,11 @@ To deploy to your own Cloudflare account:
 bun run deploy
 ```
 
-`bun run deploy` runs the client build and `wrangler deploy`, which uploads
-the worker plus every static asset (including bundled `local-docs/`). Pushes
-to `main` deploy the same way through `.github/workflows/deploy.yml`.
+`bun run deploy` runs the full build and `wrangler deploy`, which uploads
+`dist/site` as static assets. In GitHub Actions, pushes to `main` deploy the
+same way through `.github/workflows/deploy.yml`, and
+`.github/workflows/update-content.yml` publishes new docs repo commits
+incrementally, hourly or when a docs repo asks.
 
 ## Configuration
 
@@ -99,18 +103,18 @@ for every field.
 ## Project structure
 
 ```
-.github/            # PR checks, deploy and triage workflows
+.github/            # PR checks, deploy, update-content and triage workflows
 app/
   src/
-    worker/         # Cloudflare Worker — routing, source fetching, markdown
-                    #   pipeline, SSR, search, sitemap, webhook
+    build/          # Static site build — sources, markdown pipeline, SSR,
+                    #   search indexes, redirects, sitemap
     web/            # React client — Layout, NavBar, Sidebar, Outline,
                     #   SearchDialog, SearchPage, MarkdownAst renderer
-    shared/         # Types + i18n dictionary shared between worker and client
+    shared/         # Types, i18n and search shared by the build and client
   local-docs/
     vl-handbook/    # This handbook (a local-source repo)
     homepage/       # The site landing page (also local-source)
-  scripts/          # schema, KV cache, NOTICE.md, git hooks, Vite plugins
+  scripts/          # page build CLI, schema, NOTICE.md, git hooks, Vite plugin
   vellum.config.json
   wrangler.jsonc
   prek.toml         # git hooks (prettier, eslint, typecheck, build)
@@ -121,23 +125,24 @@ NOTICE.md           # third-party licenses, generated by `bun run notice`
 
 Run these in `app/`.
 
-| Command              | What it does                                                 |
-| -------------------- | ------------------------------------------------------------ |
-| `bun run dev`        | Vite build (client + local-docs) → `wrangler dev` on `:8787` |
-| `bun run build`      | Client build + worker dry-run                                |
-| `bun run deploy`     | Client build + `wrangler deploy`                             |
-| `bun run check`      | Typecheck, lint, format check and NOTICE.md check            |
-| `bun run typecheck`  | `tsc --noEmit`                                               |
-| `bun run lint`       | ESLint over `src/` + `scripts/`                              |
-| `bun run format`     | Prettier over the whole repository                           |
-| `bun run notice`     | Build, then regenerate NOTICE.md                             |
-| `bun run gen:schema` | Regenerate `site-schema.json` from `src/shared/types.ts`     |
-| `bun run drop:cache` | Bulk-delete every key from the configured KV namespace       |
+| Command               | What it does                                             |
+| --------------------- | -------------------------------------------------------- |
+| `bun run dev`         | Full build → `wrangler dev` on `:8787`                   |
+| `bun run build`       | Client build + every page into `dist/site`               |
+| `bun run build:pages` | Pages only (`--no-fetch` reuses the cloned repos)        |
+| `bun run update`      | Re-render only the docs repos that changed               |
+| `bun run deploy`      | Full build + `wrangler deploy`                           |
+| `bun run check`       | Typecheck, lint, format check and NOTICE.md check        |
+| `bun run typecheck`   | `tsc --noEmit`                                           |
+| `bun run lint`        | ESLint over `src/` + `scripts/`                          |
+| `bun run format`      | Prettier over the whole repository                       |
+| `bun run notice`      | Build the client, then regenerate NOTICE.md              |
+| `bun run gen:schema`  | Regenerate `site-schema.json` from `src/shared/types.ts` |
 
 ## Handbook
 
 For everything beyond the quickstart — every config field, every markdown
-extension, the search/i18n/caching/webhook details — read the handbook:
+extension, the search/i18n/build/update details — read the handbook:
 
 - [Getting started](./app/local-docs/vl-handbook/getting-started.md)
 - [Configuration reference](./app/local-docs/vl-handbook/configuration.md)
@@ -148,26 +153,26 @@ extension, the search/i18n/caching/webhook details — read the handbook:
 - [React components in Markdown](./app/local-docs/vl-handbook/react-in-markdown.md)
 - [Search](./app/local-docs/vl-handbook/search.md)
 - [Internationalisation](./app/local-docs/vl-handbook/i18n.md)
-- [Caching & deployment](./app/local-docs/vl-handbook/caching-and-deployment.md)
-- [GitHub webhooks](./app/local-docs/vl-handbook/webhooks.md)
+- [Build & deployment](./app/local-docs/vl-handbook/caching-and-deployment.md)
+- [Updating content](./app/local-docs/vl-handbook/updating-content.md)
 
-The handbook is itself served by Vellum from the bundled `vl-handbook`
-local-source repo — visit `/vl-handbook/` on a running instance to read it
-with the full chrome.
+The handbook is itself built by Vellum from the bundled `vl-handbook`
+local-source repo — visit `/en-US/vl-handbook` on a running instance to read
+it with the full chrome.
 
 ## Requirements
 
 - **Node 22+** and **Bun 1.1+** (Bun is the package manager / script
-  runner).
+  runner), and **git**.
 - A **Cloudflare account** with Workers enabled.
-- Optional: a **GitHub PAT** (`VELLUM_GITHUB_TOKEN`) for private repos and
-  higher rate limits on public ones.
+- Optional: a **GitHub token** (`VELLUM_GITHUB_TOKEN`) that can read private
+  docs repos.
 
 ## Tech stack
 
-TypeScript • React 18 (SSR + hydrate) • FluentUI v9 + Griffel CSS-in-JS •
-markdown-it • Shiki • Kroki (for mermaid) • MathJax • Cloudflare Workers •
-Vite • Bun.
+TypeScript • React 18 (pre-rendered + hydrate) • FluentUI v9 + Griffel
+CSS-in-JS • markdown-it • Shiki • Kroki (for mermaid) • MathJax • Cloudflare
+Workers static assets • Vite • Bun.
 
 ## License
 

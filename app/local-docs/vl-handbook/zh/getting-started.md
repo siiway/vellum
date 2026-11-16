@@ -11,20 +11,21 @@ description: "安装 Vellum，指向一个仓库，然后把文档站点部署�
 - 已安装 **Node 22+** 和 **Bun 1.1+**（Bun 同时充当包管理器和脚本运行器，
   Vite 通过它运行）。
 - 一个开启了 workers 子域名的 **Cloudflare 账号**。
-- 一个具有 `repo` 权限的 **GitHub 个人访问令牌**（仅当你需要从私有仓库
-  拉取时使用；公开仓库可以匿名访问）。
+- PATH 中可用的 **git**：构建时会克隆 GitHub 来源的仓库。
+- 一个能读取你的私有文档仓库的 **GitHub 个人访问令牌**，设置为
+  `VELLUM_GITHUB_TOKEN`（仅私有仓库需要；公开仓库可以匿名克隆）。
 
 ::: tip 直接使用箱内已有的内容
 仓库自带的 `vellum.config.json` 已经接好了两个真实的 SiiWay 项目
 （`siiway/prism`、`siiway/glint`）以及本地的这份手册。你可以直接用这份配置
-跑起来 worker，在接入自己的内容之前先把功能玩一遍。
+构建站点，在接入自己的内容之前先把功能玩一遍。
 :::
 
 ## 1. 克隆并安装
 
 ```bash
 git clone https://github.com/siiway/vellum.git
-cd vellum
+cd vellum/app
 bun install
 ```
 
@@ -34,16 +35,21 @@ bun install
 bun run dev
 ```
 
-这条命令会先跑一次 `vite build`（确保客户端 bundle 和 `local-docs` 资源
-存在磁盘上），然后启动 `wrangler dev` 监听 `http://127.0.0.1:8787`。
-Worker 会自动重载；客户端 bundle 在你编辑 React 代码后需要再跑一次
-`bun run build:client`。
+这条命令会先跑完整构建（`bun run build`：先构建客户端 bundle，再把所有仓库
+的每个页面渲染到 `dist/site`），然后启动 `wrangler dev` 监听
+`http://127.0.0.1:8787`。它以与生产环境相同的方式提供 `dist/site`，
+包括重定向和 404 页面。
 
-::: note
-对任何 GitHub 来源页面的首次请求会花费约 500ms，因为 worker 需要拉取
-markdown 并跑一遍 Shiki + Mermaid。后续请求会命中边缘缓存，在个位数
-毫秒内返回。
-:::
+构建不会监听文件变化。修改之后，在另一个终端里重新构建，`wrangler dev`
+会继续提供服务：
+
+| 你修改了                             | 运行                             |
+| ------------------------------------ | -------------------------------- |
+| React 代码（`src/web/`）             | `bun run build`                  |
+| 本地文档、配置或渲染器               | `bun run build:pages --no-fetch` |
+| 什么都没改，只想拿到文档仓库的新提交 | `bun run update`                 |
+
+`--no-fetch` 复用已经克隆到 `.sources/` 下的仓库，不再重新拉取。
 
 ## 3. 配置你的仓库
 
@@ -63,9 +69,8 @@ markdown 并跑一遍 Shiki + Mermaid。后续请求会命中边缘缓存，在�
 }
 ```
 
-Worker 会从
-`https://raw.githubusercontent.com/your-github-org/my-repo/main/docs/...`
-拉取 Markdown。
+构建时会克隆 `https://github.com/your-github-org/my-repo` 的 `main` 分支，
+并渲染 `docs/` 下的 Markdown。
 
 # [本地源](#tab/local)
 
@@ -78,8 +83,7 @@ Worker 会从
 }
 ```
 
-把 `.md` 文件放进 `local-docs/my-docs/`。Vite 插件会在构建时把它们打包
-进 worker 的 `ASSETS`，并生成一份供 worker 枚举目录使用的 `manifest.json`。
+把 `.md` 文件放进 `local-docs/my-docs/`，构建时会从那里读取。
 
 ---
 
@@ -113,7 +117,7 @@ flowchart LR
 
 ````
 
-刷新开发服务器——页面就在 `/my-docs/`。
+重新构建并刷新——页面就在 `/{prefix}/my-docs`，位于语言的 URL 前缀下（自带配置下是 `/en-US/my-docs`）。
 
 ## 5. 部署
 
@@ -123,15 +127,14 @@ flowchart LR
 bun run deploy
 ````
 
-`bun run deploy` 会先跑客户端构建，再执行 `wrangler deploy`——后者会把
-worker 和所有静态资源（包括打包进去的 `local-docs/...`）一并上传。
-结束后你会看到一个 `https://vellum.<你的-subdomain>.workers.dev` 形式的 URL。
+`bun run deploy` 会先跑完整构建，再执行 `wrangler deploy`，把 `dist/site`
+作为静态资源上传。结束后你会看到一个
+`https://vellum.<你的-subdomain>.workers.dev` 形式的 URL。
 
-::: warning 配置 GitHub webhook 来让缓存失效
-默认情况下边缘缓存会保留渲染好的 HTML 60 秒。如果你发布得很频繁，
-建议在每个 GitHub 仓库上挂一个指向 `https://your-worker.example/api/webhook`
-的 `push` webhook。Worker 会根据 payload 中的 `commits[]` 精准地失效
-受影响的缓存条目。详见 [缓存与部署](./caching-and-deployment#webhooks)。
+::: tip 保持内容最新
+一次部署是文档仓库的一个快照。要拿到之后的提交，运行
+`bun run update && wrangler deploy`，或者交给 **Update content** 工作流。
+详见 [更新内容](./updating-content)。
 :::
 
 ## 各数据源支持的功能
@@ -147,10 +150,10 @@ worker 和所有静态资源（包括打包进去的 `local-docs/...`）一并�
 | xref 解析             |     ✓     |   ✓    |
 | "最近更新" 页脚       |     ✓     |   —    |
 | 在 GitHub 上编辑按钮  |     ✓     |   —    |
-| Webhook 缓存失效      |     ✓     |   —    |
+| 增量更新              |     ✓     |   —    |
 
-本地仓库没有"最近更新"和编辑链接的功能，因为 worker 没有可以查询提交
-信息的远端；它们的缓存通过重新构建 worker 来失效。
+本地仓库没有"最近更新"和编辑链接的功能，因为构建时没有它们自己的提交历史
+可查；它们随本仓库一起变更，所以要通过部署（而不是增量更新）发布修改。
 
 ## 下一步
 

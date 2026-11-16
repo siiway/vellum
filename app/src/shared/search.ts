@@ -1,6 +1,7 @@
-// Search endpoint: scans the cached markdown corpus for hits.
-// First request per repo+locale walks the tree, fetches every markdown, and builds
-// a tiny inverted index that we cache in KV/Cache API. Subsequent requests are O(query).
+// Client-side search over the indexes the build publishes, one per repo per
+// locale (see build/search-index.ts). The dialog and the full-page search
+// both call `search`; it's loaded with a dynamic import, so the scoring code
+// stays out of the entry bundle until someone searches.
 //
 // Query syntax:
 //   plain words           AND-matched against title or body
@@ -13,15 +14,10 @@
 // heading (slug + title) so the client can render them under section headers
 // and link to the exact anchor.
 
-import matter from "gray-matter";
-import type { Env } from "./env";
-import type { VellumConfig } from "../shared/types";
-import { sourceLocale } from "../shared/types";
-import { fetchSourceFile, fetchSourceTree, repoRef, docsRootPrefix } from "./sources";
-import { readCache, writeCache } from "./cache";
-import { ttlSeconds } from "./env";
+import type { VellumConfig } from "./types";
+import { searchIndexPath } from "./paths";
 
-interface IndexedSection {
+export interface IndexedSection {
   // Slug of the nearest preceding heading. Anchors built by anchors.ts use
   // the same slugifier, so a hit's #anchor lands on the same heading.
   slug: string;
@@ -31,7 +27,7 @@ interface IndexedSection {
   offset: number;
 }
 
-interface IndexedDoc {
+export interface IndexedDoc {
   url: string;
   title: string;
   // Concatenated searchable text: frontmatter title/description/hero/features
@@ -41,9 +37,8 @@ interface IndexedDoc {
   sections: IndexedSection[];
 }
 
-interface SearchIndex {
+export interface SearchIndex {
   docs: IndexedDoc[];
-  built: number;
 }
 
 export interface ExcerptOut {
@@ -178,82 +173,6 @@ function resolveAliasMap(
   return out;
 }
 
-export async function handleSearch(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-): Promise<Response> {
-  const url = new URL(request.url);
-  const q = (url.searchParams.get("q") ?? "").trim();
-  const repoParam = url.searchParams.get("repo");
-  const localeCode = url.searchParams.get("locale") ?? site.site.defaultLocale;
-  const limit = clampInt(url.searchParams.get("limit"), 10, 1, 50);
-  // verbose=1 widens the excerpt windows, allows more excerpts per hit,
-  // and grows the no-match fallback intro. The full-page SearchPage opts
-  // in so visitors see substantial body content; the compact dialog stays
-  // narrow.
-  const verbose = url.searchParams.get("verbose") === "1";
-  const excerptOpts = verbose ? VERBOSE_EXCERPT_OPTS : COMPACT_EXCERPT_OPTS;
-  if (!q) return Response.json({ hits: [] });
-
-  // Initial parse uses the site-level alias map. We only need it here to
-  // honour the `repo:slug` qualifier and decide the target list — each
-  // repo re-parses with its own alias overrides layered on top so its
-  // synonyms take effect during scoring.
-  const siteAliases = resolveAliasMap(site.site);
-  const parsed = parseQuery(q, siteAliases);
-
-  // repo=* (or omitted with explicit `all=1`) fans out across every configured repo.
-  // Keeping `repo` defaulting to the current repo preserves the in-dialog behaviour
-  // — callers that want global search opt in with repo=*.
-  const wantAll = repoParam === "*" || url.searchParams.get("all") === "1";
-  let targets = wantAll
-    ? site.repos
-    : site.repos.filter((r) => r.slug === (repoParam ?? site.site.homepageRepo));
-
-  // `excludeFromSearch` is honoured for cross-repo search (where the reader
-  // didn't explicitly name a repo). When a caller asks `?repo=excluded-slug`
-  // we still serve it — they obviously meant it.
-  if (wantAll) {
-    targets = targets.filter((r) => !r.excludeFromSearch);
-  }
-
-  // `repo:slug` query qualifier filters the in-flight target list further.
-  if (parsed.repoFilter) {
-    targets = targets.filter((r) => r.slug.toLowerCase() === parsed.repoFilter);
-  }
-
-  if (targets.length === 0) return Response.json({ hits: [] });
-
-  const perRepoLimit = wantAll ? Math.max(limit, 10) : limit;
-  const repoHits = await Promise.all(
-    targets.map(async (repo) => {
-      // Re-parse per repo so repo.searchAliases takes effect. Cheap (regex
-      // tokenization) compared to the index lookup that follows.
-      const repoAliases = resolveAliasMap(site.site, repo);
-      const repoParsed = parseQuery(q, repoAliases);
-      const index = await getOrBuildIndex(env, ctx, site, repo.slug, localeCode);
-      return score(index.docs, repoParsed, repo.slug, repo.displayName, excerptOpts).slice(
-        0,
-        perRepoLimit,
-      );
-    }),
-  );
-
-  const merged = repoHits.flat().sort((a, b) => b.score - a.score);
-  const hits = (wantAll ? merged.slice(0, Math.max(limit, 30)) : merged.slice(0, limit)).map(
-    ({ score: _s, ...rest }) => rest,
-  );
-  return Response.json({ hits });
-}
-
-function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
-  const n = raw == null ? NaN : Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
-
 // --- Query parsing -------------------------------------------------------
 
 // Variants of a single bare-word term: primary first, then aliases. The
@@ -360,248 +279,77 @@ function parseQuery(raw: string, aliases: Record<string, string[]>): ParsedQuery
   return out;
 }
 
-// --- Index builder -------------------------------------------------------
+// --- Search --------------------------------------------------------------
 
-async function getOrBuildIndex(
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-  repoSlug: string,
-  localeCode: string,
-): Promise<SearchIndex> {
-  // Cache key carries a schema version: bumped when the IndexedDoc shape
-  // changes so old entries (missing `sections`, the old `excerpt:string`
-  // shape, etc.) are quietly replaced rather than crashing the scorer.
-  const key = `index9:${repoSlug}:${localeCode}`;
-  const cached = await readCache<SearchIndex>(env, key);
-  if (cached) return cached;
+export interface SearchParams {
+  q: string;
+  // A repo slug, or "*" for every repo that isn't excluded from search.
+  repo: string;
+  locale: string;
+  limit?: number;
+  // Wider excerpt windows, more excerpts per hit and a longer no-match
+  // intro. The full-page search opts in; the compact dialog stays narrow.
+  verbose?: boolean;
+}
 
-  const repo = site.repos.find((r) => r.slug === repoSlug)!;
-  const branch = repoRef(
-    repo,
-    repo.versions?.find((v) => v.default),
-  );
-  const tree = await fetchSourceTree(env, repo, branch, { ctx });
+// Each index is fetched once per page load.
+const indexes = new Map<string, Promise<IndexedDoc[]>>();
 
-  const localeConfig = site.site.locales.find((l) => l.code === localeCode);
-  const localeUrlPrefix = localeConfig?.prefix ?? "";
-  const docs: IndexedDoc[] = [];
-  // When docsRoot is empty / "/" (local-source repos or remote ones with
-  // content at the source root), don't prefix-match — local tree paths are
-  // like "index.md" not "/index.md", and the empty-string match would shadow
-  // them otherwise.
-  const rootPrefix = docsRootPrefix(repo.docsRoot);
-  // This locale's files, each with its page path inside the locale's source
-  // directory (which can differ from the URL prefix: the default locale
-  // lives at the docs root even when its URL is locale-prefixed).
-  const scoped = tree.flatMap((e) => {
-    if (e.type !== "blob" || !e.path.endsWith(".md")) return [];
-    if (rootPrefix && !e.path.startsWith(rootPrefix)) return [];
-    const rel = e.path.slice(rootPrefix.length).replace(/\.md$/, "");
-    const owner = sourceLocale(rel, site.site.locales, site.site.defaultLocale, repo);
-    return owner?.code === localeCode ? [{ path: e.path, page: owner.path }] : [];
-  });
+function loadIndex(locale: string, repo: string): Promise<IndexedDoc[]> {
+  const url = searchIndexPath(locale, repo);
+  let hit = indexes.get(url);
+  if (!hit) {
+    hit = fetch(url).then(async (res) => {
+      // A repo with no pages in this locale has no index.
+      if (res.status === 404) return [];
+      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      return ((await res.json()) as SearchIndex).docs;
+    });
+    // A failed fetch is retried by the next search.
+    hit.catch(() => indexes.delete(url));
+    indexes.set(url, hit);
+  }
+  return hit;
+}
 
-  // Limit corpus to keep cold-start tractable; large repos can re-tune.
-  const MAX = 200;
-  await Promise.all(
-    scoped.slice(0, MAX).map(async (entry) => {
-      const raw = await fetchSourceFile(env, repo, branch, entry.path, { ctx });
-      if (!raw) return;
-      const url = pageUrl(entry.page, localeUrlPrefix, repoSlug);
-      const built = extractIndexableContent(raw, entry.path, repo.displayName);
-      docs.push({
-        url,
-        title: built.title,
-        text: built.text.slice(0, 12000),
-        sections: built.sections,
-      });
+export async function search(config: VellumConfig, params: SearchParams): Promise<SearchHit[]> {
+  const q = params.q.trim();
+  if (!q) return [];
+  const limit = Math.max(1, Math.min(50, Math.trunc(params.limit ?? 10)));
+  const excerptOpts = params.verbose ? VERBOSE_EXCERPT_OPTS : COMPACT_EXCERPT_OPTS;
+
+  // The site-level parse only decides the target list (it honours the
+  // `repo:slug` qualifier); each repo re-parses with its own alias overrides
+  // layered on top so its synonyms take effect during scoring.
+  const parsed = parseQuery(q, resolveAliasMap(config.site));
+
+  // `excludeFromSearch` is honoured for cross-repo search, where the reader
+  // didn't name a repo. A search scoped to an excluded repo still runs.
+  const wantAll = params.repo === "*";
+  let targets = wantAll
+    ? config.repos.filter((r) => !r.excludeFromSearch)
+    : config.repos.filter((r) => r.slug === params.repo);
+  if (parsed.repoFilter) {
+    targets = targets.filter((r) => r.slug.toLowerCase() === parsed.repoFilter);
+  }
+  if (targets.length === 0) return [];
+
+  const perRepoLimit = wantAll ? Math.max(limit, 10) : limit;
+  const repoHits = await Promise.all(
+    targets.map(async (repo) => {
+      const repoParsed = parseQuery(q, resolveAliasMap(config.site, repo));
+      const docs = await loadIndex(params.locale, repo.slug);
+      return score(docs, repoParsed, repo.slug, repo.displayName, excerptOpts).slice(
+        0,
+        perRepoLimit,
+      );
     }),
   );
 
-  const index: SearchIndex = { docs, built: Date.now() };
-  ctx.waitUntil(writeCache(env, key, index, ttlSeconds(env, "raw") * 4, ctx));
-  return index;
-}
-
-// Pulls title + searchable text + section map from a raw markdown file.
-// Sections are computed from `#`/`##`/etc. headings; each section's text
-// (stripped) is concatenated in order, and the section's offset is the byte
-// offset of its first character in the combined text.
-function extractIndexableContent(
-  raw: string,
-  path: string,
-  repoDisplayName: string,
-): { title: string; text: string; sections: IndexedSection[] } {
-  let front: Record<string, unknown> = {};
-  let body = raw;
-  try {
-    // Options skip gray-matter's cache, which would keep every file for the
-    // isolate's lifetime.
-    const parsed = matter(raw, {});
-    front = parsed.data as Record<string, unknown>;
-    body = parsed.content;
-  } catch {
-    // Malformed frontmatter — fall back to the raw file. Worst case: a noisy
-    // index entry, not a broken endpoint.
-  }
-
-  const isHome = (front.layout as string | undefined) === "home";
-  const hero = (front.hero as Record<string, unknown> | undefined) ?? {};
-  const features = Array.isArray(front.features)
-    ? (front.features as Array<Record<string, unknown>>)
-    : [];
-
-  const frontTitle = typeof front.title === "string" ? front.title : undefined;
-  const heroName = typeof hero.name === "string" ? hero.name : undefined;
-  const heroText = typeof hero.text === "string" ? hero.text : undefined;
-  const heroTagline = typeof hero.tagline === "string" ? hero.tagline : undefined;
-  const description = typeof front.description === "string" ? front.description : undefined;
-
-  let title = "";
-  if (frontTitle) title = frontTitle;
-  else if (isHome) title = [heroName, heroText].filter(Boolean).join(" — ");
-  if (!title) {
-    const h1 = body.match(/^#\s+(.+)$/m);
-    if (h1) title = h1[1]!.trim();
-  }
-  if (!title) {
-    // index.md on a repo root → use the repo display name; otherwise the slug.
-    const slug = path.replace(/\.md$/, "").split("/").pop() ?? "";
-    title = slug === "index" ? repoDisplayName : slug;
-  }
-
-  const frontPieces: string[] = [];
-  if (frontTitle) frontPieces.push(frontTitle);
-  if (description) frontPieces.push(description);
-  if (heroName) frontPieces.push(heroName);
-  if (heroText) frontPieces.push(heroText);
-  if (heroTagline) frontPieces.push(heroTagline);
-  for (const f of features) {
-    if (typeof f.title === "string") frontPieces.push(f.title);
-    if (typeof f.details === "string") frontPieces.push(f.details);
-    if (typeof f.linkText === "string") frontPieces.push(f.linkText);
-  }
-
-  const frontText = stripMarkdown(frontPieces.join("\n")).replace(/\s+/g, " ").trim();
-  const bodySegments = splitBodyByHeadings(body);
-
-  // Build the combined text + section map. The frontmatter prelude (when
-  // present) is attributed to a synthetic "page top" section so excerpts
-  // hitting hero/description don't link to a nonexistent anchor.
-  let combined = "";
-  const sections: IndexedSection[] = [];
-  if (frontText) {
-    combined = frontText;
-  }
-  for (const seg of bodySegments) {
-    const stripped = stripMarkdown(seg.body).replace(/\s+/g, " ").trim();
-    // Section start = current combined length (after appending a separator).
-    if (combined.length > 0) combined += " ";
-    const offset = combined.length;
-    if (seg.heading) {
-      sections.push({
-        slug: seg.heading.slug,
-        title: seg.heading.title,
-        offset,
-      });
-      combined += seg.heading.title + (stripped ? " " + stripped : "");
-    } else {
-      combined += stripped;
-    }
-  }
-
-  return { title, text: combined, sections };
-}
-
-// Splits a markdown body into segments at heading boundaries. Each segment
-// holds its preceding heading (or null for the prelude before the first H#)
-// and the raw markdown body that belongs to it. Heading title is the literal
-// inline text; slug is the slugified form anchors.ts would produce.
-//
-// Tracks fenced code block state so a `# comment` line inside a ```bash
-// block isn't misread as an ATX heading. Without this, the splitter would
-// cut the fence in half and `stripMarkdown` couldn't pair the orphaned
-// ``` markers — the entire code block leaked into search excerpts.
-function splitBodyByHeadings(
-  body: string,
-): Array<{ heading: { slug: string; title: string } | null; body: string }> {
-  const lines = body.split("\n");
-  const out: Array<{
-    heading: { slug: string; title: string } | null;
-    body: string;
-  }> = [];
-  let current: {
-    heading: { slug: string; title: string } | null;
-    body: string;
-  } = { heading: null, body: "" };
-  // Tracks the fence string currently open ("```", "````", "~~~", …) so we
-  // only close on the matching marker. CommonMark allows ≥ 3 of either
-  // character; this is good enough for our excerpt-quality use case.
-  let openFence: string | null = null;
-  for (const line of lines) {
-    const fence = line.match(/^\s{0,3}(`{3,}|~{3,})/);
-    if (fence) {
-      const marker = fence[1]!;
-      if (openFence === null) openFence = marker;
-      else if (marker[0] === openFence[0] && marker.length >= openFence.length) openFence = null;
-      current.body += line + "\n";
-      continue;
-    }
-    if (openFence === null) {
-      const m = line.match(/^(#{1,6})\s+(.+?)\s*$/);
-      if (m) {
-        if (current.heading || current.body.trim()) out.push(current);
-        const title = m[2]!.replace(/\s*\{[^}]*\}\s*$/, "").trim(); // strip {#explicit-id} trailing attrs
-        current = { heading: { slug: slugify(title), title }, body: "" };
-        continue;
-      }
-    }
-    current.body += line + "\n";
-  }
-  if (current.heading || current.body.trim()) out.push(current);
-  return out;
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/`[^`]*`/g, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-// `page` is the path inside the locale's source directory, without `.md`.
-function pageUrl(page: string, urlPrefix: string, repoSlug: string): string {
-  const final = page === "index" ? "" : page;
-  // Locale-first URL shape — matches the canonical form produced by router.ts.
-  const base = `${urlPrefix ? `/${urlPrefix}` : ""}/${repoSlug}`;
-  return `${base}/${final}`.replace(/\/+/g, "/").replace(/\/$/, "") || base;
-}
-
-// Strip markdown formatting that's noisy in search excerpts while preserving
-// content that should style as code in the rendered hit (backtick spans).
-// Backticks survive into the indexed text so renderInlineMarkdown can wrap
-// them in `<code>` after the highlighter has injected `<mark>` tags. Table
-// pipes get collapsed — otherwise excerpts spanning a table read as a wall
-// of "| | |".
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/```[\s\S]*?```/g, " ") // fenced code blocks
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ") // images
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → link text
-    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
-    .replace(/(?<!\w)_([^_]+)_(?!\w)/g, "$1") // emphasis with underscores
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "$1") // emphasis with asterisks
-    .replace(/~~([^~]+)~~/g, "$1") // strikethrough
-    .replace(/^\s*[-*+]\s+/gm, "") // list bullets
-    .replace(/^\s*>\s?/gm, "") // blockquotes
-    .replace(/^\s*#{1,6}\s+/gm, "") // ATX headings (defensive — splitter already removed)
-    .replace(/^\s*\|?[\s:|-]+\|?\s*$/gm, " ") // table separator rows (---|---|---)
-    .replace(/\s*\|\s*/g, " ") // remaining table pipes → spaces
-    .replace(/\s+/g, " ")
-    .trim();
+  const merged = repoHits.flat().sort((a, b) => b.score - a.score);
+  return (wantAll ? merged.slice(0, Math.max(limit, 30)) : merged.slice(0, limit)).map(
+    ({ score: _s, ...rest }) => rest,
+  );
 }
 
 // Render the small slice of inline markdown that survives stripMarkdown into

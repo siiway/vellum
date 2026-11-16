@@ -2,8 +2,9 @@
 
 - The app is in `app/`. It uses Bun: run `bun` commands there, never npm or
   pnpm. `bun run check` must pass before you finish.
-- Code is in `app/src/`: `worker/` (Cloudflare Worker: routing, markdown
-  pipeline, SSR), `web/` (React client) and `shared/` (types, i18n).
+- Code is in `app/src/`: `build/` (static site build: sources, markdown
+  pipeline, SSR, search index, redirects), `web/` (React client) and `shared/`
+  (types, i18n, client search).
 - Commit messages are ASCII, conventional style only.
 
 ## Docs
@@ -11,16 +12,18 @@
 - A change in behavior updates the handbook in `app/local-docs/vl-handbook/`
   and its `zh/` copy in the same change, and the two stay in sync.
 
-## Worker
+## Build
 
+- The site is static: Cloudflare serves `app/dist/site` as-is, with no Worker
+  code. Nothing in the output may depend on the request; a redirect goes in
+  `_redirects` (`src/build/redirects.ts`).
 - Build source paths with `docsRootPrefix(repo.docsRoot)` and refs with
   `repoRef(repo)`, never `repo.docsRoot` or `repo.branch` directly.
-- Cache keys carry a version prefix (`htmlN:`, `indexN:`, `sitemapN:`). Bump the
-  version when the cached shape changes.
-- Writes that outlive the response go through `ctx.waitUntil()`; pass `ctx`
-  to `writeCache`.
-- Bindings are optional in `env.ts` and mirror `wrangler.jsonc`; the Worker
-  must degrade when one is missing.
+- A repo's output depends only on that repo and the config: `bun run update`
+  re-renders just the repos whose commit changed. Keep it that way.
+- Output is deterministic (no timestamps, sorted lists), so an unchanged page
+  is an unchanged file.
+- Paths the client fetches (`/_vellum/...`) come from `src/shared/paths.ts`.
 
 ## Config
 

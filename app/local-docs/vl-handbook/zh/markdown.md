@@ -84,7 +84,7 @@ Nested warning inside a details. Both close with their own `:::`.
 标准的 `markdown-it-container` 不考虑嵌套，只往前扫到下一个 `:::`
 就关闭，所以 VitePress 的常见绕过办法是用四个冒号写外层。
 Vellum 的
-[`containers.ts`](https://github.com/siiway/vellum/blob/main/app/src/worker/markdown/containers.ts)
+[`containers.ts`](https://github.com/siiway/vellum/blob/main/app/src/build/markdown/containers.ts)
 用一个深度跟踪的解析器替换了它，所以纯 `:::` 就能按作者预期工作。
 :::
 
@@ -115,7 +115,7 @@ GitHub 的 `> [!KIND]` 语法被重写到同一套提示框原语上：
 语言、文件名、行号、高亮范围：
 
 ```md
-`​``ts:line-numbers [src/worker/sources.ts] {2,4-6}
+`​``ts:line-numbers [src/build/sources.ts] {2,4-6}
 export async function fetchSourceFile(env, repo, ref, path) {
   if (repo.source === "local") return fetchLocalFile(env, repo, path);
   return fetchGitHubRaw(env, repo.owner, repo.repo, ref, path);
@@ -169,28 +169,28 @@ print("py")
 ## Mermaid
 
 `mermaid` 语言的围栏代码块会通过
-[Kroki](./caching-and-deployment#external-services) 在服务端 **同时**
+[Kroki](./caching-and-deployment#外部服务) 在构建时 **同时**
 预渲染浅色和深色两个版本，所以切换主题是瞬时的，浏览器无需加载任何
 mermaid JS。
 
 ```md
 `​``mermaid
 flowchart LR
-  A[Request] --> B{Source?}
-  B -->|github| C[raw.githubusercontent.com]
-  B -->|local| D[env.ASSETS]
+  A[Build] --> B{Source?}
+  B -->|github| C[git clone]
+  B -->|local| D[local-docs/]
   C & D --> E[Render]
-  E --> F[SSR HTML]
+  E --> F[Static HTML]
 `​``
 ```
 
 ```mermaid
 flowchart LR
-  A[Request] --> B{Source?}
-  B -->|github| C[raw.githubusercontent.com]
-  B -->|local| D[env.ASSETS]
+  A[Build] --> B{Source?}
+  B -->|github| C[git clone]
+  B -->|local| D[local-docs/]
   C & D --> E[Render]
-  E --> F[SSR HTML]
+  E --> F[Static HTML]
 ```
 
 当 Kroki 不可达时，客户端会按需懒加载 ~600KB 的 mermaid 运行时

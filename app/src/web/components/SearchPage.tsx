@@ -1,5 +1,5 @@
 // Full-page cross-repo search. Rendered by Layout when frontmatter.layout === "search".
-// Drives the same /api/search endpoint as SearchDialog, but with repo=* so results
+// Drives the same search as SearchDialog, but with repo=* so results
 // fan out across every configured repo, and keeps the query in sync with the URL
 // so results can be linked / shared / refreshed.
 
@@ -401,9 +401,9 @@ export function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced fetch. The same /api/search endpoint that powers the dialog, but
-  // with repo=* to fan out across every configured repo (the worker handles the
-  // merge + score-sort).
+  // Debounced search. The same search that powers the dialog, but with
+  // repo=* to fan out across every configured repo (search merges and
+  // score-sorts the hits).
   useEffect(() => {
     if (!q.trim()) {
       setHits([]);
@@ -414,18 +414,23 @@ export function SearchPage() {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const repoParam = scope ?? "*";
-        // verbose=1 asks the worker for wider excerpt windows + more
-        // excerpts per hit. The compact dialog gets the default; the
-        // full-page view has room to show actual body content.
-        const r = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}&repo=${encodeURIComponent(repoParam)}&locale=${encodeURIComponent(data.route.localeCode)}&limit=30&verbose=1`,
-        );
-        const j = (await r.json()) as { hits: SearchHit[] };
+        const { search } = await import("../../shared/search");
+        // verbose asks for wider excerpt windows + more excerpts per hit.
+        // The compact dialog gets the default; the full-page view has room
+        // to show actual body content.
+        const found = await search(data.config, {
+          q,
+          repo: scope ?? "*",
+          locale: data.route.localeCode,
+          limit: 30,
+          verbose: true,
+        });
         if (!cancelled) {
-          setHits(j.hits ?? []);
+          setHits(found);
           setActiveIdx(0);
         }
+      } catch (e) {
+        console.error("[vellum] search failed", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -434,7 +439,7 @@ export function SearchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [q, scope, data.route.localeCode]);
+  }, [q, scope, data.config, data.route.localeCode]);
 
   // Keep `?q=` and `?repo=` in the URL so a result page is shareable + refreshable.
   // replaceState (not pushState) avoids polluting back-button history with every keystroke.
@@ -453,8 +458,8 @@ export function SearchPage() {
     }
   }, [q, scope, urlHydrated]);
 
-  // Group hits by repo while preserving the worker's score-sorted ordering. We
-  // attach each group's display name from the first hit (worker tags it) or fall
+  // Group hits by repo while preserving search's score-sorted ordering. We
+  // attach each group's display name from the first hit (search tags it) or fall
   // back to the configured repo name.
   const grouped = useMemo(() => {
     const groups = new Map<string, { displayName: string; logo?: string; hits: SearchHit[] }>();
@@ -713,7 +718,7 @@ export function SearchPage() {
                           __html: h.titleHtml ?? escapeHtml(h.title),
                         }}
                       />
-                      {/* Render every excerpt the worker returned. Each carries
+                      {/* Render every excerpt search returned. Each carries
                           the nearest preceding heading (when it has one), so
                           a click on the excerpt jumps to /url#sectionSlug. */}
                       {h.excerpts.map((ex, k) => (
@@ -788,8 +793,8 @@ function readScopeParam(validSlugs: string[]): string | null {
   return validSlugs.includes(v) ? v : null;
 }
 
-// Defensive escape for the (rare) case where a cached /api/search response
-// predates the titleHtml field and we have to fall back to the plain text.
+// Defensive escape for a hit without titleHtml, which falls back to its
+// plain title.
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

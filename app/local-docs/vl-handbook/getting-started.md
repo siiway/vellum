@@ -11,21 +11,23 @@ minutes. We assume you already have:
 - **Node 22+** and **Bun 1.1+** installed (Bun is the package manager + script
   runner; Vite runs through it).
 - A **Cloudflare account** with a workers subdomain enabled.
-- A **GitHub personal access token** with `repo` scope (only if you'll fetch
-  from private repos; public repos work unauthenticated).
+- **git** on your PATH: the build clones the GitHub-backed repos.
+- A **GitHub personal access token** that can read your private docs repos,
+  set as `VELLUM_GITHUB_TOKEN` (only for private repos; public repos clone
+  unauthenticated).
 
 ::: tip Use what's already in the box
 The default `vellum.config.json` in the repo wires up two real SiiWay projects
-(`siiway/prism`, `siiway/glint`) plus this local handbook. You can run the
-worker against that config with no edits and play with the surface before
-plugging in your own content.
+(`siiway/prism`, `siiway/glint`) plus this local handbook. You can build the
+site from that config with no edits and play with the surface before plugging
+in your own content.
 :::
 
 ## 1. Clone and install
 
 ```bash
 git clone https://github.com/siiway/vellum.git
-cd vellum
+cd vellum/app
 bun install
 ```
 
@@ -35,16 +37,22 @@ bun install
 bun run dev
 ```
 
-This runs `vite build` once (so the client bundle and `local-docs` assets are
-on disk), then starts `wrangler dev` on `http://127.0.0.1:8787`. The worker
-auto-reloads on changes; the client bundle needs another `bun run build:client`
-when you edit React code.
+This runs the full build (`bun run build`: the client bundle, then every
+page of every repo into `dist/site`), then starts `wrangler dev` on
+`http://127.0.0.1:8787`, which serves `dist/site` the way production does,
+redirects and 404 pages included.
 
-::: note
-The first request to any GitHub-backed page takes ~500ms while the worker
-fetches the markdown and runs Shiki + Mermaid. Subsequent requests hit the
-edge cache and return in single-digit milliseconds.
-:::
+The build doesn't watch for changes. After editing, rebuild in another
+terminal while `wrangler dev` keeps serving:
+
+| You changed                             | Run                              |
+| --------------------------------------- | -------------------------------- |
+| React code (`src/web/`)                 | `bun run build`                  |
+| Local docs, config or the renderer      | `bun run build:pages --no-fetch` |
+| Nothing; you want new docs repo commits | `bun run update`                 |
+
+`--no-fetch` reuses the repos already cloned under `.sources/` instead of
+fetching them again.
 
 ## 3. Configure your repos
 
@@ -64,8 +72,8 @@ with your own. The minimum viable repo entry is:
 }
 ```
 
-The worker pulls Markdown from
-`https://raw.githubusercontent.com/your-github-org/my-repo/main/docs/...`.
+The build clones `https://github.com/your-github-org/my-repo` at `main` and
+renders the Markdown under `docs/`.
 
 # [Local source](#tab/local)
 
@@ -78,9 +86,8 @@ The worker pulls Markdown from
 }
 ```
 
-Drop `.md` files into `local-docs/my-docs/`. The Vite plugin bundles them
-into the worker's `ASSETS` at build time and emits a `manifest.json` that the
-worker uses for tree enumeration.
+Drop `.md` files into `local-docs/my-docs/`. The build reads them from
+there.
 
 ---
 
@@ -114,7 +121,8 @@ flowchart LR
 
 ````
 
-Reload the dev server — the page is at `/my-docs/`.
+Rebuild and reload — the page is at `/{prefix}/my-docs`, under your locale's
+URL prefix (`/en-US/my-docs` with the bundled config).
 
 ## 5. Deploy
 
@@ -124,17 +132,14 @@ When you're ready to push to Cloudflare:
 bun run deploy
 ````
 
-`bun run deploy` runs the client build, then `wrangler deploy` which uploads
-both the worker and the static assets (including bundled `local-docs/...`).
-You'll see a `https://vellum.<your-subdomain>.workers.dev` URL when it
-finishes.
+`bun run deploy` runs the full build, then `wrangler deploy`, which uploads
+`dist/site` as static assets. You'll see a
+`https://vellum.<your-subdomain>.workers.dev` URL when it finishes.
 
-::: warning Set up GitHub webhook for cache invalidation
-By default the edge cache holds rendered HTML for 60 seconds. If you publish
-often, point a `push` webhook from each GitHub-backed repo at
-`https://your-worker.example/api/webhook`. The worker uses the payload's
-`commits[]` to invalidate exactly the touched cache entries.
-See [Caching & deployment](./caching-and-deployment#webhooks).
+::: tip Keep content current
+A deploy is a snapshot of the docs repos. To pick up later commits, run
+`bun run update && wrangler deploy`, or let the **Update content** workflow
+do it. See [Updating content](./updating-content).
 :::
 
 ## What works for which source
@@ -150,11 +155,11 @@ See [Caching & deployment](./caching-and-deployment#webhooks).
 | xref resolution       |       ✓       |      ✓       |
 | "Last updated" footer |       ✓       |      —       |
 | Edit-on-GitHub button |       ✓       |      —       |
-| Webhook cache busting |       ✓       |      —       |
+| Incremental update    |       ✓       |      —       |
 
-Local repos skip last-updated and edit-link affordances because there's no
-remote to ask about commits, and they're cache-busted by rebuilding the
-worker rather than via webhook.
+Local repos skip last-updated and edit-link affordances because the build
+has no history of theirs to ask, and they change with this repository, so a
+deploy (not an incremental update) publishes their edits.
 
 ## Next steps
 

@@ -1,6 +1,7 @@
 // Flat ESLint config (ESLint 9 / 10). Three environment slices share a base
 // JS+TS ruleset; React rules + browser globals only apply to the client app,
-// worker code gets a Workers/web-API global set, and scripts get Node globals.
+// shared code gets the web-standard globals both sides have, and the build
+// and scripts get Node globals.
 //
 // Type-aware lint rules (the ones backed by tsc) are intentionally NOT
 // enabled — they triple lint time and would flag a lot of intentional `any`
@@ -21,6 +22,7 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       ".wrangler/**",
+      ".sources/**",
       "node_modules/**",
       "local-docs/**",
       "src/shared/site-schema.json",
@@ -102,23 +104,17 @@ export default tseslint.config(
     },
   },
 
-  // Worker: Cloudflare/Workers + web standard globals (Response, Request,
-  // crypto, URL, etc).
+  // Shared: web standard globals (fetch, URL, etc), which the build has too.
   {
-    files: ["src/worker/**/*.{ts,tsx}", "src/shared/**/*.{ts,tsx}"],
+    files: ["src/shared/**/*.{ts,tsx}"],
     languageOptions: {
-      globals: {
-        ...globals.worker,
-        ExecutionContext: "readonly",
-        KVNamespace: "readonly",
-        ExecutionContextEvent: "readonly",
-      },
+      globals: { ...globals.worker },
     },
   },
 
-  // Scripts: Node globals.
+  // Build and scripts: Node globals.
   {
-    files: ["scripts/**/*.{ts,js}"],
+    files: ["src/build/**/*.{ts,tsx}", "scripts/**/*.{ts,js}"],
     languageOptions: {
       globals: { ...globals.node },
     },

@@ -75,8 +75,8 @@ stages = ["pre-push"]
 pass_filenames = false
 always_run = true
 
-# Builds (client + wrangler dry-run of the Worker), then checks that NOTICE.md
-# lists exactly what the build ships.
+# Builds the client bundle, then checks that NOTICE.md lists exactly what it
+# ships. (The pages aren't built here: that needs the docs repos.)
 [[repos.hooks]]
 id = "notice"
 name = "build and NOTICE.md"

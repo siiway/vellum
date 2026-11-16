@@ -1,0 +1,165 @@
+name: Update content
+
+# Brings production up to date with the docs repos, incrementally: it
+# re-renders only the GitHub-backed repos whose commit changed since the last
+# build, keeps every other page as it was, and deploys only when something
+# changed. The app itself isn't rebuilt; that's deploy.yml's job.
+#
+# Triggers:
+#   * hourly schedule
+#   * repository_dispatch `update-content` -> a docs repo asking right after
+#     a push (see the "Updating content" handbook page for the snippet)
+#   * manual run (workflow_dispatch)
+#
+# It only ships the app commit production already runs: the one the last
+# successful Deploy built. The last build comes from the Actions cache; when
+# it's missing (evicted) or of another app commit, `bun run update` builds
+# everything from that commit instead.
+#
+# It never races Deploy. Sharing Deploy's concurrency group would let a queued
+# update replace a waiting Deploy (GitHub keeps one pending run per group), so
+# it has its own and instead skips itself while a Deploy is running or
+# queued, checking again right before it deploys. Deploy builds every page
+# anyway, content included.
+#
+# Requires the same secrets as deploy.yml.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  repository_dispatch:
+    types: [update-content]
+  workflow_dispatch:
+
+# One update at a time. A newer one waiting replaces an older one, which
+# loses nothing: every update checks every repo.
+concurrency:
+  group: update-content
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # To look at Deploy's runs.
+  actions: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    environment:
+      name: production
+      url: https://docs.siiway.org
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      # Skip while a Deploy is running or queued; otherwise find the app
+      # commit production runs.
+      - name: Check Deploy
+        id: deploy
+        run: |
+          runs() { gh run list -R "$GITHUB_REPOSITORY" --workflow deploy.yml --branch main "$@"; }
+          busy=$(runs --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" != 0 ]; then
+            echo "::notice::Deploy is running or queued, and publishes the content too. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sha=$(runs --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          if [ -z "$sha" ]; then
+            echo "::notice::Nothing has been deployed by Deploy yet. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the last build
+        if: steps.deploy.outputs.skip != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/dist
+            app/.sources
+          key: site-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: site-
+
+      - name: Check out the deployed app
+        if: steps.deploy.outputs.skip != 'true'
+        env:
+          SHA: ${{ steps.deploy.outputs.sha }}
+        run: |
+          # A build of another app commit is no base for an update.
+          if [ -f dist/state.json ] && [ "$(jq -r .app dist/state.json)" != "$SHA" ]; then
+            echo "The cached build is of another app commit; building everything."
+            rm -rf dist
+          fi
+          git fetch --depth=1 origin "$SHA"
+          git checkout --detach "$SHA"
+
+      - name: Setup Bun
+        if: steps.deploy.outputs.skip != 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Cache Bun install cache
+        if: steps.deploy.outputs.skip != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('app/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        if: steps.deploy.outputs.skip != 'true'
+        run: bun install --frozen-lockfile
+
+      # A docs repo that fails keeps its last pages and fails this step; the
+      # repos that did update are still deployed below, then the run fails.
+      - name: Update
+        id: update
+        if: steps.deploy.outputs.skip != 'true'
+        continue-on-error: true
+        run: bun run update
+        env:
+          VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
+
+      # A Deploy that started meanwhile publishes this content too, with the
+      # newer app; deploying here could land after it and roll it back.
+      - name: Check Deploy again
+        id: again
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy.yml --branch main --limit 20 \
+            --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" != 0 ]; then
+            echo "::notice::A Deploy started meanwhile and publishes this content. Not deploying."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        if: steps.update.outputs.changed == 'true' && steps.again.outputs.skip != 'true'
+        run: bunx wrangler deploy
+
+      - name: Save the build
+        if: steps.update.outputs.changed == 'true' && steps.again.outputs.skip != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/dist
+            app/.sources
+          key: site-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Fail if the update failed
+        if: steps.update.outcome == 'failure'
+        run: |
+          echo "::error::The update failed; its log says which docs repo, and why."
+          exit 1

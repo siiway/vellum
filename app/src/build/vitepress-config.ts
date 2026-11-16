@@ -1,5 +1,5 @@
 // Reads a VitePress config (`.vitepress/config.{mts,ts,mjs,js}`) without
-// running it. A Worker can't import or eval a fetched file, so the source is
+// running it. A docs repo's code is never run by the build, so the source is
 // parsed with @babel/parser and the default export is evaluated statically:
 // literals, objects, arrays, template strings, references to top-level
 // bindings and calls to functions declared in the same file. Anything else

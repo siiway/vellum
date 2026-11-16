@@ -2,6 +2,7 @@
   "$schema": "./src/shared/site-schema.json",
   "site": {
     "title": "SiiWay Vellum",
+    "url": "https://docs.siiway.org",
     "tagline": "Multi-repo docs, powered by Cloudflare Workers.",
     "logo": "https://icons.siiway.org/siiway/icon.svg",
     "favicon": "https://icons.siiway.org/siiway/icon.svg",
@@ -72,7 +73,7 @@
       "docsRoot": "",
       "displayName": "Vellum",
       "logo": "https://icons.siiway.org/vellum/icon.svg",
-      "description": "Sample local-source docs bundled with the worker."
+      "description": "Sample local-source docs bundled with the site."
     },
     {
       "slug": "homepage",

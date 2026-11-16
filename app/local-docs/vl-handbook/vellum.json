@@ -30,8 +30,8 @@
           "items": [
             { "text": "Search", "link": "/search" },
             { "text": "Internationalisation", "link": "/i18n" },
-            { "text": "Caching & deployment", "link": "/caching-and-deployment" },
-            { "text": "GitHub webhooks", "link": "/webhooks" }
+            { "text": "Build & deployment", "link": "/caching-and-deployment" },
+            { "text": "Updating content", "link": "/updating-content" }
           ]
         },
         {
@@ -83,8 +83,8 @@
           "items": [
             { "text": "搜索", "link": "/search" },
             { "text": "国际化", "link": "/i18n" },
-            { "text": "缓存与部署", "link": "/caching-and-deployment" },
-            { "text": "GitHub webhook", "link": "/webhooks" }
+            { "text": "构建与部署", "link": "/caching-and-deployment" },
+            { "text": "更新内容", "link": "/updating-content" }
           ]
         },
         {

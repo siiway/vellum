@@ -735,13 +735,13 @@ function InlineNode({
         />
       );
     case "html": {
-      // Raw inline HTML the worker didn't fold into a structured node — plain
+      // Raw inline HTML the build didn't fold into a structured node — plain
       // tags like `<br>`, `<sub>`, `<kbd>` etc. PascalCase React components
       // are pre-merged into the `reactComponent` case below.
       return <span dangerouslySetInnerHTML={{ __html: node.value }} />;
     }
     case "reactComponent": {
-      // Worker already merged the open/close pair (or self-closing) into a
+      // The build already merged the open/close pair (or self-closing) into a
       // single inline node. If the name is registered, mount the component;
       // otherwise render the children as plain text so authors see their
       // content even when they typoed the tag name.

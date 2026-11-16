@@ -5,7 +5,7 @@ description: "<xref:Uid> autolinks + [text](xref:Uid) link form."
 
 # OPS xref
 
-The worker loads `xrefmap.yml` (or `.yaml` / `.json`) from each repo's docs
+The build loads `xrefmap.yml` (or `.yaml` / `.json`) from each repo's docs
 root and uses it to resolve `<xref:Uid>` and `[text](xref:Uid)` references.
 Unresolved uids render as a dashed monospace box so the author sees the typo.
 

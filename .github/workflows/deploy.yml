@@ -1,30 +1,37 @@
 name: Deploy
 
-# Builds and deploys the production `vellum` Worker (docs.siiway.org,
-# vellum.siiway.org). If the repository is also connected to Cloudflare
-# Workers Builds, disconnect it under the Worker's Settings -> Builds in the
-# dashboard, or every push to main deploys twice.
+# Builds the whole static site (client bundle + every page of every docs repo)
+# and deploys it to the production `vellum` Worker (docs.siiway.org,
+# vellum.siiway.org) as static assets. If the repository is also connected to
+# Cloudflare Workers Builds, disconnect it under the Worker's Settings ->
+# Builds in the dashboard, or every push to main deploys twice.
 #
 # Triggers:
 #   * push to `main`                 -> deploy production
 #   * manual run (workflow_dispatch) -> redeploy production from main
 #
+# Docs repo changes don't need this: "Update content" (update-content.yml)
+# re-renders just the repos that changed. This workflow leaves the build in the
+# Actions cache for it.
+#
 # The prek hooks from app/prek.toml (file checks, prettier, eslint, typecheck,
-# build) run first, so a failure stops the deploy before anything reaches
-# production.
+# client build) run first, so a failure stops the deploy before anything
+# reaches production.
 #
 # Requires CLOUDFLARE_API_TOKEN (repository or `production` Environment secret)
-# scoped to the SiiWay account with: Workers Scripts:Edit, Workers KV
-# Storage:Edit, plus Workers Routes:Edit and Zone:Read on the zone, because
-# production is attached to custom domains.
+# scoped to the SiiWay account with Workers Scripts:Edit, plus Workers
+# Routes:Edit and Zone:Read on the zone, because production is attached to
+# custom domains. VELLUM_GITHUB_TOKEN (optional) is a token that can read
+# private docs repos.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Never cancel a deploy mid-run. A newer run waits for the current one
-# instead.
+# Never cancel a deploy mid-run: a newer run waits for the current one, and
+# replaces an older one still waiting (the newest main has its commits).
+# update-content.yml has its own group and stays out of the way of this one.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -73,5 +80,23 @@ jobs:
       - name: Push hooks (typecheck, build and NOTICE.md)
         run: bunx prek run -c prek.toml --all-files --hook-stage pre-push --color=always
 
+      - name: Build
+        run: bun run build
+        env:
+          VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
+
       - name: Deploy
         run: bunx wrangler deploy
+
+      # The build and the docs repo clones, for update-content.yml to update.
+      # Production runs this commit now, so a failed save mustn't fail the
+      # run: Update content goes by the last successful Deploy, and without a
+      # cached build of it, builds everything from that commit.
+      - name: Save the build
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/dist
+            app/.sources
+          key: site-${{ github.run_id }}-${{ github.run_attempt }}

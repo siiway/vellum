@@ -23,7 +23,7 @@ export interface RepoConfig {
 
 ## With filename and line numbers
 
-```ts:line-numbers [src/worker/sources.ts]
+```ts:line-numbers [src/build/sources.ts]
 export async function fetchSourceFile(
   env: Env,
   repo: RepoConfig,
