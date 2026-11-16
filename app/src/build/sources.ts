@@ -11,7 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, realpath } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import type { RepoConfig, RepoVersion } from "../shared/types";
 import { memo } from "./memo";
@@ -60,18 +60,25 @@ export function repoDir(repo: RepoConfig): string {
 // --- Files --------------------------------------------------------------------
 
 // The file's text, or null when it doesn't exist. Paths are relative to the
-// repo directory; one that escapes it reads as missing.
+// repo directory. One that leaves it reads as missing, symlinks included:
+// what a docs repo can make the build read ends up on the site, so a link to
+// a file of the machine (`/proc/self/environ`, with the CI secrets) must not
+// be followed.
 export async function readSourceFile(repo: RepoConfig, path: string): Promise<string | null> {
-  const root = repoDir(repo);
-  const full = resolve(root, path);
-  if (full !== root && !full.startsWith(root + sep)) return null;
   try {
+    const root = await realpath(repoDir(repo));
+    const full = await realpath(resolve(root, path));
+    if (!isInside(root, full)) return null;
     return await readFile(full, "utf8");
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") return null;
     throw e;
   }
+}
+
+function isInside(root: string, path: string): boolean {
+  return path === root || path.startsWith(root + sep);
 }
 
 // The first of `paths`, in order, that exists and isn't empty.
