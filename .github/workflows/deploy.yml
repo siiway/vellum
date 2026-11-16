@@ -29,8 +29,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Never cancel a deploy mid-run. A newer run waits for the current one
-# instead. Shared with update-content.yml, so the two never overlap.
+# Never cancel a deploy mid-run: a newer run waits for the current one, and
+# replaces an older one still waiting (the newest main has its commits).
+# update-content.yml has its own group and stays out of the way of this one.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -88,7 +89,11 @@ jobs:
         run: bunx wrangler deploy
 
       # The build and the docs repo clones, for update-content.yml to update.
+      # Production runs this commit now, so a failed save mustn't fail the
+      # run: Update content goes by the last successful Deploy, and without a
+      # cached build of it, builds everything from that commit.
       - name: Save the build
+        continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

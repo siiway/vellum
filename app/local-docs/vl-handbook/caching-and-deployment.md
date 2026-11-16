@@ -95,6 +95,6 @@ Two workflows deploy production:
 
 Both need `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, plus Workers
 Routes:Edit and Zone:Read for custom domains), and `VELLUM_GITHUB_TOKEN`
-for private docs repos. They share a concurrency group, so they never
-overlap. See [Updating content](./updating-content) for how the second one
-works.
+for private docs repos. Update content skips itself while a Deploy is
+running or queued, so the two never overlap. See
+[Updating content](./updating-content) for how it works.

@@ -91,5 +91,5 @@ bun run build && bunx wrangler deploy --env preview
 
 两者都需要 `CLOUDFLARE_API_TOKEN`（Workers Scripts:Edit，自定义域名还需要
 Workers Routes:Edit 与 Zone:Read），私有文档仓库还需要 `VELLUM_GITHUB_TOKEN`。
-它们共享同一个并发组，因此不会重叠。第二个工作流的原理见
+有 Deploy 正在运行或排队时，Update content 会跳过自己，因此两者不会重叠。它的原理见
 [更新内容](./updating-content)。

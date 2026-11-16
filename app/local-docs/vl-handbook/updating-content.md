@@ -55,11 +55,15 @@ deploys when something changed:
   can publish right after a push (below).
 - **By hand**, from the Actions tab.
 
-It restores the last build from the Actions cache, where the **Deploy**
-workflow (or its own previous run) left it, and checks out the commit of
-this repository that build was made from, so it doesn't ship app changes
-that haven't been through Deploy. Without a cached build (the cache was
-evicted), it runs a full build of `main`.
+It only ships the app commit production already runs, the one the last
+successful **Deploy** built, so app changes always go through Deploy and its
+checks. It restores that build from the Actions cache (where Deploy, or its
+own previous run, left it); when the cache is gone or holds another app
+commit, it builds everything from that commit instead.
+
+It also stays out of Deploy's way. While a Deploy is running or queued, it
+skips itself, and checks again right before deploying: Deploy builds every
+page anyway, content included.
 
 ## Publishing on push
 
