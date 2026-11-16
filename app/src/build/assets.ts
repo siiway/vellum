@@ -1,6 +1,7 @@
 // Reads the Vite manifest of the client build to find the hashed bundle
 // filenames every page links.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -21,6 +22,9 @@ export interface ClientAssets {
   // them alongside the entry instead of after parsing it.
   preload: string[];
   css: string[];
+  // Identifies the client build: pages rendered against another one link
+  // bundles that aren't there.
+  id: string;
 }
 
 // `clientDir` is the Vite output directory (dist/client).
@@ -32,10 +36,11 @@ export async function readClientAssets(clientDir: string): Promise<ClientAssets>
   } catch {
     throw new Error(`No client build at ${clientDir}. Run \`bun run build:client\` first.`);
   }
-  return parseManifest(JSON.parse(text) as ViteManifest);
+  const id = createHash("sha256").update(text).digest("hex").slice(0, 16);
+  return { ...parseManifest(JSON.parse(text) as ViteManifest), id };
 }
 
-function parseManifest(manifest: ViteManifest): ClientAssets {
+function parseManifest(manifest: ViteManifest): Omit<ClientAssets, "id"> {
   const js: string[] = [];
   const css: string[] = [];
   const preload = new Set<string>();

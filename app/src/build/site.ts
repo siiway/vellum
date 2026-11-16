@@ -56,6 +56,8 @@ interface BuildState {
   // The commit of this repository (app, config, local docs) it was built
   // from; null when it wasn't built from a git checkout.
   app: string | null;
+  // The client build its pages link (ClientAssets.id).
+  client: string;
   repos: Record<string, RepoState>;
 }
 
@@ -63,6 +65,8 @@ interface BuildState {
 // site. Needs the client build in dist/client.
 export async function buildSite({ fetch }: { fetch: boolean }): Promise<void> {
   const opts = await renderOptions();
+  // Until this build is complete, there's no build to update.
+  await rm(STATE_FILE, { force: true });
   // Emptied rather than removed: `wrangler dev` may be serving it.
   await mkdir(SITE_DIR, { recursive: true });
   for (const entry of await readdir(SITE_DIR)) {
@@ -85,7 +89,7 @@ export async function buildSite({ fetch }: { fetch: boolean }): Promise<void> {
     repos[repo.slug] = await renderRepo(repo, opts);
   }
   await writeSiteFiles(opts, repos);
-  await writeState({ app: await appSha(), repos });
+  await writeState({ app: await appSha(), client: opts.assets.id, repos });
 }
 
 // Re-renders the GitHub repos whose commit changed since the last build and
@@ -99,6 +103,9 @@ export async function updateSite(): Promise<string[] | null> {
   if (!existsSync(SITE_DIR) || !existsSync(join(CLIENT_DIR, ".vite", "manifest.json"))) return null;
   if (SITE.repos.some((repo) => !state.repos[repo.slug])) return null;
   const opts = await renderOptions();
+  // dist/client was rebuilt since (`bun run check` does): dist/site has the
+  // old bundles, which new pages wouldn't link.
+  if (state.client !== opts.assets.id) return null;
 
   const remote = await Promise.all(
     SITE.repos.map(async (repo) => (isGitHub(repo) ? remoteSha(repo) : null)),

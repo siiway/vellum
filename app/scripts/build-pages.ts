@@ -6,7 +6,8 @@
 //   bun run update                 incremental: re-render only the repos whose
 //                                  commit changed since the last build. Falls
 //                                  back to a full build (client included) when
-//                                  there's no last build of this commit.
+//                                  the last build is missing or stale (another
+//                                  commit of this repo, another client build).
 //
 // A full build needs the client build (`bun run build:client`) first.
 // With GITHUB_OUTPUT set (GitHub Actions), writes `changed=true|false` there.
@@ -29,7 +30,7 @@ if (args.includes("--incremental")) {
     );
     report(changed.length > 0);
   } else {
-    console.log("[vellum] no build of this commit to update, building everything");
+    console.log("[vellum] no up-to-date last build to update, building everything");
     const client = spawnSync(process.execPath, ["run", "build:client"], {
       cwd: join(import.meta.dir, ".."),
       stdio: "inherit",
