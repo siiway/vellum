@@ -85,8 +85,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # A docs repo that fails keeps its last pages and fails this step; the
+      # repos that did update are still deployed below, then the run fails.
       - name: Update
         id: update
+        continue-on-error: true
         run: bun run update
         env:
           VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
@@ -103,3 +106,9 @@ jobs:
             app/dist
             app/.sources
           key: site-${{ github.run_id }}
+
+      - name: Fail if the update failed
+        if: steps.update.outcome == 'failure'
+        run: |
+          echo "::error::The update failed; its log says which docs repo, and why."
+          exit 1

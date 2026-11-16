@@ -32,6 +32,11 @@ takes a few seconds. A whole repo is re-rendered rather than single pages,
 because a page also depends on its repo's sidebar, its neighbours, its
 includes and the repo's config.
 
+A repo that fails (its branch is gone, a page throws while rendering) keeps
+the pages it had, and the next update tries it again. The other repos still
+update, and `bun run update` exits with an error, so the workflow deploys
+them and then marks the run failed.
+
 When there's no last build, or it was built from another commit of this
 repository (the app, the config or a local doc changed), only a full build
 is correct, and `bun run update` runs one.

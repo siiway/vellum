@@ -40,6 +40,8 @@ const DIST = join(APP_ROOT, "dist");
 const CLIENT_DIR = join(DIST, "client");
 const SITE_DIR = join(DIST, "site");
 const STATE_FILE = join(DIST, "state.json");
+// Where an update renders a repo before it replaces the repo's pages.
+const STAGE_DIR = join(DIST, "stage");
 
 // Pages rendered at once.
 const CONCURRENCY = 8;
@@ -92,11 +94,22 @@ export async function buildSite({ fetch }: { fetch: boolean }): Promise<void> {
   await writeState({ app: await appSha(), client: opts.assets.id, repos });
 }
 
-// Re-renders the GitHub repos whose commit changed since the last build and
-// returns their slugs. Returns null when there's no last build to update,
-// or it was built from another commit of this repository (or the commit
-// can't be told); then only a full build is correct.
-export async function updateSite(): Promise<string[] | null> {
+export interface UpdateResult {
+  // Repos re-rendered.
+  changed: string[];
+  // Repos that couldn't be checked or rendered. Each keeps the pages it had.
+  failed: string[];
+}
+
+// Re-renders the GitHub repos whose commit changed since the last build.
+// Returns null when there's no last build to update, or it was built from
+// another commit of this repository (or the commit can't be told); then only
+// a full build is correct.
+//
+// One repo failing (its branch is gone, a page throws) doesn't hold up the
+// others: it's rendered into a staging directory first, so on a failure its
+// last pages stay as they were.
+export async function updateSite(): Promise<UpdateResult | null> {
   const state = await readState();
   const app = await appSha();
   if (!state || !app || state.app !== app) return null;
@@ -107,24 +120,50 @@ export async function updateSite(): Promise<string[] | null> {
   // old bundles, which new pages wouldn't link.
   if (state.client !== opts.assets.id) return null;
 
+  const failed: string[] = [];
+  const fail = (repo: RepoConfig, e: unknown) => {
+    failed.push(repo.slug);
+    console.error(`[vellum] ${repo.slug} failed, keeping its last pages: ${(e as Error).message}`);
+  };
+
   const remote = await Promise.all(
-    SITE.repos.map(async (repo) => (isGitHub(repo) ? remoteSha(repo) : null)),
+    SITE.repos.map(async (repo) => {
+      if (!isGitHub(repo)) return null;
+      try {
+        return await remoteSha(repo);
+      } catch (e) {
+        fail(repo, e);
+        return null;
+      }
+    }),
   );
-  const changed = SITE.repos.filter(
-    (repo, i) => remote[i] !== null && remote[i] !== state.repos[repo.slug]!.sha,
+  const outdated = SITE.repos.filter(
+    (repo, i) => remote[i] != null && remote[i] !== state.repos[repo.slug]!.sha,
   );
 
-  for (const repo of changed) {
+  const changed: string[] = [];
+  for (const repo of outdated) {
     console.log(`[vellum] ${repo.slug} changed, rendering`);
-    await syncRepo(repo);
-    await removeRepo(repo, state.repos[repo.slug]!);
-    state.repos[repo.slug] = await renderRepo(repo, opts);
+    await rm(STAGE_DIR, { recursive: true, force: true });
+    await mkdir(STAGE_DIR, { recursive: true });
+    try {
+      await syncRepo(repo);
+      const next = await renderRepo(repo, opts, STAGE_DIR);
+      await removeRepo(repo, state.repos[repo.slug]!);
+      await cp(STAGE_DIR, SITE_DIR, { recursive: true });
+      state.repos[repo.slug] = next;
+      changed.push(repo.slug);
+    } catch (e) {
+      fail(repo, e);
+    } finally {
+      await rm(STAGE_DIR, { recursive: true, force: true });
+    }
   }
   if (changed.length) {
     await writeSitemap(opts, state.repos);
     await writeState(state);
   }
-  return changed.map((repo) => repo.slug);
+  return { changed, failed };
 }
 
 async function renderOptions(): Promise<RenderOptions> {
@@ -135,7 +174,12 @@ async function renderOptions(): Promise<RenderOptions> {
 
 // --- Repos --------------------------------------------------------------------
 
-async function renderRepo(repo: RepoConfig, opts: RenderOptions): Promise<RepoState> {
+// Writes under `root`: dist/site, or the staging directory of an update.
+async function renderRepo(
+  repo: RepoConfig,
+  opts: RenderOptions,
+  root = SITE_DIR,
+): Promise<RepoState> {
   const pages = await listRepoPages(SITE, repo);
   const rendered: Record<string, string[]> = {};
 
@@ -154,7 +198,7 @@ async function renderRepo(repo: RepoConfig, opts: RenderOptions): Promise<RepoSt
       }
       // An empty file.
       if (!build.found) return;
-      await writePage(build.payload, opts);
+      await writePage(build.payload, opts, root);
       done.push(pagePath);
       index.push({ url: route.canonicalUrl, path: build.sourcePath, raw: build.source });
     });
@@ -162,13 +206,16 @@ async function renderRepo(repo: RepoConfig, opts: RenderOptions): Promise<RepoSt
     await writeJson(
       searchIndexPath(locale.code, repo.slug),
       buildSearchIndex(index, repo.displayName),
+      root,
     );
   }
 
   for (const component of await loadVueComponents(repo)) {
     if (!/^[\w-]+$/.test(component.name)) continue;
     const source = await readSourceFile(repo, component.path);
-    if (source !== null) await writeOut(vueComponentPath(repo.slug, component.name), source);
+    if (source !== null) {
+      await writeOut(vueComponentPath(repo.slug, component.name), source, root);
+    }
   }
 
   return { sha: await headSha(repo), pages: rendered };
@@ -189,10 +236,14 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
 
 // --- Pages --------------------------------------------------------------------
 
-async function writePage(payload: BootstrapPayload, opts: RenderOptions): Promise<void> {
+async function writePage(
+  payload: BootstrapPayload,
+  opts: RenderOptions,
+  root = SITE_DIR,
+): Promise<void> {
   const url = payload.route.canonicalUrl;
-  await writeOut(htmlFile(url), renderPage(payload, opts));
-  await writeJson(payloadPath(url), payload);
+  await writeOut(htmlFile(url), renderPage(payload, opts), root);
+  await writeJson(payloadPath(url), payload, root);
 }
 
 // Pages that belong to no repo, the redirects and the crawler files.
@@ -273,18 +324,18 @@ function notFoundPayload(locale: LocaleConfig): BootstrapPayload {
 
 // --- Files --------------------------------------------------------------------
 
-function outPath(path: string): string {
-  return join(SITE_DIR, path.replace(/^\/+/, ""));
+function outPath(path: string, root = SITE_DIR): string {
+  return join(root, path.replace(/^\/+/, ""));
 }
 
-async function writeOut(path: string, content: string): Promise<void> {
-  const full = outPath(path);
+async function writeOut(path: string, content: string, root = SITE_DIR): Promise<void> {
+  const full = outPath(path, root);
   await mkdir(dirname(full), { recursive: true });
   await writeFile(full, content);
 }
 
-function writeJson(path: string, value: unknown): Promise<void> {
-  return writeOut(path, JSON.stringify(value));
+function writeJson(path: string, value: unknown, root = SITE_DIR): Promise<void> {
+  return writeOut(path, JSON.stringify(value), root);
 }
 
 async function readState(): Promise<BuildState | null> {

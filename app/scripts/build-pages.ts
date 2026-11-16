@@ -8,6 +8,8 @@
 //                                  back to a full build (client included) when
 //                                  the last build is missing or stale (another
 //                                  commit of this repo, another client build).
+//                                  A repo that fails keeps its last pages; the
+//                                  others still update, and the exit code is 1.
 //
 // A full build needs the client build (`bun run build:client`) first.
 // With GITHUB_OUTPUT set (GitHub Actions), writes `changed=true|false` there.
@@ -23,12 +25,17 @@ const { buildSite, updateSite } = await import("../src/build/site");
 const args = process.argv.slice(2);
 
 if (args.includes("--incremental")) {
-  const changed = await updateSite();
-  if (changed) {
+  const result = await updateSite();
+  if (result) {
+    const { changed, failed } = result;
     console.log(
       changed.length ? `[vellum] updated: ${changed.join(", ")}` : "[vellum] nothing changed",
     );
     report(changed.length > 0);
+    if (failed.length) {
+      console.error(`[vellum] failed: ${failed.join(", ")}`);
+      process.exitCode = 1;
+    }
   } else {
     console.log("[vellum] no up-to-date last build to update, building everything");
     const client = spawnSync(process.execPath, ["run", "build:client"], {
