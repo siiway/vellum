@@ -17,11 +17,10 @@
     "allowImportingTsExtensions": false,
     "noEmit": true,
     "types": ["@cloudflare/workers-types", "vite/client"],
-    "baseUrl": ".",
     "paths": {
-      "@web/*": ["src/web/*"],
-      "@worker/*": ["src/worker/*"],
-      "@shared/*": ["src/shared/*"]
+      "@web/*": ["./src/web/*"],
+      "@worker/*": ["./src/worker/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vellum.config.json"]
