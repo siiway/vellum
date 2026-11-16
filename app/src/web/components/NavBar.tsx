@@ -31,6 +31,8 @@ import {
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useVellum, type ThemeMode } from "../context";
+import { canonicalHref } from "../../shared/paths";
+import type { NavItem } from "../../shared/types";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
 import { Segmented } from "./Segmented";
 
@@ -271,15 +273,19 @@ export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
     setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
   }, []);
 
-  // Site title links to the configured homepage repo's localized home so a
-  // zh reader stays in zh after clicking the brand. Repo crumb does the same
-  // for the current repo. URL shape is locale-first:
+  // Every internal link here is canonical and in the reader's locale, so a
+  // click loads the page in place (no redirect, no reload) and a zh reader
+  // stays in zh. The brand goes to the landing page, the repo crumb to the
+  // current repo's home. URL shape is locale-first:
   // `/{localePrefix}/{repoSlug}` — matches MS Learn convention.
-  const localePrefix =
-    data.config.site.locales.find((l) => l.code === data.route.localeCode)?.prefix ?? "";
-  const prefix = localePrefix ? `/${localePrefix}` : "";
-  const homepageHref = `${prefix}/${site.homepageRepo}`;
-  const repoHref = data.route.repoSlug ? `${prefix}/${data.route.repoSlug}` : homepageHref;
+  const local = (href: string) => canonicalHref(href, data.config, data.route.localeCode);
+  const localItem = (item: NavItem): NavItem => ({
+    ...item,
+    link: item.link && local(item.link),
+    items: item.items?.map(localItem),
+  });
+  const homepageHref = local(`/${site.homepageRepo}`);
+  const repoHref = data.route.repoSlug ? local(`/${data.route.repoSlug}`) : homepageHref;
   const repo = data.route.repo;
 
   return (
@@ -306,7 +312,7 @@ export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
         )}
       </div>
       <nav className={styles.navLinks} aria-label={t("ui.nav.primary")}>
-        {(data.repoNav ?? data.config.nav ?? []).map((item) => {
+        {(data.repoNav ?? data.config.nav ?? []).map(localItem).map((item) => {
           const active = isActiveNav(item, data.route.canonicalUrl);
           if (item.items) {
             // Highlight the dropdown trigger if any of its children match.

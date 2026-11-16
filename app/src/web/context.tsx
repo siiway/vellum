@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { BootstrapPayload } from "../shared/types";
-import { payloadPath } from "../shared/paths";
+import { canonicalHref, payloadPath } from "../shared/paths";
 import { t as translate, type MessageKey } from "../shared/i18n";
 
 // useLayoutEffect on the server logs a warning and runs nothing. We need its sync
@@ -65,6 +65,11 @@ export function VellumProvider({
   }, []);
   const [isNavigating, setNavigating] = useState(false);
   const lastFetch = useRef<AbortController | null>(null);
+  // The page on screen, for callbacks that outlive a render.
+  const dataRef = useRef(initial);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
   // Tracks the URL whose payload we currently have rendered.
   // On `popstate` the browser has *already* mutated window.location to the
   // destination URL before our listener fires, so we can't compare against
@@ -138,7 +143,8 @@ export function VellumProvider({
   const isRendered = (url: URL) =>
     url.pathname === renderedRef.current.pathname && url.search === renderedRef.current.search;
 
-  const prefetch = useCallback((url: URL) => {
+  const prefetch = useCallback((link: URL) => {
+    const url = canonicalUrl(link, dataRef.current);
     if (isRendered(url)) return;
     const key = payloadUrl(url);
     const now = Date.now();
@@ -161,11 +167,19 @@ export function VellumProvider({
         skipHistory?: boolean;
       } = {},
     ) => {
-      const url = new URL(href, window.location.href);
+      // Links that would redirect (no locale, a short locale code, a repo's
+      // landing page) go straight to their page, in the reader's locale.
+      const url = canonicalUrl(new URL(href, window.location.href), dataRef.current);
 
       // If we already have this page's payload rendered, treat it as in-page nav:
       // jump to hash, optionally update history, but don't refetch.
       if (isRendered(url)) {
+        // A click back to this page cancels a navigation still loading.
+        if (lastFetch.current) {
+          lastFetch.current.abort();
+          lastFetch.current = null;
+          setNavigating(false);
+        }
         if (!opts.skipHistory) {
           history[opts.replace ? "replaceState" : "pushState"](null, "", url.toString());
         }
@@ -340,6 +354,13 @@ export function VellumProvider({
 const PREFETCH_TTL_MS = 30_000;
 // How long the pointer rests on a link before its payload is prefetched.
 const PREFETCH_HOVER_MS = 80;
+
+// The canonical URL of an internal link (see canonicalHref).
+function canonicalUrl(url: URL, data: BootstrapPayload): URL {
+  const out = new URL(url);
+  out.pathname = canonicalHref(url.pathname, data.config, data.route.localeCode);
+  return out;
+}
 
 // The JSON payload URL for a page URL. The query string and hash don't
 // change the payload.

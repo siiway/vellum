@@ -2,7 +2,7 @@
 // Mimics NProgress: ramps up while the next page's payload loads, then
 // completes and fades on success.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
@@ -27,21 +27,24 @@ export function LoadingBar() {
   const { isNavigating } = useVellum();
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
+  // Whether the bar is out. A ref rather than `visible`: when a navigation
+  // ends before the render that shows the bar, the effect would still see
+  // `visible` as false, skip the finish and leave the bar stuck.
+  const shown = useRef(false);
 
   useEffect(() => {
     if (!isNavigating) {
-      // Finish: jump to 100, then fade out and reset.
-      if (visible) {
-        setProgress(1);
-        const hide = setTimeout(() => {
-          setVisible(false);
-          setProgress(0);
-        }, 350);
-        return () => clearTimeout(hide);
-      }
-      return;
+      if (!shown.current) return;
+      // Finish: run to the end and fade out (the fade waits for the bar to
+      // complete), then reset once it's invisible.
+      shown.current = false;
+      setProgress(1);
+      setVisible(false);
+      const reset = setTimeout(() => setProgress(0), 500);
+      return () => clearTimeout(reset);
     }
     // Start: become visible, ramp progress with diminishing increments capped at 0.9.
+    shown.current = true;
     setVisible(true);
     setProgress(0.08);
     let p = 0.08;
@@ -50,7 +53,6 @@ export function LoadingBar() {
       setProgress(p);
     }, 200);
     return () => clearInterval(tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNavigating]);
 
   return (
