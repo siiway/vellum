@@ -214,10 +214,18 @@ export async function lastCommit(repo: RepoConfig, path: string): Promise<Commit
 }
 
 // One pass over the history: the newest commit for every path. No rename
-// detection, which would need the blobs a partial clone doesn't have.
+// detection, which would need the blobs a partial clone doesn't have, and no
+// path quoting, which turns `指南.md` into an escaped string.
 async function loadCommits(repo: RepoConfig): Promise<Map<string, CommitInfo>> {
   const out = await git(
-    ["log", "--no-renames", "--name-only", "--format=%x1e%H%x1f%aI%x1f%an"],
+    [
+      "-c",
+      "core.quotePath=false",
+      "log",
+      "--no-renames",
+      "--name-only",
+      "--format=%x1e%H%x1f%aI%x1f%an",
+    ],
     repoDir(repo),
   );
   const map = new Map<string, CommitInfo>();
