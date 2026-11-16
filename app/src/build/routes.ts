@@ -6,6 +6,7 @@
 
 import type { LocaleConfig, RepoConfig, RouteContext, VellumConfig } from "../shared/types";
 import { sourceLocale } from "../shared/types";
+import { landingPath } from "../shared/paths";
 import { defaultVersion, docsRootPrefix, listSourceFiles } from "./sources";
 
 // `/{prefix}`, or "" for a locale without one.
@@ -65,7 +66,7 @@ export async function listRepoPages(
   repo: RepoConfig,
 ): Promise<Record<string, string[]>> {
   const prefix = docsRootPrefix(repo.docsRoot);
-  const landing = repo.landingPage?.replace(/^\/+|\/+$/g, "");
+  const landing = landingPath(repo);
   const byLocale = new Map<string, Set<string>>();
   for (const path of await listSourceFiles(repo)) {
     if (!path.endsWith(".md") || !path.startsWith(prefix)) continue;
@@ -74,7 +75,7 @@ export async function listRepoPages(
     const owner = sourceLocale(rel, site.site.locales, site.site.defaultLocale, repo);
     if (!owner) continue;
     const page = pagePathOf(owner.path);
-    if (page === "index" && landing && landing !== "index") continue;
+    if (page === "index" && landing) continue;
     let pages = byLocale.get(owner.code);
     if (!pages) byLocale.set(owner.code, (pages = new Set()));
     pages.add(page);

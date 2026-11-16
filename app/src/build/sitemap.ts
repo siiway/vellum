@@ -7,6 +7,7 @@
 // when `site.url` is set.
 
 import type { VellumConfig } from "../shared/types";
+import { landingPath } from "../shared/paths";
 import { localeBase, pageRoute } from "./routes";
 
 interface SitemapUrl {
@@ -41,13 +42,15 @@ export function buildSitemap(
   // plus the page path. URLs are collected per page key so translations can
   // point at each other.
   const byPageKey = new Map<string, Map<string, string>>();
+  const home = site.repos.find((r) => r.slug === site.site.homepageRepo);
+  const homeLanding = landingPath(home);
 
   for (const repo of site.repos) {
     if (repo.excludeFromSearch) continue;
     for (const locale of site.site.locales) {
       for (const pagePath of pages[repo.slug]?.[locale.code] ?? []) {
         // The landing page is listed below.
-        if (repo.slug === site.site.homepageRepo && pagePath === "index") continue;
+        if (repo === home && (pagePath === "index" || pagePath === homeLanding)) continue;
         const pageKey = `${repo.slug}/${pagePath}`;
         let perLocale = byPageKey.get(pageKey);
         if (!perLocale) byPageKey.set(pageKey, (perLocale = new Map()));
@@ -64,7 +67,11 @@ export function buildSitemap(
   const homepageKey = "__homepage__";
   const homepageLocales = new Map<string, string>();
   for (const locale of site.site.locales) {
-    homepageLocales.set(locale.code, `${origin}${localeBase(locale) || "/"}`);
+    const url =
+      home && homeLanding
+        ? pageRoute(site, home, locale, homeLanding).canonicalUrl
+        : localeBase(locale) || "/";
+    homepageLocales.set(locale.code, `${origin}${url}`);
   }
   byPageKey.set(homepageKey, homepageLocales);
 

@@ -1,7 +1,14 @@
 // Where the build publishes the files the client reads at runtime. The build
 // writes them and the client fetches them, so both use these.
 
-import type { VellumConfig } from "./types";
+import type { RepoConfig, VellumConfig } from "./types";
+
+// The page a repo's root URL redirects to (its `landingPage`), relative to
+// the repo, or null when the root is the repo's own index.
+export function landingPath(repo: Pick<RepoConfig, "landingPage"> | undefined): string | null {
+  const path = repo?.landingPage?.replace(/^\/+|\/+$/g, "");
+  return path && path !== "index" ? path : null;
+}
 
 // The canonical form of an internal link, so the client can load its page
 // directly instead of through a redirect. Follows the same rules as the
@@ -33,14 +40,18 @@ export function canonicalHref(href: string, config: VellumConfig, localeCode: st
   }
   const base = locale?.prefix ? `/${locale.prefix}` : "";
 
-  if (parts[0] === homepageRepo && (parts.length === 1 || (parts[1] === "index" && !parts[2]))) {
-    return (base || "/") + suffix;
+  // The landing page: /{prefix}, or its own landing page when the homepage
+  // repo has one.
+  const home =
+    parts.length === 0 ||
+    (parts[0] === homepageRepo && (parts.length === 1 || (parts[1] === "index" && !parts[2])));
+  if (home) {
+    const landing = landingPath(config.repos.find((r) => r.slug === homepageRepo));
+    return (landing ? `${base}/${homepageRepo}/${landing}` : base || "/") + suffix;
   }
-  const landing = config.repos
-    .find((r) => r.slug === parts[0])
-    ?.landingPage?.replace(/^\/+|\/+$/g, "");
-  if (parts.length === 1 && landing && landing !== "index") parts.push(landing);
-  return (parts.length ? `${base}/${parts.join("/")}` : base || "/") + suffix;
+  const landing = landingPath(config.repos.find((r) => r.slug === parts[0]));
+  if (parts.length === 1 && landing) parts.push(landing);
+  return `${base}/${parts.join("/")}` + suffix;
 }
 
 // A page's bootstrap payload, used for client-side navigation. `pathname` is

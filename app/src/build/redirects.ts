@@ -3,6 +3,7 @@
 // applies the first rule that matches.
 
 import type { VellumConfig } from "../shared/types";
+import { landingPath } from "../shared/paths";
 import { localeBase } from "./routes";
 
 export function buildRedirects(site: VellumConfig): string {
@@ -26,16 +27,27 @@ export function buildRedirects(site: VellumConfig): string {
   }
 
   // The landing page has one URL: /{prefix}, not /{prefix}/{homepageRepo}.
+  // When the homepage repo has a `landingPage`, /{prefix} has no page and
+  // all three go there.
+  const homeLanding = landingPath(site.repos.find((r) => r.slug === homepageRepo));
   for (const l of locales) {
     const base = localeBase(l);
-    exact(`${base}/${homepageRepo}`, base || "/", 301);
-    exact(`${base}/${homepageRepo}/index`, base || "/", 301);
+    if (homeLanding) {
+      const target = `${base}/${homepageRepo}/${homeLanding}`;
+      if (base) exact(base, target, 302);
+      else add("/", target, 302);
+      exact(`${base}/${homepageRepo}`, target, 302);
+      exact(`${base}/${homepageRepo}/index`, target, 302);
+    } else {
+      exact(`${base}/${homepageRepo}`, base || "/", 301);
+      exact(`${base}/${homepageRepo}/index`, base || "/", 301);
+    }
   }
 
   // A repo without a home page of its own sends its root to its landing page.
   for (const repo of site.repos) {
-    const landing = repo.landingPage?.replace(/^\/+|\/+$/g, "");
-    if (!landing || landing === "index") continue;
+    const landing = landingPath(repo);
+    if (!landing || repo.slug === homepageRepo) continue;
     for (const l of locales) {
       const base = localeBase(l);
       exact(`${base}/${repo.slug}`, `${base}/${repo.slug}/${landing}`, 302);
@@ -46,7 +58,12 @@ export function buildRedirects(site: VellumConfig): string {
   const fallback = locales.find((l) => l.code === site.site.defaultLocale) ?? locales[0];
   if (fallback?.prefix) {
     for (const repo of site.repos) {
-      const root = repo.slug === homepageRepo ? "" : `/${repo.slug}`;
+      // Straight to the page, not through a second redirect.
+      const landing = landingPath(repo);
+      const root =
+        repo.slug === homepageRepo && !landing
+          ? ""
+          : `/${repo.slug}${landing ? `/${landing}` : ""}`;
       exact(`/${repo.slug}`, `/${fallback.prefix}${root}`, 302);
       add(`/${repo.slug}/*`, `/${fallback.prefix}/${repo.slug}/:splat`, 302);
     }
