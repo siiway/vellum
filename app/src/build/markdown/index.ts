@@ -154,15 +154,24 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     path = href.slice(0, cut);
     suffix = href.slice(cut);
   }
-  path = path.replace(/\.md$/i, "").replace(/\/index$/i, "/");
+  // `index.md` (bare, or after a slash) is its directory's page.
+  path = path.replace(/\.md$/i, "").replace(/(^|\/)index$/i, "$1");
 
   const repoBase = c.repoUrlBase.replace(/\/$/, "");
   const localePrefix = c.localePrefix ?? "";
+  // The URL the page is served at: no trailing slash, and a locale root's
+  // README is its index page.
+  const served = (p: string) => {
+    let out = p.replace(/\/+/g, "/");
+    if (out === `${repoBase}/README`) out = repoBase;
+    if (out.length > 1) out = out.replace(/\/$/, "");
+    return `${out}${suffix}`;
+  };
 
   if (path.startsWith("/")) {
     // Already includes the full repo+locale base? Leave alone.
     if (path === repoBase || path.startsWith(`${repoBase}/`)) {
-      return `${path}${suffix}`.replace(/\/+/g, "/");
+      return served(path);
     }
     // Locale-prefixed absolute path on a page whose repoBase already encodes
     // the same locale (e.g. /zh/getting-started written in docs/zh/index.md).
@@ -183,11 +192,11 @@ export function normalizeInternal(href: string, c: LinkContext): string {
         (path === `/${lp}` || path.startsWith(`/${lp}/`))
       ) {
         const stripped = path.slice(`/${lp}`.length) || "/";
-        return `${repoBase}${stripped}${suffix}`.replace(/\/+/g, "/");
+        return served(`${repoBase}${stripped}`);
       }
     }
     // Absolute path inside the current repo's URL space - prepend the repo base.
-    return `${repoBase}${path}${suffix}`.replace(/\/+/g, "/");
+    return served(`${repoBase}${path}`);
   }
 
   // Relative path — resolve against the current page's directory. The
@@ -208,7 +217,7 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     base = c.currentUrl.slice(0, c.currentUrl.lastIndexOf("/") + 1);
   }
   const url = new URL(path, `https://x${base}`);
-  return `${url.pathname}${suffix}`;
+  return served(url.pathname);
 }
 
 // Inline-only MD instance for frontmatter fields like hero.text, hero.tagline, and

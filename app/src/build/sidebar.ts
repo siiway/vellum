@@ -259,7 +259,11 @@ async function buildFromTree(
   function urlFor(name: string): string {
     // Strip a trailing `/index` so directory landing pages get clean URLs.
     const cleaned =
-      name === "index" ? "" : name.endsWith("/index") ? name.slice(0, -"/index".length) : name;
+      name === "index" || name === "README"
+        ? ""
+        : name.endsWith("/index")
+          ? name.slice(0, -"/index".length)
+          : name;
     // Locale-first canonical: `/{urlPrefix}/{repoSlug}/{cleaned}`. Source
     // path prefix (`localePath`) only applies to file-tree matching above;
     // URLs use the URL-side prefix.
@@ -269,13 +273,19 @@ async function buildFromTree(
     );
   }
 
+  // A locale root's README is its index page, unless there's an index.md.
+  const hasIndex = files.includes("index");
   for (const name of files) {
+    if (name === "README" && hasIndex) continue;
     const parts = name.split("/");
 
     if (parts.length === 1) {
       // Root-level page.
       const leaf = parts[0]!;
-      const display = leaf === "index" ? repo.displayName : titleCase(leaf.replace(/[-_]/g, " "));
+      const display =
+        leaf === "index" || leaf === "README"
+          ? repo.displayName
+          : titleCase(leaf.replace(/[-_]/g, " "));
       rootItems.push({ text: display, link: urlFor(name) });
     } else {
       // Nested page: group by first directory segment.
