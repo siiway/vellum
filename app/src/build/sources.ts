@@ -240,7 +240,12 @@ async function loadCommits(repo: RepoConfig): Promise<Map<string, CommitInfo>> {
   return map;
 }
 
-// The commit of this repository (the app).
-export async function appSha(): Promise<string> {
-  return (await git(["rev-parse", "HEAD"], APP_ROOT)).trim();
+// The commit of this repository (the app), or null outside a git checkout
+// (a zip download, say).
+export async function appSha(): Promise<string | null> {
+  try {
+    return (await git(["rev-parse", "HEAD"], APP_ROOT)).trim();
+  } catch {
+    return null;
+  }
 }

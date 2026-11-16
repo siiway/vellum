@@ -53,8 +53,9 @@ interface RepoState {
 
 // What the last build rendered. Not deployed.
 interface BuildState {
-  // The commit of this repository (app, config, local docs) it was built from.
-  app: string;
+  // The commit of this repository (app, config, local docs) it was built
+  // from; null when it wasn't built from a git checkout.
+  app: string | null;
   repos: Record<string, RepoState>;
 }
 
@@ -89,11 +90,12 @@ export async function buildSite({ fetch }: { fetch: boolean }): Promise<void> {
 
 // Re-renders the GitHub repos whose commit changed since the last build and
 // returns their slugs. Returns null when there's no last build to update,
-// or it was built from another commit of this repository; then only a full
-// build is correct.
+// or it was built from another commit of this repository (or the commit
+// can't be told); then only a full build is correct.
 export async function updateSite(): Promise<string[] | null> {
   const state = await readState();
-  if (!state || state.app !== (await appSha())) return null;
+  const app = await appSha();
+  if (!state || !app || state.app !== app) return null;
   if (!existsSync(SITE_DIR) || !existsSync(join(CLIENT_DIR, ".vite", "manifest.json"))) return null;
   if (SITE.repos.some((repo) => !state.repos[repo.slug])) return null;
   const opts = await renderOptions();
