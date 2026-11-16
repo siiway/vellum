@@ -11,6 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { readFile, readdir, realpath } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import type { RepoConfig, RepoVersion } from "../shared/types";
@@ -127,16 +128,25 @@ function remoteUrl(repo: RepoConfig): string {
   return `https://github.com/${repo.owner}/${repo.repo}.git`;
 }
 
-// `VELLUM_GITHUB_TOKEN` goes in a header, never the URL, so it can't end up
-// in the clone's config or in an error message.
+// Credentials for github.com. The empty value first clears any header git
+// already has for it: in CI, actions/checkout saves the workflow's own token
+// in the checkout's config, and a second Authorization header gets the
+// request rejected. `VELLUM_GITHUB_TOKEN` goes in a header, never the URL,
+// so it can't end up in a clone's config or in an error message.
 function authArgs(): string[] {
+  const key = "http.https://github.com/.extraheader";
+  const args = ["-c", `${key}=`];
   const token = process.env.VELLUM_GITHUB_TOKEN;
-  if (!token) return [];
-  const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
-  return ["-c", `http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}`];
+  if (token) {
+    const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
+    args.push("-c", `${key}=AUTHORIZATION: basic ${basic}`);
+  }
+  return args;
 }
 
-function git(args: string[], cwd?: string): Promise<string> {
+// Without `cwd` (clone, ls-remote), git runs outside this repository, so
+// nothing in its config applies to the docs repos.
+function git(args: string[], cwd = tmpdir()): Promise<string> {
   return new Promise((done, fail) => {
     execFile(
       "git",
