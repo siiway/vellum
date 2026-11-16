@@ -188,11 +188,19 @@ export async function headSha(repo: RepoConfig): Promise<string> {
   return (await git(["rev-parse", "HEAD"], repoDir(repo))).trim();
 }
 
-// The commit the ref points at on GitHub, without cloning.
+// The commit the ref points at on GitHub, without cloning. For an annotated
+// tag that's its peeled `^{}` entry: the tag's own object id never equals
+// the commit `headSha` reports.
 export async function remoteSha(repo: RepoConfig): Promise<string> {
   const ref = repoRef(repo, defaultVersion(repo));
-  const out = await git(["ls-remote", remoteUrl(repo), `refs/heads/${ref}`, `refs/tags/${ref}`]);
-  const sha = out.split(/\s+/)[0];
+  const names = [`refs/heads/${ref}`, `refs/tags/${ref}^{}`, `refs/tags/${ref}`];
+  const out = await git(["ls-remote", remoteUrl(repo), ...names]);
+  const refs = new Map<string, string>();
+  for (const line of out.split(/\r?\n/)) {
+    const [sha, name] = line.split(/\s+/);
+    if (sha && name) refs.set(name, sha);
+  }
+  const sha = names.map((name) => refs.get(name)).find(Boolean);
   if (!sha) throw new Error(`${repo.owner}/${repo.repo} has no branch or tag "${ref}"`);
   return sha;
 }
