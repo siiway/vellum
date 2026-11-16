@@ -13,7 +13,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import siteConfig from "../../vellum.config.json";
 import type { BootstrapPayload, LocaleConfig, RepoConfig, VellumConfig } from "../shared/types";
-import { payloadPath, searchIndexPath, vueComponentPath } from "../shared/paths";
+import { payloadPath, searchIndexPath, vueComponentPath, vueDir } from "../shared/paths";
 import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
@@ -176,7 +176,7 @@ async function renderRepo(repo: RepoConfig, opts: RenderOptions): Promise<RepoSt
 
 // Deletes what `renderRepo` wrote for the repo last time.
 async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
-  const removals: string[] = [`_vellum/vue/${repo.slug}`];
+  const removals: string[] = [vueDir(repo.slug)];
   for (const locale of SITE.site.locales) {
     removals.push(searchIndexPath(locale.code, repo.slug));
     for (const pagePath of last.pages[locale.code] ?? []) {

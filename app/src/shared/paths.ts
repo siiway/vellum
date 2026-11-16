@@ -55,7 +55,12 @@ export function searchIndexPath(localeCode: string, repoSlug: string): string {
   return `/_vellum/search/${encodeURIComponent(localeCode)}/${encodeURIComponent(repoSlug)}.json`;
 }
 
+// The directory of a repo's published Vue components.
+export function vueDir(repoSlug: string): string {
+  return `/_vellum/vue/${encodeURIComponent(repoSlug)}`;
+}
+
 // The source of a registered Vue component.
 export function vueComponentPath(repoSlug: string, name: string): string {
-  return `/_vellum/vue/${encodeURIComponent(repoSlug)}/${encodeURIComponent(name)}.vue`;
+  return `${vueDir(repoSlug)}/${encodeURIComponent(name)}.vue`;
 }
