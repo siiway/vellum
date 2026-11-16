@@ -6,16 +6,18 @@ description: "Where Vellum reads Markdown from, and how to choose."
 # Sources
 
 Every repo in `vellum.config.json` has a `source` field that decides where the
-worker reads its Markdown. The dispatcher in
-[`src/worker/sources.ts`](https://github.com/siiway/vellum/blob/main/app/src/worker/sources.ts)
-hides the difference from the rest of the worker — routing, sidebar, search,
+build reads its Markdown. Either way the repo ends up as a directory on disk,
+and
+[`src/build/sources.ts`](https://github.com/siiway/vellum/blob/main/app/src/build/sources.ts)
+hides the difference from the rest of the build — pages, sidebar, search,
 xref, and the OPS extensions all work identically for either source.
 
 ## GitHub source (`source: "github"`)
 
-The default. The worker fetches raw files from
-`https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}` and caches
-the response in the Cache API (and KV when bound).
+The default. The build clones the repo into `app/.sources/{slug}` at
+`branch` (or the default entry of `versions`), and later builds update that
+clone. It's a partial clone (`--filter=blob:none`): the full history, which
+"last updated" needs, but only the files of the current commit.
 
 ```json
 {
@@ -29,32 +31,26 @@ the response in the Cache API (and KV when bound).
 ```
 
 ::: tip Auth
-Public repos work unauthenticated, but you'll hit GitHub's 60 req/hour
-unauthenticated rate limit fast in dev. Set `VELLUM_GITHUB_TOKEN` to a PAT
-with `repo` scope (private repos) or just `public_repo` (public).
+Public repos clone unauthenticated. For private repos, set
+`VELLUM_GITHUB_TOKEN` to a token that can read them (a fine-grained PAT with
+Contents: read is enough). It's sent as a header, never stored in the clone.
 :::
-
-### Tree enumeration
-
-The sidebar fallback and search index need to list every Markdown file in
-`docsRoot`. We use GitHub's
-[git/trees API](https://docs.github.com/en/rest/git/trees) with
-`?recursive=1` and cache the result alongside the raw files.
 
 ### Last-updated info
 
-`fetchSourceLastCommit` calls `GET /repos/{owner}/{repo}/commits?path=…` and
-displays the most recent commit on the page footer. Cached for the same TTL
-as raw files.
+The page footer shows the most recent commit that touched the page's file,
+from one `git log` pass over the clone per build.
 
-### Cache invalidation
+### Picking up new commits
 
-Tracked via webhook — see [Caching & deployment](./caching-and-deployment#webhooks).
+A build is a snapshot of each repo. `bun run update` re-renders only the
+repos whose branch moved since the last build; the **Update content**
+workflow runs it hourly and on demand. See
+[Updating content](./updating-content).
 
 ## Local source (`source: "local"`)
 
-Markdown lives in a directory under `app/` and is bundled into the
-worker's `ASSETS` at build time:
+Markdown lives in a directory under `app/`, in the same repository as Vellum:
 
 ```json
 {
@@ -65,28 +61,16 @@ worker's `ASSETS` at build time:
 }
 ```
 
-By default the worker looks under `local-docs/{slug}/`; override with
-`localPath` if you want a different directory.
-
-### The Vite plugin
-
-`scripts/vite-local-docs.ts` runs during `bun run build:client`. It:
-
-1. Scans every directory under `local-docs/`.
-2. Emits each file as a Vite asset at `dist/client/local-docs/{slug}/{relpath}` —
-   no Rollup hashing so the worker can fetch by literal path.
-3. Writes a `manifest.json` next to each repo that lists every file path and size.
-
-The worker reads files via `env.ASSETS.fetch("/local-docs/{slug}/{path}")` and
-reads `manifest.json` for tree enumeration.
+By default the build reads `local-docs/{slug}/`; override with `localPath`
+if you want a different directory.
 
 ### Why use local sources
 
-- **Docs that ship with the worker.** This handbook is a local source.
+- **Docs that ship with Vellum.** This handbook is a local source.
 - **Landing pages.** The `homepage` repo in the bundled config is local —
   it has structured `layout: ms-learn` frontmatter that doesn't make sense
   in a code repo.
-- **Air-gapped deploys.** When the worker can't reach github.com.
+- **Offline builds.** No clone, no network.
 - **Tests / scaffolding.** Quick local content without committing to a
   separate repo first.
 
@@ -94,11 +78,9 @@ reads `manifest.json` for tree enumeration.
 
 | Affordance            | Status for local                                                                                                   |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Last-updated footer   | Skipped — no git history available to the worker.                                                                  |
+| Last-updated footer   | Skipped — the build doesn't read this repository's history.                                                        |
 | Edit-on-GitHub button | Skipped unless `editLinkPattern` is set (and even then, "edit" goes to GitHub, which would require a manual sync). |
-| Webhook cache busting | N/A — invalidate by rebuilding and redeploying the worker.                                                         |
-| Tree listing          | Reads `manifest.json` instead of the GitHub tree API.                                                              |
-| Per-file fetch        | `env.ASSETS.fetch()` (in-region, sub-ms) instead of `raw.githubusercontent.com`.                                   |
+| Publishing an edit    | Commit it here: the push deploys the site. An incremental update skips local repos.                                |
 
 ## Mixing sources
 
@@ -144,16 +126,16 @@ The bundled config has both:
 ```
 
 ::: note Slug uniqueness
-Slugs must be unique across the whole site — the worker uses them as the
-top-level URL segment, the cache-key prefix, and the search-index key.
-The JSON schema doesn't enforce this; the dispatcher's `find()` just picks
-the first match.
+Slugs must be unique across the whole site — the build uses them as the
+URL segment after the locale prefix, the clone directory, and the
+search-index key. The JSON schema doesn't enforce this; lookups just pick the
+first match.
 :::
 
 ## Cross-source links
 
 Markdown links between repos use the `@slug/path` shorthand, which the
-worker resolves to `/slug/path` regardless of source:
+build resolves to `/{prefix}/slug/path` regardless of source:
 
 ```md
 See [the Prism quickstart](@prism/getting-started) for the OAuth flow.

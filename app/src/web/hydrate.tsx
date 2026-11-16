@@ -1,4 +1,4 @@
-// Client-side entry: hydrate the SSR'd shell with the bootstrap payload the worker injected.
+// Client-side entry: hydrate the pre-rendered shell with the bootstrap payload embedded in the page.
 
 import { hydrateRoot, createRoot } from "react-dom/client";
 import { RendererProvider, createDOMRenderer, SSRProvider } from "@fluentui/react-components";

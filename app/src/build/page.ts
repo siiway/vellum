@@ -1,27 +1,16 @@
 // Docs page assembly: finds the page's source file, renders it, and gathers
 // the chrome around it (sidebar, nav, last commit) into one bootstrap
-// payload.
+// payload, which the build writes out as the page's HTML and JSON.
 //
-// The source file is the only thing the rest waits on. The chrome loaders
-// start together with the source fetch, the last-commit lookup starts as
-// soon as the file is found, and both overlap the markdown render.
-//
-// `loadPage` puts the build behind the page cache: a fresh payload comes
-// straight from cache, a stale one is served and rebuilt in the background.
-// The router turns the payload into JSON (client-side navigation) or HTML.
+// The chrome loaders start together with the source read and the last-commit
+// lookup starts as soon as the file is found; both overlap the markdown
+// render. The loaders are memoized per repo, so every page after the first
+// gets them for free.
 
-import type { Env } from "./env";
-import { staleSeconds, ttlSeconds } from "./env";
 import type { BootstrapPayload, RepoConfig, RouteContext, VellumConfig } from "../shared/types";
 import { localeSourcePrefix } from "../shared/types";
 import type { Block } from "../shared/markdown";
-import { swr, type SwrResult } from "./cache";
-import {
-  docsRootPrefix,
-  fetchFirstSourceFile,
-  fetchSourceFile,
-  fetchSourceLastCommit,
-} from "./sources";
+import { docsRootPrefix, fetchFirstSourceFile, readSourceFile, lastCommit } from "./sources";
 import { normalizeInternal, renderMarkdown } from "./markdown/index";
 import { renderMermaidThemed } from "./markdown/diagrams";
 import { extractCodeSlice, type CodeIncludeMeta } from "./markdown/ops-includes";
@@ -30,40 +19,16 @@ import type { LinkContext } from "./markdown/links";
 import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
-import { pageCacheKey } from "./page-key";
 
 export type PageBuild =
-  | { found: true; payload: BootstrapPayload }
-  // `candidates` are the source paths that were tried, for the 404 hint.
+  | { found: true; payload: BootstrapPayload; sourcePath: string; source: string }
+  // `candidates` are the source paths that were tried.
   | { found: false; candidates: string[] };
 
-// The page's payload through the stale-while-revalidate cache. 404s aren't
-// cached. The payload's `initialTheme` is a placeholder; callers set it per
-// request.
-export function loadPage(
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-  route: RouteContext,
-): Promise<SwrResult<PageBuild>> {
-  const fresh = ttlSeconds(env, "html");
-  return swr(env, ctx, pageCacheKey(route), {
-    freshSeconds: fresh,
-    ttlSeconds: fresh + staleSeconds(env),
-    build: async () => {
-      const value = await buildPagePayload(env, ctx, site, route);
-      return { value, store: value.found };
-    },
-  });
-}
-
 export async function buildPagePayload(
-  env: Env,
-  ctx: ExecutionContext,
   site: VellumConfig,
   route: RouteContext,
 ): Promise<PageBuild> {
-  const branch = route.version.branch;
   const defaultLocale = site.site.defaultLocale;
 
   // URL-side prefix (what appears in URLs and matches URL segments) and
@@ -86,26 +51,24 @@ export async function buildPagePayload(
   //
   // OPS xrefmap: best-effort. A missing or malformed map means xref tokens
   // render as monospace fallback text.
-  const xrefMapP = loadXrefMap(env, route.repo, branch, ctx).catch(() => null);
+  const xrefMapP = loadXrefMap(route.repo).catch(() => null);
   const chromeP = Promise.all([
-    loadSidebar(env, route.repo, branch, chromeLocale, defaultLocale, ctx, site),
-    loadRepoNav(env, route.repo, branch, chromeLocale, defaultLocale, ctx),
-    loadVueComponents(env, route.repo, branch, ctx),
-    loadRepoSocialLinks(env, route.repo, branch, ctx),
+    loadSidebar(route.repo, chromeLocale, defaultLocale, site),
+    loadRepoNav(route.repo, chromeLocale, defaultLocale),
+    loadVueComponents(route.repo),
+    loadRepoSocialLinks(route.repo),
   ]);
-  // A 404 returns without awaiting it.
+  // A missing page returns without awaiting it.
   chromeP.catch(() => {});
 
-  const own = await fetchFirstSourceFile(env, route.repo, branch, candidates, { ctx });
+  const own = await fetchFirstSourceFile(route.repo, candidates);
   if (!own) return { found: false, candidates };
   const source = own.text;
   const matchedPath = own.path;
 
   // Last updated. Overlaps the markdown render; a failure only drops the
   // "last updated" line.
-  const lastUpdatedP = fetchSourceLastCommit(env, route.repo, branch, matchedPath, { ctx }).catch(
-    () => null,
-  );
+  const lastUpdatedP = lastCommit(route.repo, matchedPath).catch(() => null);
 
   // Locale-first base: `/{localeUrlPath}/{repoSlug}`. Cross-repo xrefs (`@slug/...`)
   // resolve into the SAME locale as the current page, so a zh page linking
@@ -150,10 +113,9 @@ export async function buildPagePayload(
     // so the client can swap instantly without a fresh fetch when the user
     // toggles theme. Either side may come back null on Kroki failure; the
     // client component falls back to its own mermaid bundle then.
-    renderDiagram: (code) => renderMermaidThemed(code, env, ctx),
-    resolveInclude: (path) =>
-      resolveInclude(env, ctx, route, includeBaseDir, path, linkContext, xrefMap),
-    resolveCodeInclude: (meta) => resolveCodeInclude(env, ctx, route, includeBaseDir, meta),
+    renderDiagram: (code) => renderMermaidThemed(code),
+    resolveInclude: (path) => resolveInclude(route, includeBaseDir, path, linkContext, xrefMap),
+    resolveCodeInclude: (meta) => resolveCodeInclude(route, includeBaseDir, meta),
     resolveXref: xrefResolver(xrefMap),
   });
 
@@ -202,6 +164,8 @@ export async function buildPagePayload(
 
   return {
     found: true,
+    sourcePath: matchedPath,
+    source,
     payload: {
       config: site,
       route,
@@ -209,7 +173,7 @@ export async function buildPagePayload(
       repoNav,
       repoSocialLinks,
       repoComponents,
-      // Set per request by the router.
+      // Pages are rendered light; the head script switches before first paint.
       initialTheme: "light",
       page: {
         ast: rendered.ast,
@@ -284,8 +248,6 @@ function rewriteFrontmatterLinks(front: Record<string, unknown>, ctx: LinkContex
 // guard would require threading a depth counter through the renderMarkdown
 // API, which is overkill for a feature that authors rarely abuse.
 async function resolveInclude(
-  env: Env,
-  ctx: ExecutionContext,
   route: RouteContext,
   baseDir: string,
   relPath: string,
@@ -294,13 +256,13 @@ async function resolveInclude(
 ): Promise<Block[] | null> {
   const path = resolveRelativePath(baseDir, relPath);
   if (!path) return null;
-  const source = await fetchSourceFile(env, route.repo, route.version.branch, path, { ctx });
+  const source = await readSourceFile(route.repo, path);
   if (!source) return null;
 
   const innerRendered = await renderMarkdown({
     source,
     linkContext,
-    renderDiagram: (code) => renderMermaidThemed(code, env, ctx),
+    renderDiagram: (code) => renderMermaidThemed(code),
     // Deliberately omit recursive include resolvers — see comment above.
     resolveXref: xrefResolver(xrefMap),
   });
@@ -310,15 +272,13 @@ async function resolveInclude(
 // OPS [!code-lang]: fetch the source file, slice per the directive, syntax-
 // highlight, and return a code block ready to splice into the parent AST.
 async function resolveCodeInclude(
-  env: Env,
-  ctx: ExecutionContext,
   route: RouteContext,
   baseDir: string,
   meta: CodeIncludeMeta,
 ): Promise<Extract<Block, { type: "code" }> | null> {
   const path = resolveRelativePath(baseDir, meta.path);
   if (!path) return null;
-  const source = await fetchSourceFile(env, route.repo, route.version.branch, path, { ctx });
+  const source = await readSourceFile(route.repo, path);
   if (!source) return null;
 
   const slice = extractCodeSlice(source, meta);

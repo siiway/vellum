@@ -1,27 +1,28 @@
 ---
 title: Vellum Handbook
-description: "The handbook for Vellum — a multi-repo documentation platform on Cloudflare Workers."
+description: "The handbook for Vellum — a multi-repo documentation platform, pre-rendered and served from Cloudflare Workers."
 ---
 
 # Vellum Handbook
 
 **Vellum** is the documentation platform that powers SiiWay's docs site. It
-serves Markdown from one or more sources (GitHub repos or local files) through
-a single Cloudflare Worker, with full VitePress-style markdown, the
-Microsoft OPS / Learn extension set, and a FluentUI shell.
+builds Markdown from one or more sources (GitHub repos or local files) into a
+static site served from Cloudflare Workers, with full VitePress-style markdown,
+the Microsoft OPS / Learn extension set, and a FluentUI shell.
 
 This handbook is itself written in Vellum, served from
 [`local-docs/vl-handbook`](https://github.com/siiway/vellum/tree/main/app/local-docs/vl-handbook)
-in the same repository as the worker.
+in the same repository as Vellum itself.
 
 ## What's in the box
 
 ::: tip Architecture in one paragraph
-A single Cloudflare Worker handles every request. On a cache miss it fetches
-Markdown from GitHub (or reads a file bundled into the worker's assets), parses
-it once on the server, renders the HTML, and streams it down. The same payload
-is also serialised as JSON so the React client can hydrate without re-parsing.
-Subsequent edits invalidate the cache via a GitHub webhook.
+The build clones each GitHub repo (or reads local files), parses every page
+once, and writes its HTML. Cloudflare serves the result as static assets, with
+no code running per request. Each page's data is also written as JSON, so the
+React client hydrates without re-parsing and swaps pages without a reload.
+When a docs repo changes, an incremental update re-renders just that repo and
+redeploys.
 :::
 
 | Feature                  | What you get                                                                                         |
@@ -34,9 +35,9 @@ Subsequent edits invalidate the cache via a GitHub webhook.
 | **Math**                 | MathJax inline + display, server-rendered to SVG.                                                    |
 | **i18n**                 | Per-repo locales with URL prefixes (e.g. `/zh/...`). Site chrome is translated.                      |
 | **Search**               | Per-repo dialog (Ctrl K) and full-page cross-repo search at `/search`.                               |
-| **Theming**              | Light / dark / system, cookie-preserved.                                                             |
+| **Theming**              | Light / dark / system, remembered in a cookie.                                                       |
 | **Components in MD**     | Drop FluentUI primitives (`<Button>`, `<Card>`, `<Spinner>`, …) directly into your `.md` files.      |
-| **Edge caching**         | Cache API per PoP + optional KV namespace for cross-region durability.                               |
+| **Static output**        | Pre-rendered HTML on Workers static assets; incremental updates re-render only changed repos.        |
 | **SPA-style navigation** | Internal links use `history.pushState` and refetch only the JSON payload.                            |
 
 ## Where to go next
@@ -74,14 +75,15 @@ Start with [Markdown features](./markdown) for the VitePress vocabulary, then
 
 - [Search](./search)
 - [Internationalisation](./i18n)
-- [Caching & deployment](./caching-and-deployment)
+- [Build & deployment](./caching-and-deployment)
+- [Updating content](./updating-content)
   :::column-end:::
   :::column span="6":::
 
 ### Reference & tests
 
 The [Feature tests](./tests/) section is a living showcase of every
-renderer — use it as a visual regression suite while editing the worker.
+renderer — use it as a visual regression suite while editing the renderer.
 
 - [Feature test index](./tests/)
   :::column-end:::

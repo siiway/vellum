@@ -1,4 +1,4 @@
-// Shared types used by both the Worker (SSR) and the browser (hydration).
+// Shared types used by both the build (SSR) and the browser (hydration).
 
 import { countries, continents } from "countries-list";
 
@@ -111,11 +111,9 @@ export interface RepoVersion {
 
 export interface RepoConfig {
   slug: string;
-  // "github" (default) fetches content from raw.githubusercontent.com via the
-  // GitHub source. "local" reads from a directory bundled into the worker's
-  // ASSETS at build time — useful for docs that live next to the worker, for
-  // air-gapped previews, or for content owned by the same repo as Vellum
-  // itself. owner/repo/branch become optional when source === "local".
+  // "github" (default) clones the repo at build time. "local" reads from a
+  // directory in this repository — useful for docs owned by the same repo as
+  // Vellum itself. owner/repo/branch become optional when source === "local".
   source?: "github" | "local";
   // GitHub-source fields. Optional when source === "local".
   owner?: string;
@@ -139,9 +137,7 @@ export interface RepoConfig {
   landingPage?: string;
   // Local-source field: directory under the project root that holds the
   // markdown tree. Optional — defaults to `local-docs/{slug}`. Path is
-  // relative to the project root and is resolved at build time by the Vite
-  // local-docs plugin, which copies the tree into the worker's ASSETS bundle
-  // alongside a manifest.json the worker uses to enumerate pages.
+  // relative to the project root (`app/`).
   localPath?: string;
   // When true, the NavBar omits this repo's displayName crumb after the site
   // title. Useful for the homepageRepo where the second crumb is redundant
@@ -173,8 +169,8 @@ export interface NavItem {
 
 export interface VueComponentRef {
   name: string;
-  // Repo-rooted path to the .vue source file, used as the `path` parameter to
-  // the `/api/vue` endpoint.
+  // Repo-rooted path to the .vue source file. The build publishes it at
+  // `/_vellum/vue/{repo}/{name}.vue`.
   path: string;
 }
 
@@ -211,13 +207,16 @@ export interface SocialLink {
 
 export interface SiteConfig {
   title: string;
+  // Public origin of the site (e.g. "https://docs.example.com"), for absolute
+  // URLs in the page head and the sitemap.
+  url?: string;
   tagline?: string;
   logo?: string;
   favicon?: string;
   themeColor?: string;
   footer?: string;
-  // Which repo's root acts as the site's landing page. The `/` route redirects
-  // here, and the NavBar brand link points here (locale-preserved).
+  // Which repo's root acts as the site's landing page, served at
+  // `/{locale prefix}`. The NavBar brand link points here (locale-preserved).
   homepageRepo: string;
   defaultLocale: string;
   locales: LocaleConfig[];
@@ -325,7 +324,8 @@ export interface BootstrapPayload {
   // client uses this to (a) rewrite `<Name />` tags inside markdown HTML blocks
   // to mountable placeholders, and (b) lazy-load + mount the SFC at runtime.
   repoComponents?: VueComponentRef[];
-  // The initial theme picked by the server based on cookies / prefers-color-scheme hint.
+  // The theme the page was rendered in. Pages are rendered light; the head
+  // script and the client switch to the reader's theme.
   initialTheme: "light" | "dark";
   // When set, the shell renders an ErrorPage instead of the doc body.
   error?: ErrorState;

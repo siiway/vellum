@@ -1,0 +1,105 @@
+name: Update content
+
+# Brings production up to date with the docs repos, incrementally: it
+# re-renders only the GitHub-backed repos whose commit changed since the last
+# build, keeps every other page as it was, and deploys only when something
+# changed. The app itself isn't rebuilt; that's deploy.yml's job.
+#
+# Triggers:
+#   * hourly schedule
+#   * repository_dispatch `update-content` -> a docs repo asking right after
+#     a push (see the "Updating content" handbook page for the snippet)
+#   * manual run (workflow_dispatch)
+#
+# The last build comes from the Actions cache, saved by deploy.yml or a
+# previous run of this one. It's updated with the app commit it was built
+# from, so a commit on main that hasn't deployed (or failed its checks) never
+# ships from here. Without a cached build, `bun run update` builds everything
+# from main.
+#
+# Requires the same secrets as deploy.yml.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  repository_dispatch:
+    types: [update-content]
+  workflow_dispatch:
+
+# Shared with deploy.yml: never overlap a deploy, never cancel one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    environment:
+      name: production
+      url: https://docs.siiway.org
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Restore the last build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/dist
+            app/.sources
+          key: site-${{ github.run_id }}
+          restore-keys: site-
+
+      # The app commit the last build was made from, so only content changes.
+      - name: Check out the deployed app
+        run: |
+          if [ -f dist/state.json ]; then
+            sha=$(jq -r .app dist/state.json)
+            git fetch --depth=1 origin "$sha"
+            git checkout --detach "$sha"
+          fi
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('app/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Update
+        id: update
+        run: bun run update
+        env:
+          VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
+
+      - name: Deploy
+        if: steps.update.outputs.changed == 'true'
+        run: bunx wrangler deploy
+
+      - name: Save the build
+        if: steps.update.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/dist
+            app/.sources
+          key: site-${{ github.run_id }}

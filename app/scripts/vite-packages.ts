@@ -3,8 +3,8 @@
 // A package counts when any of its modules is in an output chunk, so packages
 // that are only build tools, or that tree-shaking drops entirely, are left
 // out. Writes dist/packages/client.json: a sorted list of package directories,
-// relative to the app. scripts/notice.ts reads it, together with the Worker's
-// esbuild metafile (dist/worker/meta.json).
+// relative to the app. scripts/notice.ts reads it, together with the
+// packages the page build reaches.
 
 import fs from "node:fs";
 import path from "node:path";

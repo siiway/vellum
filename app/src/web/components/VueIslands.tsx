@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from "react";
 import { useVellum } from "../context";
+import { vueComponentPath } from "../../shared/paths";
 
 interface MountedIsland {
   el: HTMLElement;
@@ -70,10 +71,11 @@ export function VueIslands() {
           vitepress: vitepressShim,
         },
         async getFile(url: string) {
-          // The path is the repo-rooted file path; route it via our worker proxy
-          // so the same auth + caching apply.
-          const proxied = `/api/vue?repo=${encodeURIComponent(repoSlug)}&path=${encodeURIComponent(url)}`;
-          const res = await fetch(proxied);
+          // `url` is the repo-rooted path of a component. The build publishes
+          // each registered component's source; nothing else is loadable.
+          const component = components.find((c) => c.path === url);
+          if (!component) throw new Error(`${url} is not a registered component`);
+          const res = await fetch(vueComponentPath(repoSlug, component.name));
           if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
           return await res.text();
         },

@@ -1,33 +1,16 @@
 {
 	"$schema": "https://json.schemastore.org/wrangler.json",
 	"name": "vellum",
-	"main": "src/worker/index.ts",
 	"compatibility_date": "2025-02-01",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	// Browser-only packages that SSR reaches through client components but
-	// never runs. Swapping them for a stub keeps several megabytes out of the
-	// Worker bundle, which every cold start has to load.
-	"alias": {
-		"mermaid": "./src/worker/browser-only.ts",
-		"vue": "./src/worker/browser-only.ts",
-		"vue3-sfc-loader": "./src/worker/browser-only.ts"
-	},
+	// A static site: no Worker code, only the pre-rendered output of
+	// `bun run build`. `_redirects` and `_headers` in it are applied by
+	// Cloudflare.
 	"assets": {
-		"directory": "./dist/client",
-		"binding": "ASSETS",
-		"not_found_handling": "single-page-application"
-	},
-	"observability": {
-		"enabled": true
-	},
-	"vars": {
-		// "VELLUM_GITHUB_TOKEN": "",
-		// "VELLUM_WEBHOOK_SECRET": "",
-		"VELLUM_CACHE_TTL_SECONDS": "300",
-		"VELLUM_HTML_TTL_SECONDS": "60",
-		"VELLUM_STALE_TTL_SECONDS": "86400"
+		"directory": "./dist/site",
+		// Pages are written as {page}/index.html and served at {page}.
+		"html_handling": "drop-trailing-slash",
+		// The nearest 404.html up the path: localized per locale prefix.
+		"not_found_handling": "404-page"
 	},
 	"routes": [
 		{
@@ -37,12 +20,6 @@
 		{
 			"pattern": "vellum.siiway.org",
 			"custom_domain": true
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "VELLUM_CACHE",
-			"id": "8999733736ff415c844f1c8fc00c3042"
 		}
 	],
 	// Preview environment: deploys to vellum.siiway.workers.dev.

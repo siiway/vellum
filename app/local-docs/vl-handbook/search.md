@@ -5,26 +5,30 @@ description: "Per-repo dialog and full-page cross-repo search."
 
 # Search
 
-Vellum has two search surfaces, both backed by the same `/api/search`
-endpoint:
+Vellum has two search surfaces, both running the same search in the
+reader's browser:
 
 1. A **command-palette dialog** (Ctrl K / Cmd K / `/`) scoped to the
    current repo.
-2. A **full-page search** at `/search` that fans out across every repo in
-   the site.
+2. A **full-page search** at `/{locale}/search` that fans out across every
+   repo in the site.
 
 ## How the index works
 
-`src/worker/search.ts` builds a tiny inverted index per repo + locale on
-first request:
+The build writes one index per repo per locale, at
+`/_vellum/search/{locale}/{repo}.json`
+([`src/build/search-index.ts`](https://github.com/siiway/vellum/blob/main/app/src/build/search-index.ts)):
 
-1. Walks the source tree (GitHub trees API or local `manifest.json`).
-2. Filters to Markdown files under `docsRoot` for the current locale.
-3. Fetches each file (in parallel, capped at 200) and extracts the
-   searchable text: frontmatter `title` / `description` / hero blocks +
-   the stripped Markdown body.
-4. Caches the result in KV / Cache API for `VELLUM_CACHE_TTL_SECONDS × 4`
-   so subsequent queries against the same repo are O(query).
+1. Takes the repo's pages in that locale, the same ones the build renders.
+2. Extracts each page's searchable text: frontmatter `title` /
+   `description` / hero blocks + the stripped Markdown body, split into
+   sections at its headings.
+3. Keeps up to 200 pages per index, and the first 12,000 characters of each.
+
+The first search fetches the indexes it needs; scoring
+([`src/shared/search.ts`](https://github.com/siiway/vellum/blob/main/app/src/shared/search.ts))
+runs in the browser. The scoring code is its own small chunk, loaded only
+when someone searches.
 
 The scoring is intentionally simple: term match in title is worth 5,
 match in body is worth 1. Sorted descending, capped at 10 (per-repo) or
@@ -32,8 +36,8 @@ match in body is worth 1. Sorted descending, capped at 10 (per-repo) or
 
 ::: note Why no fancy indexer
 A 50-page repo's full index is < 50KB. Smarter scoring (BM25, semantic
-embeddings) would buy little for this size, and would push the cold-start
-cost up. The current implementation cold-starts in ~500ms.
+embeddings) would buy little for this size, and would make the download and
+the code bigger.
 :::
 
 ## The dialog
@@ -53,9 +57,9 @@ Features:
 
 ## The full-page search
 
-URL: `/search` (or `/{locale}/search` for non-default locales). The page
-declares its own layout via the worker — no markdown, no sidebar/outline,
-full viewport.
+URL: `/{locale}/search` (`/search` redirects to the default locale's). The
+page is an empty shell the build writes for each locale — no markdown, no
+sidebar/outline, full viewport.
 
 Authors can link to a pre-populated query:
 
@@ -73,33 +77,24 @@ Behaviour:
   the query.
 - Tab selection persists for the current group through localStorage.
 
-## API surface
+## Index files
 
-`GET /api/search` returns JSON. Parameters:
-
-| Param    | Required | Notes                                                                     |
-| -------- | :------: | ------------------------------------------------------------------------- |
-| `q`      |    ✓     | Search query.                                                             |
-| `repo`   |          | Repo slug to scope to, or `*` for cross-repo. Defaults to `homepageRepo`. |
-| `locale` |          | Locale code. Defaults to `defaultLocale`.                                 |
-| `limit`  |          | Max hits per repo (clamped to 1–50). Default 10.                          |
-| `all`    |          | Set `1` as a shortcut for `repo=*`.                                       |
-
-Response:
+`/_vellum/search/{locale}/{repo}.json` is a static file:
 
 ```json
 {
-  "hits": [
+  "docs": [
     {
-      "url": "/repo-slug/page-path",
+      "url": "/en-US/repo-slug/page-path",
       "title": "Page title",
-      "excerpt": "...<mark>highlighted term</mark>...",
-      "repo": "repo-slug",
-      "repoDisplayName": "Repo Display Name"
+      "text": "Searchable text of the whole page…",
+      "sections": [{ "slug": "install", "title": "Install", "offset": 120 }]
     }
   ]
 }
 ```
+
+`robots.txt` keeps crawlers out of `/_vellum/`.
 
 ## Excluding pages from search
 
@@ -107,14 +102,13 @@ There's no explicit `noindex` flag yet. To exclude a page from search,
 either:
 
 - Move it out of `docsRoot`.
-- Mark it `_internal` in the path (the indexer skips anything under
-  `_*` directories on the assumption it's a partial / private artifact —
-  though this isn't strict; double-check by querying).
+- Put it under a directory starting with `_` (or name it so). The build
+  treats those as partials: it neither renders nor indexes them.
 
 A real `frontmatter.noindex: true` flag is on the roadmap.
 
 ## Tuning
 
-If you have a large repo (> 200 markdown files), bump the `MAX` constant in
-`src/worker/search.ts`. The current limit is intentionally conservative
-because cold-start time scales linearly with corpus size.
+If you have a large repo (> 200 markdown files), bump `MAX_DOCS` in
+`src/build/search-index.ts`. The limit is intentionally conservative because
+readers download the whole index on their first search.

@@ -1,5 +1,5 @@
-// Markdown AST shared between worker and browser.
-// Built from markdown-it tokens on the worker, rendered by FluentUI components on the client.
+// Markdown AST shared between the build and the browser.
+// Built from markdown-it tokens by the build, rendered by FluentUI components on the client.
 // Designed to cover the VitePress-style feature set without losing fidelity:
 // containers, code groups, GFM tables/alerts, task lists, footnotes.
 
@@ -31,7 +31,7 @@ export type Inline =
       children: Inline[];
     }
   // OPS / Microsoft Learn cross-reference. `target` is the uid (e.g. System.Console).
-  // `href` is the resolved URL when the worker found a matching xrefmap entry;
+  // `href` is the resolved URL when the build found a matching xrefmap entry;
   // when unresolved, the client renders the uid as monospace fallback text.
   // `display` carries optional link text (from `[text](xref:uid)` form).
   | { type: "xref"; target: string; href?: string; display?: string };
@@ -56,7 +56,7 @@ export type Block =
       type: "callout";
       kind: "tip" | "info" | "note" | "warning" | "danger" | "caution" | "important" | "details";
       // Inline-parsed title — supports `code`, **bold**, links, etc. Authored
-      // as `::: tip Heads `up`` or `> [!NOTE]`; the worker runs the inline
+      // as `::: tip Heads `up`` or `> [!NOTE]`; the build runs the inline
       // markdown parser over the raw text so the renderer can use the same
       // InlineNode component as paragraphs.
       title?: Inline[];
@@ -91,7 +91,7 @@ export type Block =
       }>;
       rows: Array<Array<{ align: "left" | "center" | "right" | null; children: Inline[] }>>;
     }
-  // Mermaid blocks. svgLight/svgDark are populated by the worker via Kroki when
+  // Mermaid blocks. svgLight/svgDark are populated by the build via Kroki when
   // available; when absent (no env binding, Kroki failure, etc.) the client
   // falls back to its own mermaid render. Both palettes are shipped so theme
   // switching is instant and doesn't need to fetch a fresh SVG.

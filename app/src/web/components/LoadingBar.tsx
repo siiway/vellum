@@ -1,5 +1,5 @@
 // Top-of-page progress bar tied to the SPA navigation lifecycle.
-// Mimics NProgress: ramps up while the worker fetches the new payload, then
+// Mimics NProgress: ramps up while the next page's payload loads, then
 // completes and fades on success.
 
 import { useEffect, useState } from "react";

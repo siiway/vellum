@@ -12,14 +12,16 @@ import {
 import { App } from "../web/App";
 import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
-import type { Env } from "./env";
-import { getClientAssets } from "./assets";
+import type { ClientAssets } from "./assets";
 
-export async function renderPage(
-  env: Env,
-  payload: BootstrapPayload,
-  request: Request,
-): Promise<string> {
+export interface RenderOptions {
+  assets: ClientAssets;
+  // The site's origin (`site.url`) for absolute URLs in the head. Null leaves
+  // them root-relative and drops the tags that must be absolute.
+  origin: string | null;
+}
+
+export function renderPage(payload: BootstrapPayload, { assets, origin }: RenderOptions): string {
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -40,7 +42,6 @@ export async function renderPage(
     })
     .join("");
 
-  const assets = await getClientAssets(env);
   const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
   // Module scripts never block parsing and run after it, so the entry goes in
   // <head> where the browser finds it first. The preloads fetch the chunks it
@@ -53,7 +54,7 @@ export async function renderPage(
   const { site } = payload.config;
   const themeColor = site.themeColor ?? "#0078d4";
 
-  const seoHead = buildSeoHead(payload, request);
+  const seoHead = buildSeoHead(payload, origin);
 
   const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
 
@@ -155,14 +156,12 @@ html[data-theme="dark"] .shiki span[style*="--shiki-dark-text-decoration"]{text-
   // Theme resolution runs synchronously in <head> before first paint and
   // sets <html data-theme>. Priority:
   //   1. Explicit `vellum-theme` cookie (set by the toggle button) — wins always.
-  //   2. The OS preference. The script stores it in the `vellum-theme-auto`
-  //      cookie so the next request is SSR'd in that theme.
-  // When the result differs from the theme the server rendered (a first
-  // visit, or the OS switched since the last one), nothing reloads: the
-  // page CSS keys off [data-theme], `themeTokenCss` below covers FluentUI's
-  // tokens, and the client switches its own state after hydration.
+  //   2. The OS preference.
+  // When the result differs from the theme the page was rendered in, nothing
+  // reloads: the page CSS keys off [data-theme], `themeTokenCss` below covers
+  // FluentUI's tokens, and the client switches its own state after hydration.
   const serverTheme = payload.initialTheme;
-  const themeScript = `(function(){var d=document.documentElement;try{var c=document.cookie;var m=c.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){d.dataset.theme=m[1];return;}var os=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.theme=os;var a=c.match(/(?:^|; )vellum-theme-auto=(light|dark)/);if(!a||a[1]!==os){document.cookie='vellum-theme-auto='+os+'; path=/; max-age=31536000; samesite=lax';}}catch(e){d.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
+  const themeScript = `(function(){var d=document.documentElement;try{var m=document.cookie.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){d.dataset.theme=m[1];return;}d.dataset.theme=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}catch(e){d.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
 
   // FluentProvider SSRs only the server theme's tokens. This rule carries
   // the other theme's, applied when the script above picked it. It outranks
@@ -201,10 +200,11 @@ ${seoHead}
 // Builds the title/description/canonical/OG/Twitter/JSON-LD bundle. Kept as
 // one function so all of the head's metadata reasoning lives in one place
 // instead of being scattered through template literal interpolations.
-function buildSeoHead(payload: BootstrapPayload, request: Request): string {
+function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): string {
   const { config, route, page, error } = payload;
   const { site } = config;
-  const origin = new URL(request.url).origin;
+  // Without `site.url` every URL below stays root-relative.
+  const origin = siteOrigin ?? "";
 
   const frontmatter = (page.meta.frontmatter ?? {}) as Record<string, unknown>;
 
@@ -213,7 +213,7 @@ function buildSeoHead(payload: BootstrapPayload, request: Request): string {
 
   // Canonical URL. Errors get no canonical (the URL is fictitious — pointing
   // search engines at it would propagate the bad link). Everything else
-  // absolutizes the route's canonical path against the current origin.
+  // absolutizes the route's canonical path against the site origin.
   const canonicalAbsolute = error ? null : `${origin}${route.canonicalUrl}`;
 
   // OG image: page frontmatter wins, then repo logo, then site logo. The
@@ -262,10 +262,9 @@ function buildSeoHead(payload: BootstrapPayload, request: Request): string {
 
   // Locale + i18n alternates. We emit a hreflang per configured locale so
   // search engines can return the right translation to the right reader.
-  // Unlike a static-site generator we can't easily check whether the
-  // translated page actually exists, so we emit alternates for every
-  // configured locale and accept that some may 404; this matches what
-  // MS Learn does and what Google tolerates.
+  // Alternates are emitted for every configured locale, translated or not,
+  // and some may 404; this matches what MS Learn does and what Google
+  // tolerates.
   const currentLocale = site.locales.find((l) => l.code === route.localeCode);
   const alternates =
     !error && currentLocale
@@ -321,7 +320,8 @@ function buildSeoHead(payload: BootstrapPayload, request: Request): string {
     lines.push(`  <meta property="og:description" content="${escapeAttr(description)}">`);
   }
   lines.push(`  <meta property="og:type" content="${ogType}">`);
-  if (canonicalAbsolute) {
+  // og:url must be absolute, so it needs `site.url`.
+  if (canonicalAbsolute && siteOrigin) {
     lines.push(`  <meta property="og:url" content="${escapeAttr(canonicalAbsolute)}">`);
   }
   if (currentLocale) {
@@ -388,14 +388,14 @@ function buildSeoHead(payload: BootstrapPayload, request: Request): string {
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: site.title,
-    url: origin,
+    url: origin || "/",
     ...(site.tagline ? { description: site.tagline } : {}),
     ...(site.logo ? { image: absolutize(site.logo, origin) } : {}),
     potentialAction: {
       "@type": "SearchAction",
       target: {
         "@type": "EntryPoint",
-        urlTemplate: `${origin}/search?q={search_term_string}`,
+        urlTemplate: `${origin}${currentLocale?.prefix ? `/${currentLocale.prefix}` : ""}/search?q={search_term_string}`,
       },
       "query-input": "required name=search_term_string",
     },
@@ -578,7 +578,7 @@ function buildBreadcrumbs(payload: BootstrapPayload, origin: string): Crumb[] {
   const locale = site.locales.find((l) => l.code === route.localeCode);
   const prefix = locale?.prefix ? `/${locale.prefix}` : "";
 
-  const out: Crumb[] = [{ name: site.title, url: `${origin}${prefix}/${site.homepageRepo}` }];
+  const out: Crumb[] = [{ name: site.title, url: `${origin}${prefix || "/"}` }];
 
   if (route.repo && route.repoSlug !== site.homepageRepo) {
     out.push({

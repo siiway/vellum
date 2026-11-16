@@ -42,7 +42,7 @@ interface SearchHit {
   // Title with `<mark>` wrapping matched terms — same convention as the
   // excerpts. Falls back to escaped `title` when no terms matched.
   titleHtml?: string;
-  // The worker returns up to 3 excerpts per hit. The dialog only shows the
+  // Search returns up to 3 excerpts per hit. The dialog only shows the
   // first one to keep the result row compact; the full-page SearchPage shows
   // all of them.
   excerpts: ExcerptOut[];
@@ -323,14 +323,18 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const r = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}&repo=${encodeURIComponent(data.route.repoSlug)}&locale=${data.route.localeCode}`,
-        );
-        const j = (await r.json()) as { hits: SearchHit[] };
+        const { search } = await import("../../shared/search");
+        const found = await search(data.config, {
+          q,
+          repo: data.route.repoSlug,
+          locale: data.route.localeCode,
+        });
         if (!cancelled) {
-          setHits(j.hits ?? []);
+          setHits(found);
           setActiveIdx(0);
         }
+      } catch (e) {
+        console.error("[vellum] search failed", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -339,7 +343,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [q, data.route.repoSlug, data.route.localeCode]);
+  }, [q, data.config, data.route.repoSlug, data.route.localeCode]);
 
   // Group hits by repo for headers.
   const grouped = useMemo(() => {
@@ -575,9 +579,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   );
 }
 
-// Defensive: older `/api/search` responses (cached before this client
-// shipped) don't include titleHtml, so we fall back to plain text and
-// escape it like the worker does for excerpts.
+// Defensive: a hit without titleHtml falls back to its plain title, escaped
+// the way excerpts are.
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

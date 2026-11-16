@@ -451,7 +451,7 @@ function HeroSection({
   return (
     <section className={styles.hero}>
       <div className={styles.heroInner}>
-        {/* hero.title and hero.tagline are pre-rendered HTML from the worker's
+        {/* hero.title and hero.tagline are pre-rendered HTML from the build's
             processHomeFrontmatter() pass. FluentUI's typography components
             drop the `dangerouslySetInnerHTML` prop through their slot system,
             so we wrap the HTML in a child <span> instead. */}
@@ -521,7 +521,7 @@ function CardGridSection({
     <section className={styles.section}>
       <header className={styles.sectionHeader}>
         {/* FluentUI typography drops dangerouslySetInnerHTML through its slot
-            system, so wrap the worker-rendered HTML in a child <span>. */}
+            system, so wrap the build-rendered HTML in a child <span>. */}
         {section.title && (
           <Title3 as="h2" className={styles.sectionTitle}>
             <span dangerouslySetInnerHTML={{ __html: section.title }} />
@@ -553,7 +553,7 @@ function ItemCard({
 }) {
   const { t } = useVellum();
   const isExternal = /^[a-z]+:\/\//i.test(item.link);
-  // Title / description / linkText are pre-rendered HTML from the worker
+  // Title / description / linkText are pre-rendered HTML from the build
   // (processHomeFrontmatter). Inline markdown (`code`, **bold**, links) is
   // dropped via a child <span> — FluentUI's typography components don't pass
   // dangerouslySetInnerHTML through their slots.

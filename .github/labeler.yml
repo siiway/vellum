@@ -1,9 +1,9 @@
 # Path labels for pull requests, applied by triage.yml. The config is read from
 # the base branch, so a PR can't change its own labels by editing this file.
 
-worker:
+build:
   - changed-files:
-      - any-glob-to-any-file: "app/src/worker/**"
+      - any-glob-to-any-file: "app/src/build/**"
 
 web:
   - changed-files:

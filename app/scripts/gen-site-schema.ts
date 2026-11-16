@@ -66,6 +66,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
   SiteConfig: {
     descriptions: {
       title: "Brand name shown in the NavBar and as the SSR <title> suffix.",
+      url: 'Public origin of the site, e.g. "https://docs.example.com". Used for absolute canonical / Open Graph / hreflang URLs and the sitemap; without it those URLs stay root-relative and no sitemap is written.',
       tagline: "Short subtitle shown on the landing page hero.",
       logo: "URL of the site logo (SVG recommended).",
       favicon: "URL of the favicon.",
@@ -73,7 +74,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'Accent colour (primary buttons, links, focus) and the <meta name="theme-color"> value, e.g. "#0078d4".',
       footer: "Footer text rendered below every page.",
       homepageRepo:
-        "Slug of the repo whose root acts as the site's landing page. `/` redirects here, and the NavBar brand link points here with the current locale preserved.",
+        "Slug of the repo whose root acts as the site's landing page, served at /{locale prefix}. The NavBar brand link points here with the current locale preserved.",
       defaultLocale: "Locale code used when the URL has no locale prefix.",
       locales: "All supported locales. Order is preserved in the language picker.",
       socialLinks:
@@ -85,13 +86,14 @@ const OVERRIDES: Record<string, OverrideTable> = {
       themeColor: {
         pattern: "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
       },
+      url: { pattern: "^https?://[^/]+$" },
       logo: { format: "uri-reference" },
       favicon: { format: "uri-reference" },
     },
   },
   LocaleConfig: {
     descriptions: {
-      code: 'Locale code (e.g. "en", "zh", "ja"). Used in cache keys and i18n lookup.',
+      code: 'Locale code (e.g. "en", "zh", "ja"). Used for i18n lookup and as the default source directory of non-default locales.',
       label: "Human-readable name shown in the language picker.",
       prefix:
         'URL segment for this locale (e.g. "zh" → /repo/zh/...). Empty string means the locale lives at the root of each repo.',
@@ -101,11 +103,10 @@ const OVERRIDES: Record<string, OverrideTable> = {
     descriptions: {
       slug: 'URL segment for the repo (e.g. "prism" → /prism/...). Must be unique within `repos[]`.',
       source:
-        'Where the markdown lives. "github" (default) reads from raw.githubusercontent.com; "local" reads from local-docs/{slug}/ bundled into the worker\'s ASSETS at build time.',
+        'Where the markdown lives. "github" (default) clones the GitHub repo at build time; "local" reads from local-docs/{slug}/ in this repository.',
       owner: 'GitHub owner. Required when source is "github".',
       repo: 'GitHub repo name. Required when source is "github".',
-      branch:
-        "Default branch to fetch from. Used as the cache key suffix and as the fallback when no `versions[]` is declared.",
+      branch: "Branch the build clones. Used when no `versions[]` is declared.",
       docsRoot:
         'Path inside the repo (or local source) to the docs tree, e.g. "docs". Empty string means the repo root is the docs root.',
       displayName: "Human-readable name shown in the NavBar brand crumb and 404 suggestions.",
@@ -114,8 +115,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
       logo: "URL of the per-repo logo (SVG recommended).",
       editLinkPattern:
         'Template for the "Edit this page" link in the page footer. `:path` is substituted with the docs-root-relative path. Omit for local repos.',
-      versions:
-        "Optional version selector. Default version is used when no version is encoded in the URL.",
+      versions: "Optional versions. The build renders the default one (or the first).",
       localeDirs:
         'Source directory of each locale\'s pages, relative to docsRoot, keyed by locale code (e.g. { "en": "en", "zh": "zh" }). Locales left out keep the default layout: the default locale at the docs root, others in a directory named after their code.',
       landingPage:
@@ -191,7 +191,7 @@ const finalSchema = {
   $id: "https://siiway.org/vellum/site-schema.json",
   title: "Vellum site config",
   description:
-    "Top-level config consumed by the Vellum worker. Generated from " +
+    "Top-level config consumed by the Vellum build. Generated from " +
     "src/shared/types.ts by scripts/gen-site-schema.ts — edit the types " +
     "or that script's OVERRIDES table, not this file.",
 };

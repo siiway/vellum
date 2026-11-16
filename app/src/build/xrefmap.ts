@@ -1,17 +1,13 @@
 // Per-repo xref resolver. Loads xrefmap.yml (or xrefmap.json) from the docs
-// root and exposes a uid → href lookup. Result is cached in KV so the YAML
-// parse cost happens at most once per cache cycle.
+// root and exposes a uid → href lookup, loaded once per repo per build.
 //
 // We parse a strict subset of YAML — enough for the canonical DocFX xrefmap
 // shape (`references: [{ uid, href, name }, ...]`). For richer needs a real
-// YAML parser would be appropriate, but pulling one in for an optional feature
-// would balloon the worker bundle.
+// YAML parser would be appropriate; this optional feature doesn't need one.
 
-import type { Env } from "./env";
 import type { RepoConfig } from "../shared/types";
-import { fetchSourceFile, docsRootPrefix } from "./sources";
-import { cached } from "./cache";
-import { ttlSeconds } from "./env";
+import { readSourceFile, docsRootPrefix } from "./sources";
+import { memo } from "./memo";
 
 export interface XrefEntry {
   uid: string;
@@ -25,38 +21,18 @@ export interface XrefMap {
 
 const CANDIDATE_PATHS = ["xrefmap.yml", "xrefmap.yaml", "xrefmap.json"];
 
-export async function loadXrefMap(
-  env: Env,
-  repo: RepoConfig,
-  branch: string,
-  ctx?: ExecutionContext,
-): Promise<XrefMap | null> {
-  const cacheKey = `xrefmap:${repo.slug}@${branch}`;
-  // A repo without a map is cached as null too, so pages don't re-probe the
-  // candidate files on every render.
-  return cached(
-    env,
-    cacheKey,
-    (map) => (map ? ttlSeconds(env, "raw") : 300),
-    async () => {
-      const prefix = docsRootPrefix(repo.docsRoot);
-      const pending = CANDIDATE_PATHS.map((file) =>
-        fetchSourceFile(env, repo, branch, `${prefix}${file}`, { ctx }),
-      );
-      for (const p of pending) p.catch(() => {});
-      // First candidate, in order, that exists and parses wins. A failed
-      // fetch ahead of it throws, so nothing is cached and the next render
-      // retries; one behind it doesn't matter.
-      for (let i = 0; i < CANDIDATE_PATHS.length; i++) {
-        const raw = await pending[i]!;
-        if (!raw) continue;
-        const map = CANDIDATE_PATHS[i]!.endsWith(".json") ? parseJson(raw) : parseYaml(raw);
-        if (map) return map;
-      }
-      return null;
-    },
-    ctx,
-  );
+export function loadXrefMap(repo: RepoConfig): Promise<XrefMap | null> {
+  return memo(`xrefmap:${repo.slug}`, async () => {
+    const prefix = docsRootPrefix(repo.docsRoot);
+    // First candidate, in order, that exists and parses wins.
+    for (const file of CANDIDATE_PATHS) {
+      const raw = await readSourceFile(repo, `${prefix}${file}`);
+      if (!raw) continue;
+      const map = file.endsWith(".json") ? parseJson(raw) : parseYaml(raw);
+      if (map) return map;
+    }
+    return null;
+  });
 }
 
 function parseJson(raw: string): XrefMap | null {

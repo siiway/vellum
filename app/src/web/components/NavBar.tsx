@@ -455,7 +455,7 @@ function ThemeSwitch() {
 function SocialLinks() {
   const styles = useStyles();
   const { data } = useVellum();
-  // Per-repo overrides site-level. The worker resolves vellum.json /
+  // Per-repo overrides site-level. The build resolves vellum.json /
   // VitePress / RepoConfig sources into `repoSocialLinks`; only when none of
   // those produced anything do we fall back to the site-wide list.
   const links = data.repoSocialLinks ?? data.config.site.socialLinks ?? [];

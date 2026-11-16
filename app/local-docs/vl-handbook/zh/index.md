@@ -1,25 +1,25 @@
 ---
 title: Vellum 手册
-description: "Vellum 使用手册——一个运行在 Cloudflare Workers 上的多仓库文档平台。"
+description: "Vellum 使用手册——一个预渲染并由 Cloudflare Workers 托管的多仓库文档平台。"
 ---
 
 # Vellum 手册
 
-**Vellum** 是为 SiiWay 文档站点提供支持的文档平台。它通过一个 Cloudflare Worker
-从一个或多个源（GitHub 仓库或本地文件）提供 Markdown 服务，
+**Vellum** 是为 SiiWay 文档站点提供支持的文档平台。它把一个或多个源
+（GitHub 仓库或本地文件）中的 Markdown 构建成静态站点，由 Cloudflare Workers 托管，
 完整支持 VitePress 风格的 markdown、Microsoft OPS / Learn 扩展集，
 以及一套基于 FluentUI 的页面外壳。
 
-本手册本身就是用 Vellum 编写的，源文件位于 worker 同一仓库下的
+本手册本身就是用 Vellum 编写的，源文件位于 Vellum 同一仓库下的
 [`local-docs/vl-handbook`](https://github.com/siiway/vellum/tree/main/app/local-docs/vl-handbook)。
 
 ## 开箱即用的能力
 
 ::: tip 一段话理解架构
-所有请求都由一个 Cloudflare Worker 处理。缓存未命中时，它会从 GitHub 拉取
-Markdown（或读取打包进 worker 资源的文件），在服务端一次性解析、渲染 HTML，
-然后流式返回。同一份数据也会序列化为 JSON，让 React 客户端在 hydrate 时无需
-重新解析。后续的编辑通过 GitHub webhook 让缓存失效。
+构建时克隆每个 GitHub 仓库（或读取本地文件），把每个页面解析一次并写出 HTML。
+Cloudflare 以静态资源的形式提供构建结果，每个请求都不运行任何代码。每个页面的数据
+也会写成 JSON，让 React 客户端在 hydrate 时无需重新解析，并能无刷新切换页面。
+文档仓库有变更时，增量更新只重新渲染该仓库并重新部署。
 :::
 
 | 能力                     | 你能得到什么                                                                                          |
@@ -32,9 +32,9 @@ Markdown（或读取打包进 worker 资源的文件），在服务端一次性�
 | **数学公式**             | MathJax 行内 + 行间公式，服务端渲染为 SVG。                                                           |
 | **i18n**                 | 按仓库的语言路径前缀（例如 `/zh/...`）。站点外壳已完成翻译。                                          |
 | **搜索**                 | 单仓库对话框（Ctrl K）以及位于 `/search` 的全站跨仓库整页搜索。                                       |
-| **主题**                 | 浅色 / 深色 / 跟随系统，cookie 持久化。                                                               |
+| **主题**                 | 浅色 / 深色 / 跟随系统，用 cookie 记住选择。                                                          |
 | **在 MD 中使用组件**     | 直接在 `.md` 文件里写 FluentUI 原语（`<Button>`、`<Card>`、`<Spinner>` ……）。                         |
-| **边缘缓存**             | 按 PoP 的 Cache API + 可选的 KV 命名空间实现跨区域持久缓存。                                          |
+| **静态输出**             | 预渲染的 HTML 托管在 Workers 静态资源上；增量更新只重新渲染有变更的仓库。                             |
 | **SPA 式导航**           | 内部链接使用 `history.pushState` 并只重新拉取 JSON 数据。                                             |
 
 ## 接下来去哪里
@@ -72,14 +72,15 @@ Markdown（或读取打包进 worker 资源的文件），在服务端一次性�
 
 - [搜索](./search)
 - [国际化](./i18n)
-- [缓存与部署](./caching-and-deployment)
+- [构建与部署](./caching-and-deployment)
+- [更新内容](./updating-content)
   :::column-end:::
   :::column span="6":::
 
 ### 参考与测试
 
 [功能测试](./tests/) 一节是每种渲染器的"活样本"——你在
-修改 worker 时可以把它当作可视化的回归测试套件。
+修改渲染器时可以把它当作可视化的回归测试套件。
 
 - [功能测试索引](./tests/)
   :::column-end:::

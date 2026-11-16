@@ -1,14 +1,17 @@
 // Writes NOTICE.md at the repository root: every third-party package that
-// ships in the build, grouped by license.
+// ships in the build, grouped by license. That's the client bundle the site
+// serves, plus the page build (markdown-it, Shiki, MathJax, …), whose output
+// every page carries.
 //
-//   bun run notice            build, then write NOTICE.md
+//   bun run notice            build the client, then write NOTICE.md
 //   bun scripts/notice.ts     write NOTICE.md from the last build
 //   bun scripts/notice.ts --check
 //                             fail if NOTICE.md doesn't match the last build
 //
-// The package list comes from the last build: dist/packages/client.json
-// (written by scripts/vite-packages.ts during `vite build`) and the Worker's
-// esbuild metafile, dist/worker/meta.json (written by `bun run build:worker`).
+// The client's packages come from the last client build:
+// dist/packages/client.json (written by scripts/vite-packages.ts during
+// `vite build`). The page build's come from bundling src/build/site.ts in
+// memory with esbuild, so only modules it actually reaches count.
 // License texts come from each package's LICENSE, COPYING or NOTICE files in
 // node_modules.
 //
@@ -19,13 +22,13 @@
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { build, type Plugin } from "esbuild";
 import * as prettier from "prettier";
 import { packageDir } from "./vite-packages.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const NOTICE = join(ROOT, "..", "NOTICE.md");
 const CLIENT_LIST = join(ROOT, "dist", "packages", "client.json");
-const WORKER_META = join(ROOT, "dist", "worker", "meta.json");
 const check = process.argv.includes("--check");
 
 function fail(message: string): never {
@@ -93,29 +96,66 @@ function licenseOf(pkg: Record<string, unknown>): string {
   return types.length ? types.join(" OR ") : "UNKNOWN";
 }
 
-/** Package directories (relative to the app) in the client and Worker builds. */
-function bundledDirs(): Set<string> {
-  if (!existsSync(CLIENT_LIST) || !existsSync(WORKER_META)) {
+/** Package directories (relative to the app) in the client and page builds. */
+async function bundledDirs(): Promise<Set<string>> {
+  if (!existsSync(CLIENT_LIST)) {
     fail("the build output is missing. Run `bun run notice` to build first.");
   }
   const dirs = new Set<string>(JSON.parse(readFileSync(CLIENT_LIST, "utf8")) as string[]);
-  const meta = JSON.parse(readFileSync(WORKER_META, "utf8")) as {
-    outputs: Record<string, { inputs: Record<string, unknown> }>;
-  };
+  for (const dir of await pageBuildDirs()) dirs.add(dir);
+  return dirs;
+}
+
+/** Optional imports that aren't installed (template engines a dependency
+ *  can use, and so on) stay out of the bundle instead of failing it. */
+const skipMissing: Plugin = {
+  name: "skip-missing",
+  setup(b) {
+    b.onResolve({ filter: /^[^./]/ }, async (args) => {
+      if (args.pluginData === "skip-missing") return undefined;
+      const found = await b.resolve(args.path, {
+        kind: args.kind,
+        resolveDir: args.resolveDir,
+        importer: args.importer,
+        pluginData: "skip-missing",
+      });
+      return found.errors.length ? { path: args.path, external: true } : found;
+    });
+  },
+};
+
+/** Package directories the page build reaches. */
+async function pageBuildDirs(): Promise<string[]> {
+  const result = await build({
+    entryPoints: [join(ROOT, "src", "build", "site.ts")],
+    absWorkingDir: ROOT,
+    bundle: true,
+    write: false,
+    metafile: true,
+    platform: "node",
+    format: "esm",
+    outdir: "out",
+    logLevel: "silent",
+    // Browser-only: client components load them from effects, which never
+    // run while pages render. The client list has what ships of them.
+    external: ["mermaid", "vue", "vue3-sfc-loader"],
+    plugins: [skipMissing],
+  });
+  const dirs = new Set<string>();
   // Only inputs that reached an output, so tree-shaken packages are left out.
-  for (const output of Object.values(meta.outputs)) {
+  for (const output of Object.values(result.metafile.outputs)) {
     for (const input of Object.keys(output.inputs)) {
       const dir = packageDir(input, ROOT);
       if (dir) dirs.add(dir);
     }
   }
-  return dirs;
+  return [...dirs];
 }
 
-function bundled(): Package[] {
+async function bundled(): Promise<Package[]> {
   const seen = new Set<string>();
   const out: Package[] = [];
-  for (const start of bundledDirs()) {
+  for (const start of await bundledDirs()) {
     // A module can sit in a nested folder that has its own package.json only
     // for "type": "module"; walk up to the one that names the package.
     let dir = start;
@@ -186,9 +226,9 @@ function split(raw: string, fallback: string) {
 /** Texts that differ only in wrapping, punctuation or case are the same. */
 const sameText = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const packages = [...new Map(bundled().map((p) => [`${p.name}@${p.version}`, p])).values()].sort(
-  (a, b) => a.name.localeCompare(b.name, "en") || a.version.localeCompare(b.version, "en"),
-);
+const packages = [
+  ...new Map((await bundled()).map((p) => [`${p.name}@${p.version}`, p])).values(),
+].sort((a, b) => a.name.localeCompare(b.name, "en") || a.version.localeCompare(b.version, "en"));
 
 // license -> text key -> variant
 const sections = new Map<string, Map<string, Variant>>();

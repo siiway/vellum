@@ -6,7 +6,6 @@
 //
 // Returned sidebar groups are localized: links are prefixed with the repo slug + locale.
 
-import type { Env } from "./env";
 import type {
   LocaleConfig,
   NavItem,
@@ -18,9 +17,8 @@ import type {
   VellumConfig,
 } from "../shared/types";
 import { localeSourcePrefix, sourceLocale } from "../shared/types";
-import { fetchFirstSourceFile, fetchSourceFile, fetchSourceTree, docsRootPrefix } from "./sources";
-import { dedupe, readCache, writeCache } from "./cache";
-import { ttlSeconds } from "./env";
+import { fetchFirstSourceFile, readSourceFile, listSourceFiles, docsRootPrefix } from "./sources";
+import { memo } from "./memo";
 import { isRecord, readVitePressConfig, themeConfigField } from "./vitepress-config";
 
 // Bundles the URL-side prefix and source-side prefix for a locale into one
@@ -64,54 +62,46 @@ interface NativeSidebar {
   locales?: Record<string, { groups: SidebarGroup[] }>;
 }
 
-export async function loadSidebar(
-  env: Env,
+export function loadSidebar(
   repo: RepoConfig,
-  branch: string,
   locale: LocaleConfig,
   defaultLocaleCode: string,
-  ctx?: ExecutionContext,
   site?: VellumConfig,
 ): Promise<SidebarGroup[]> {
   const resolved = resolveLocale(locale, defaultLocaleCode, repo);
-  const key = `sidebar:${repo.slug}@${branch}:${resolved.code}`;
-  const cached = await readCache<SidebarGroup[]>(env, key);
-  if (cached) return cached;
+  return memo(`sidebar:${repo.slug}:${resolved.code}`, () =>
+    buildSidebar(repo, locale, resolved, defaultLocaleCode, site),
+  );
+}
 
+async function buildSidebar(
+  repo: RepoConfig,
+  locale: LocaleConfig,
+  resolved: LocaleResolution,
+  defaultLocaleCode: string,
+  site?: VellumConfig,
+): Promise<SidebarGroup[]> {
   let groups: SidebarGroup[] | null = null;
-  const native = await tryLoadNative(env, repo, branch, ctx);
+  const native = await tryLoadNative(repo);
   if (native) {
     const fromNative = pickNativeLocale(native, resolved.code, defaultLocaleCode);
     if (fromNative) groups = localize(fromNative, repo.slug, resolved);
   }
 
   if (!groups) {
-    const vp = await tryLoadVitePress(env, repo, branch, resolved, ctx);
+    const vp = await tryLoadVitePress(repo, resolved);
     if (vp) groups = localize(vp, repo.slug, resolved);
   }
 
   if (!groups) {
     const locales = site?.site.locales ?? [locale, { code: defaultLocaleCode }];
-    groups = await buildFromTree(env, repo, branch, resolved, locales, defaultLocaleCode, ctx);
+    groups = await buildFromTree(repo, resolved, locales, defaultLocaleCode);
   }
-
-  await writeCache(env, key, groups, ttlSeconds(env, "raw"), ctx);
   return groups;
 }
 
-async function tryLoadNative(
-  env: Env,
-  repo: RepoConfig,
-  branch: string,
-  ctx?: ExecutionContext,
-): Promise<NativeSidebar | null> {
-  const text = await fetchSourceFile(
-    env,
-    repo,
-    branch,
-    `${docsRootPrefix(repo.docsRoot)}vellum.json`,
-    { ctx },
-  );
+async function tryLoadNative(repo: RepoConfig): Promise<NativeSidebar | null> {
+  const text = await readSourceFile(repo, `${docsRootPrefix(repo.docsRoot)}vellum.json`);
   if (!text) return null;
   try {
     return JSON.parse(text) as NativeSidebar;
@@ -122,21 +112,13 @@ async function tryLoadNative(
 
 // The repo's VitePress config, read statically (see vitepress-config.ts).
 // The sidebar, nav and social-link loaders all ask for it during one page
-// render; `dedupe` has them share one fetch and one parse.
-function loadVitePressConfig(
-  env: Env,
-  repo: RepoConfig,
-  branch: string,
-  ctx?: ExecutionContext,
-): Promise<Record<string, unknown> | null> {
-  return dedupe(ctx, `vitepress-config:${repo.slug}@${branch}`, async () => {
+// render; `memo` has them share one read and one parse.
+function loadVitePressConfig(repo: RepoConfig): Promise<Record<string, unknown> | null> {
+  return memo(`vitepress-config:${repo.slug}`, async () => {
     const base = `${docsRootPrefix(repo.docsRoot)}.vitepress/config`;
     const found = await fetchFirstSourceFile(
-      env,
       repo,
-      branch,
       [".mts", ".ts", ".mjs", ".js"].map((ext) => `${base}${ext}`),
-      { ctx },
     );
     return found ? readVitePressConfig(found.text) : null;
   });
@@ -154,13 +136,10 @@ function vitePressLocaleKey(config: Record<string, unknown>, resolved: LocaleRes
 }
 
 async function tryLoadVitePress(
-  env: Env,
   repo: RepoConfig,
-  branch: string,
   resolved: LocaleResolution,
-  ctx?: ExecutionContext,
 ): Promise<SidebarGroup[] | null> {
-  const config = await loadVitePressConfig(env, repo, branch, ctx);
+  const config = await loadVitePressConfig(repo);
   if (!config) return null;
   const groups = toSidebarGroups(
     themeConfigField(config, vitePressLocaleKey(config, resolved), "sidebar"),
@@ -252,22 +231,19 @@ function toSocialLinks(value: unknown): SocialLink[] {
 }
 
 async function buildFromTree(
-  env: Env,
   repo: RepoConfig,
-  branch: string,
   resolved: LocaleResolution,
   locales: Pick<LocaleConfig, "code">[],
   defaultLocaleCode: string,
-  ctx?: ExecutionContext,
 ): Promise<SidebarGroup[]> {
-  const tree = await fetchSourceTree(env, repo, branch, { ctx });
+  const tree = await listSourceFiles(repo);
   const prefix = docsRootPrefix(repo.docsRoot);
 
   // This locale's pages, as paths inside its source directory, without `.md`.
   const files = tree
-    .filter((e) => e.type === "blob" && e.path.startsWith(prefix) && e.path.endsWith(".md"))
-    .flatMap((e) => {
-      const rel = e.path.slice(prefix.length).replace(/\.md$/, "");
+    .filter((path) => path.startsWith(prefix) && path.endsWith(".md"))
+    .flatMap((path) => {
+      const rel = path.slice(prefix.length).replace(/\.md$/, "");
       const owner = sourceLocale(rel, locales, defaultLocaleCode, repo);
       return owner?.code === resolved.code ? [owner.path] : [];
     });
@@ -316,7 +292,7 @@ async function buildFromTree(
   }
 
   // Sort items inside each group so the order is deterministic regardless of
-  // the GitHub tree response order; put "Overview"/index landing pages first.
+  // the file listing order; put "Overview"/index landing pages first.
   function sortItems(items: SidebarItem[]) {
     items.sort((a, b) => {
       const aIsOverview = a.text === "Overview" || a.link?.endsWith(`/${repo.slug}`);
@@ -419,29 +395,23 @@ function localize(
 
 // Per-repo top navigation. Reads from either our native vellum.json (nav field)
 // or VitePress themeConfig.nav. Localized so links land inside this repo + locale.
-export async function loadRepoNav(
-  env: Env,
+export function loadRepoNav(
   repo: RepoConfig,
-  branch: string,
   locale: LocaleConfig,
   defaultLocaleCode: string,
-  ctx?: ExecutionContext,
 ): Promise<NavItem[] | null> {
   const resolved = resolveLocale(locale, defaultLocaleCode, repo);
-  const key = `nav:${repo.slug}@${branch}:${resolved.code}`;
-  const cached = await readCache<NavItem[] | { empty: true }>(env, key);
-  if (cached) return Array.isArray(cached) ? cached : null;
+  return memo(`nav:${repo.slug}:${resolved.code}`, () => buildRepoNav(repo, resolved));
+}
 
+async function buildRepoNav(
+  repo: RepoConfig,
+  resolved: LocaleResolution,
+): Promise<NavItem[] | null> {
   let nav: NavItem[] | null = null;
 
   // 1. vellum.json native format.
-  const nativeText = await fetchSourceFile(
-    env,
-    repo,
-    branch,
-    `${docsRootPrefix(repo.docsRoot)}vellum.json`,
-    { ctx },
-  );
+  const nativeText = await readSourceFile(repo, `${docsRootPrefix(repo.docsRoot)}vellum.json`);
   if (nativeText) {
     try {
       const data = JSON.parse(nativeText) as { nav?: NavItem[] };
@@ -455,19 +425,13 @@ export async function loadRepoNav(
 
   if (!nav) {
     // 2. VitePress themeConfig.nav.
-    const config = await loadVitePressConfig(env, repo, branch, ctx);
+    const config = await loadVitePressConfig(repo);
     const items = config
       ? toNavItems(themeConfigField(config, vitePressLocaleKey(config, resolved), "nav"))
       : [];
     if (items.length) nav = localizeNav(items, repo.slug, resolved);
   }
 
-  if (!nav) {
-    await writeCache(env, key, { empty: true }, ttlSeconds(env, "raw"), ctx);
-    return null;
-  }
-
-  await writeCache(env, key, nav, ttlSeconds(env, "raw"), ctx);
   return nav;
 }
 
@@ -475,33 +439,19 @@ export async function loadRepoNav(
 // themeConfig.socialLinks → RepoConfig.socialLinks. Returns null when nothing
 // repo-specific is configured; the NavBar then falls back to site-level.
 //
-// Cached just like loadRepoNav. The cache key intentionally omits the locale
-// because socialLinks are universally site/repo-wide — not localised. Sharing
-// one cache entry across locales avoids re-parsing the VitePress config per
-// language switch.
-export async function loadRepoSocialLinks(
-  env: Env,
-  repo: RepoConfig,
-  branch: string,
-  ctx?: ExecutionContext,
-): Promise<SocialLink[] | null> {
-  const key = `social:${repo.slug}@${branch}`;
-  const cached = await readCache<SocialLink[] | { empty: true }>(env, key);
-  if (cached) return Array.isArray(cached) ? cached : null;
+// Social links are repo-wide, not localised, so one result serves every
+// locale.
+export function loadRepoSocialLinks(repo: RepoConfig): Promise<SocialLink[] | null> {
+  return memo(`social:${repo.slug}`, () => buildRepoSocialLinks(repo));
+}
 
+async function buildRepoSocialLinks(repo: RepoConfig): Promise<SocialLink[] | null> {
   // 1. vellum.json native.
-  const nativeText = await fetchSourceFile(
-    env,
-    repo,
-    branch,
-    `${docsRootPrefix(repo.docsRoot)}vellum.json`,
-    { ctx },
-  );
+  const nativeText = await readSourceFile(repo, `${docsRootPrefix(repo.docsRoot)}vellum.json`);
   if (nativeText) {
     try {
       const data = JSON.parse(nativeText) as { socialLinks?: SocialLink[] };
       if (Array.isArray(data.socialLinks) && data.socialLinks.length) {
-        await writeCache(env, key, data.socialLinks, ttlSeconds(env, "raw"), ctx);
         return data.socialLinks;
       }
     } catch {
@@ -511,17 +461,12 @@ export async function loadRepoSocialLinks(
 
   // 2. VitePress themeConfig.socialLinks. Social links are the same in every
   //    locale, so the default locale's (or the shared) value is used.
-  const config = await loadVitePressConfig(env, repo, branch, ctx);
+  const config = await loadVitePressConfig(repo);
   const links = config ? toSocialLinks(themeConfigField(config, "root", "socialLinks")) : [];
-  if (links.length) {
-    await writeCache(env, key, links, ttlSeconds(env, "raw"), ctx);
-    return links;
-  }
+  if (links.length) return links;
 
   // 3. RepoConfig.socialLinks from vellum.config.json. Returning null here lets
-  //    the router fall back to repo.socialLinks (which it owns directly — no
-  //    need to round-trip through the cache).
-  await writeCache(env, key, { empty: true }, ttlSeconds(env, "raw"), ctx);
+  //    the page builder fall back to repo.socialLinks.
   return null;
 }
 

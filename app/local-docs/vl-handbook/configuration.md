@@ -5,7 +5,7 @@ description: "Every field in vellum.config.json explained, with examples."
 
 # Configuration reference
 
-Vellum reads one file at startup: `app/vellum.config.json`.
+Vellum's build reads one file: `app/vellum.config.json`.
 Its shape is fully described by a JSON Schema at
 `src/shared/site-schema.json` — modern editors will autocomplete and validate
 the config when you keep the `"$schema": "./src/shared/site-schema.json"` line
@@ -40,7 +40,7 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | Field           | Required | Notes                                                                              |
 | --------------- | :------: | ---------------------------------------------------------------------------------- |
 | `title`         |    ✓     | Brand name in the NavBar and `<title>` suffix.                                     |
-| `homepageRepo`  |    ✓     | Slug of the repo whose root is the landing page. `/` redirects here.               |
+| `homepageRepo`  |    ✓     | Slug of the repo whose root is the landing page, served at `/{prefix}`.            |
 | `defaultLocale` |    ✓     | Locale code used when the URL has no locale prefix.                                |
 | `locales`       |    ✓     | `[ { code, label, prefix } ]`. Empty `prefix` means the locale lives at repo root. |
 | `tagline`       |          | Shown on landing pages with the `home` layout.                                     |
@@ -48,6 +48,11 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `favicon`       |          | URL of the favicon.                                                                |
 | `themeColor`    |          | Accent hex (buttons, links, focus) and `<meta name="theme-color">`, e.g. `#0078d4`. |
 | `footer`        |          | Footer text rendered below every page.                                             |
+| `url`           |          | Public origin, e.g. `https://docs.example.com`. See below.                         |
+
+`url` makes the canonical, Open Graph and hreflang URLs in each page's head
+absolute, and is what the sitemap needs. Without it those URLs stay
+root-relative, `og:url` is left out, and the build writes no `sitemap.xml`.
 
 ::: tip One homepage, many sources
 Set `homepageRepo` to a local-source repo with `layout: ms-learn` if you want
@@ -70,12 +75,12 @@ sources for your handbook and landing page.
 | `source`          |          | `"github"` (default) or `"local"`. See [Sources](./sources).                           |
 | `owner`           |    ✓¹    | GitHub owner. Required when `source: "github"`.                                        |
 | `repo`            |    ✓¹    | GitHub repo. Required when `source: "github"`.                                         |
-| `branch`          |    ✓¹    | Default branch. Required when `source: "github"`. Used as the cache-key suffix.        |
+| `branch`          |    ✓¹    | Branch the build clones. Required when `source: "github"`.                             |
 | `localPath`       |          | Override for `local-docs/{slug}`. Local sources only.                                  |
 | `description`     |          | Tagline shown on the repo home page and SSR meta description fallback.                 |
 | `logo`            |          | Per-repo logo URL.                                                                     |
 | `editLinkPattern` |          | Template for "Edit this page" — `:path` is replaced with the docs-root-relative path.  |
-| `versions`        |          | Optional version picker. `[ { label, branch, default? } ]`.                            |
+| `versions`        |          | Optional. `[ { label, branch, default? } ]`; the build renders the default one.        |
 | `localeDirs`      |          | Source directory per locale code. See [i18n](./i18n#per-repo-content-layout).          |
 | `landingPage`     |          | Path the repo's root URL redirects to, e.g. `"v0.4"` for docs versioned by directory.  |
 | `hideInBrand`     |          | Hides the repo's displayName crumb after the site title. Useful for the homepage repo. |
@@ -121,28 +126,16 @@ The site-level top nav. Per-repo navs (from `vellum.json#nav` or VitePress
 
 ## Environment variables
 
-Set these in `wrangler.jsonc#vars` (or `wrangler secret put` for secrets):
+The build reads these from its environment:
 
-| Var                        |      Default       | Purpose                                                                                                                                |
-| -------------------------- | :----------------: | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `VELLUM_GITHUB_TOKEN`      |       empty        | Bearer token for `raw.githubusercontent.com` and the GitHub API. Required for private repos and helps with rate limits on public ones. |
-| `VELLUM_WEBHOOK_SECRET`    |       empty        | Shared secret for `/api/webhook` HMAC signing. Required for webhook cache busting.                                                     |
-| `VELLUM_CACHE_TTL_SECONDS` |       `300`        | TTL for raw markdown / tree / sidebar entries.                                                                                         |
-| `VELLUM_HTML_TTL_SECONDS`  |        `60`        | How long a cached page stays fresh.                                                                                                    |
-| `VELLUM_STALE_TTL_SECONDS` |      `86400`       | How long a page past its fresh window is still served while it rebuilds in the background. `0` rebuilds on the request.                |
-| `VELLUM_KROKI_URL`         | `https://kroki.io` | Override the Kroki endpoint for mermaid SSR. Self-hosters can point at their own instance.                                             |
+| Var                   |      Default       | Purpose                                                                                     |
+| --------------------- | :----------------: | ------------------------------------------------------------------------------------------- |
+| `VELLUM_GITHUB_TOKEN` |       empty        | Token for cloning private repos. Public repos don't need it.                                |
+| `VELLUM_KROKI_URL`    | `https://kroki.io` | Override the Kroki endpoint for mermaid rendering. Self-hosters can point at their own one. |
 
-KV is bound separately in `wrangler.jsonc#kv_namespaces`. Without it, the
-worker falls back to the per-edge Cache API alone.
-
-## Bindings
-
-Beyond env vars, the worker has these Cloudflare bindings:
-
-| Binding                  |                Resource                 | Required for                                                                            |
-| ------------------------ | :-------------------------------------: | --------------------------------------------------------------------------------------- |
-| `ASSETS`                 | `[assets]`                              | Static client JS / CSS. Always required.                                                |
-| `VELLUM_CACHE`           | `[[kv_namespaces]]`                     | Cross-region durable cache. Optional — fallback to per-edge Cache API alone.            |
+In GitHub Actions, set `VELLUM_GITHUB_TOKEN` as a repository secret; the
+workflows pass it to the build. The deployed site needs no variables or
+bindings: it's static assets only.
 
 ## Regenerating the schema
 

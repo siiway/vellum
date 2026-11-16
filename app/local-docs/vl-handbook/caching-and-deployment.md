@@ -1,150 +1,75 @@
 ---
-title: Caching & deployment
-description: "Edge cache layers, KV setup, webhooks, and deploying to Cloudflare."
+title: Build & deployment
+description: "How Vellum builds a static site from your docs repos and deploys it to Cloudflare."
 ---
 
-# Caching & deployment
+# Build & deployment
 
-## Cache layers
+Vellum is a static site generator: the build renders every page ahead of
+time, and Cloudflare serves the result as
+[Workers static assets](https://developers.cloudflare.com/workers/static-assets/),
+with no code running per request.
 
-Vellum uses a layered edge cache, all of it routed through
-[`src/worker/cache.ts`](https://github.com/siiway/vellum/blob/main/app/src/worker/cache.ts):
+## The build
 
-1. **L0 — isolate memory.** Per Worker isolate, for at most 30 seconds.
-   Repeat reads in a warm isolate skip even the Cache API.
-2. **L1 — Cache API.** Per-edge, automatic, free. Gets a sub-millisecond
-   hit when warm.
-3. **L2 — KV namespace** (optional). Global, durable, manually invalidatable
-   by key. Used as a fallback when L1 misses.
+Run in `app/`:
 
-A read tries the layers in that order and copies a hit into the faster
-ones. Misses are cached too: a file GitHub answers 404 for is remembered for
-60 seconds, and a repo without an `xrefmap.yml` for 5 minutes, so a page
-render doesn't re-probe every optional file each time.
+| Command                          | What it does                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| `bun run build`                  | `build:client`, then `build:pages`.                                                 |
+| `bun run build:client`           | Vite builds the React client into `dist/client`.                                    |
+| `bun run build:pages`            | Clones or updates every GitHub repo, then renders every page to `dist/site`.        |
+| `bun run build:pages --no-fetch` | The same from the clones already in `.sources/`.                                    |
+| `bun run update`                 | Re-renders only the repos that changed. See [Updating content](./updating-content). |
+| `bun run deploy`                 | `bun run build`, then `wrangler deploy`.                                            |
 
-Without KV bound, the worker still works fine — just with per-edge caches
-only, so a hit in eu-west doesn't speed up subsequent requests in us-east.
+`build:pages` needs the client build: every page links its hashed bundles.
 
-### Page cache
+### What it writes
 
-Pages are served from a cache of their bootstrap payload: the rendered
-markdown, sidebar, nav and the rest of what the page shows. An entry is
-fresh for `VELLUM_HTML_TTL_SECONDS`. After that, for up to
-`VELLUM_STALE_TTL_SECONDS` more, it's still served at once while the worker
-rebuilds it in the background, and the next reader gets the new version.
-Only the first request for a page, or one after both windows have passed,
-waits for a render.
-
-- Client-side navigation (`?_data=1`) reads the same entry as the HTML.
-- Rendered HTML is cached per host and theme and reused while it matches
-  the payload.
-- HTML and JSON responses carry an `ETag`. A browser revalidating an
-  unchanged page gets a bodiless `304`.
-- A deploy that changes the client bundles never serves HTML that links
-  the old ones: the bundle hashes are part of the HTML's cache key.
-
-Set `VELLUM_STALE_TTL_SECONDS` to `0` to rebuild on the request whenever an
-entry is past its fresh window.
-
-### What's cached
-
-| Key prefix                         | What                                                            | TTL                                                                      |
-| ---------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `raw:`                             | Markdown / theme / config files from GitHub, and 404s           | `VELLUM_CACHE_TTL_SECONDS` (default 300s); 60s for a 404                 |
-| `commit:`                          | Last-commit metadata                                            | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `tree:`                            | Full repo file tree (used for sidebar fallback + search corpus) | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `sidebar:`                         | Parsed sidebar per repo+locale                                  | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `nav:` / `social:`                 | Per-repo nav per locale, and per-repo social links              | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `index:`                           | Search index per repo+locale                                    | `VELLUM_CACHE_TTL_SECONDS × 4` (~20 min)                                 |
-| `xrefmap:`                         | Per-repo uid → href map                                         | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `diagram:mermaid:{theme}:{sha256}` | Pre-rendered mermaid SVGs                                       | 7 days (long; cache key encodes the source so invalidation is automatic) |
-| `vue:`                             | Per-repo Vue component registry                                 | `VELLUM_CACHE_TTL_SECONDS`                                               |
-| `page2:`                           | Page payload per repo+locale+page (see [Page cache](#page-cache)) | Fresh for `VELLUM_HTML_TTL_SECONDS` (default 60s), then served stale for up to `VELLUM_STALE_TTL_SECONDS` (default 1 day) |
-| `html5:`                           | Rendered HTML per host+theme, reused while it matches `page2:`  | Same as `page2:`                                                         |
-
-::: tip TTLs are knobs
-The defaults trade a short propagation lag for very high cache hit rates:
-after a publish, a page shows its old version until its fresh window has
-passed and a reader has triggered the rebuild. Crank the TTLs up if you
-publish rarely; cut them down if you publish hot.
-:::
-
-## Binding KV
-
-Out of the box, the worker uses only the Cache API. To enable KV:
-
-```bash
-wrangler kv namespace create VELLUM_CACHE
+```
+dist/site/
+  index.html                       / — picks a locale, then redirects
+  404.html, {prefix}/404.html      the 404 page, per locale
+  {prefix}/index.html              the landing page (homepage repo)
+  {prefix}/{repo}/…/index.html     one per page
+  {prefix}/search/, languages/     search and language pages
+  _vellum/pages/{page}.json        each page's data, for client navigation
+  _vellum/search/{locale}/{repo}.json   search indexes
+  _vellum/vue/{repo}/{Name}.vue    Vue components the pages mount
+  _redirects, _headers             applied by Cloudflare
+  robots.txt, sitemap.xml
+  assets/                          the client bundle
 ```
 
-Paste the returned id into `wrangler.jsonc`:
+Each page's HTML is complete: server-rendered markup, styles, SEO head and
+the data the client hydrates from. Following a link inside the site fetches
+only the next page's JSON from `_vellum/pages/`.
 
-```jsonc
-"kv_namespaces": [
-  { "binding": "VELLUM_CACHE", "id": "<paste-id-here>" }
-],
-```
+Pages are rendered in the light theme. A script in each page's head switches
+to dark before the first paint when the reader picked dark, or their system
+is dark.
 
-Redeploy. The cache layer detects `env.VELLUM_CACHE` and uses it as the
-source of truth on misses.
+The build is deterministic: rebuilding unchanged sources gives the same
+files, apart from diagrams Kroki draws differently each time. `wrangler
+deploy` uploads only files whose content changed.
 
-## Dropping the cache
+### External services
 
-When you need to wipe everything (after a migration, debugging a stale
-entry, etc.):
+| Service | Used for                             | Configurable                           |
+| ------- | ------------------------------------ | -------------------------------------- |
+| GitHub  | Cloning docs repos                   | `VELLUM_GITHUB_TOKEN` (private repos)  |
+| Kroki   | Mermaid diagrams (both light + dark) | `VELLUM_KROKI_URL` env var (self-host) |
 
-```bash
-bun run drop:cache              # production / remote KV
-bun run drop:cache --local      # wrangler dev simulator
-bun run drop:cache --preview    # preview namespace
-```
+Both are only used by the build. If Kroki is unreachable, a diagram ships
+without its SVG, and the reader's browser renders it with mermaid instead.
 
-The script (`scripts/drop-kv-cache.ts`) reads the namespace id from
-`wrangler.jsonc`, lists every key, and bulk-deletes them.
+## Caching
 
-::: warning Cache API is per-edge
-There's no Cloudflare API to globally purge the per-edge Cache API. Old
-entries roll out as they hit their TTL. To force-bust everything, rotate
-the cache key prefix in `src/worker/cache.ts` and redeploy.
-:::
-
-## Webhooks
-
-See **[GitHub webhooks](./webhooks)** for the full setup walkthrough
-(GitHub UI config, HMAC verification, the keys that get invalidated,
-troubleshooting, local testing).
-
-Short version: the `/api/webhook` endpoint accepts GitHub `push` events.
-Configure a webhook on each GitHub-backed repo:
-
-| Field        | Value                                             |
-| ------------ | ------------------------------------------------- |
-| Payload URL  | `https://your-worker.example/api/webhook`         |
-| Content type | `application/json`                                |
-| Secret       | Anything; set `VELLUM_WEBHOOK_SECRET` to the same |
-| Events       | Just the `push` event                             |
-
-On a push, the worker:
-
-1. Verifies the `X-Hub-Signature-256` HMAC.
-2. Finds the matching repo in `vellum.config.json`.
-3. Walks the payload's `commits[]` for `added` / `modified` / `removed` paths.
-4. Invalidates the `raw:`, `commit:`, `html:` (per-locale), `sidebar:`, and
-   `tree:` cache entries that touch those paths.
-
-Local-source repos are skipped (they don't have a GitHub remote to push from).
-
-## External services
-
-| Service | Used for                                 | Configurable                           |
-| ------- | ---------------------------------------- | -------------------------------------- |
-| GitHub  | Fetching raw markdown + last-commit info | `VELLUM_GITHUB_TOKEN` env var          |
-| Kroki   | Mermaid SSR (both light + dark)          | `VELLUM_KROKI_URL` env var (self-host) |
-
-Kroki is the only non-Cloudflare runtime dependency. If it's unreachable,
-mermaid diagrams fall back to client-side rendering (the worker SSR just
-returns no SVG; the client lazy-loads the mermaid runtime and renders
-locally).
+`_headers` makes the hashed bundles under `/assets/` immutable for a year.
+Everything else is served with Cloudflare's default for static assets: the
+browser revalidates and gets a `304` while the file is unchanged. A deploy
+is visible at once; there is no cache to purge.
 
 ## Deploying
 
@@ -152,25 +77,24 @@ locally).
 bun run deploy
 ```
 
-This runs `vite build` first (so the client bundle and local-docs assets
-are on disk), then `wrangler deploy`. The deploy uploads:
+To deploy somewhere other than production, use the `preview` environment in
+`wrangler.jsonc` (`workers.dev`, no custom domain):
 
-- The worker bundle.
-- Every file under `dist/client/` as static assets (including
-  `local-docs/...` and the FluentUI / mermaid / katex chunks).
+```bash
+bun run build && bunx wrangler deploy --env preview
+```
 
-Worker bundle size with the full stack (Shiki, MathJax, Vue3 SFC loader,
-the OPS parsers) is around 25 MB — within Cloudflare's free-plan limit.
-The static assets are served by Cloudflare's edge directly.
+### GitHub Actions
 
-## Observability
+Two workflows deploy production:
 
-`wrangler.jsonc#observability.enabled` is set to `true`, so the worker's
-`console.log` / `console.error` are visible in the Cloudflare dashboard
-under your worker → Logs → Tail. Look for `[vellum]` and `[vellum:ssr]`
-prefixes for worker-level issues.
+| Workflow           | Runs on                                    | Does                                                        |
+| ------------------ | ------------------------------------------ | ----------------------------------------------------------- |
+| **Deploy**         | Push to `main`, or a manual run (redeploy) | Checks, full build, deploy.                                 |
+| **Update content** | Hourly, `repository_dispatch`, manual run  | Re-renders the docs repos that changed; deploys if any did. |
 
-For SSR errors specifically: React swallows render errors inside Suspense
-boundaries with a `$!` HTML marker. If you see a hydration `#419` error
-in the browser, check the worker logs for `[vellum:ssr]` entries — they'll
-show the underlying cause.
+Both need `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, plus Workers
+Routes:Edit and Zone:Read for custom domains), and `VELLUM_GITHUB_TOKEN`
+for private docs repos. They share a concurrency group, so they never
+overlap. See [Updating content](./updating-content) for how the second one
+works.
