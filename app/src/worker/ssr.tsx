@@ -14,22 +14,12 @@ import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import type { Env } from "./env";
 import { getClientAssets } from "./assets";
-import { registerUiStrings } from "../shared/i18n";
 
 export async function renderPage(
   env: Env,
   payload: BootstrapPayload,
   request: Request,
 ): Promise<string> {
-  // Register the translated UI dictionary for this request's locale BEFORE
-  // running renderToString so the server-side `t()` resolves to the
-  // translated string. Module-level state is fine here: the dictionaries
-  // are keyed by locale, so concurrent requests for different locales
-  // don't conflict, and same-locale requests just rewrite the dict with
-  // the same content (translate.ts caches via D1).
-  if (payload.uiStrings && payload.route.localeCode) {
-    registerUiStrings(payload.route.localeCode, payload.uiStrings);
-  }
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -59,14 +49,6 @@ export async function renderPage(
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");
-
-  // Cloudflare Turnstile loader. Only included when the AI Summary feature is
-  // configured WITH a sitekey — the script costs ~30KB and is useless without
-  // one. `render=explicit` keeps it inert until AISummary.tsx calls render().
-  const turnstileSiteKey = payload.config.site.aiSummary?.turnstileSiteKey;
-  const turnstileTag = turnstileSiteKey
-    ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" data-vellum-turnstile="1" async defer></script>`
-    : "";
 
   const { site } = payload.config;
   const themeColor = site.themeColor ?? "#0078d4";
@@ -206,7 +188,6 @@ ${seoHead}
   <style id="vellum-theme-tokens">${themeTokenCss}</style>
   ${cssLinks}
   ${jsTags}
-  ${turnstileTag}
 </head>
 <body>
   <div id="vellum-root">${html}</div>

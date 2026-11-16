@@ -7,7 +7,6 @@ import { ArrowRight20Regular, Open20Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
-import { MachineTranslatedBanner } from "./MachineTranslatedBanner";
 
 type Theme = "brand" | "alt" | "sponsor";
 interface HeroAction {
@@ -270,8 +269,6 @@ export function HomeLayout() {
 
   return (
     <main className={styles.root}>
-      <MachineTranslatedBanner />
-
       <section className={styles.hero}>
         <div className={styles.heroTextCol}>
           {(hero.name || hero.text) && (

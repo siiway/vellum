@@ -1,5 +1,5 @@
-// Cache key for a page's payload. Its own module so the translation job can
-// drop a page's entry without importing the page builder, which imports it.
+// Cache key for a page's payload. Its own module so the webhook can drop a
+// page's entry without pulling in the page builder.
 
 import type { RouteContext } from "../shared/types";
 
@@ -13,5 +13,5 @@ export type PageKeyRoute = Pick<RouteContext, "repoSlug" | "localeCode" | "pageP
 // would give a page a second one (unprefixed paths, the homepage repo's slug
 // forms). Bump the version when the payload's shape changes.
 export function pageCacheKey(route: PageKeyRoute): string {
-  return `page1:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}`;
+  return `page2:${route.repoSlug}@${route.version.branch}:${route.localeCode}:${route.pagePath}`;
 }

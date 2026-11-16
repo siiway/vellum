@@ -1,6 +1,6 @@
 // Docs page assembly: finds the page's source file, renders it, and gathers
-// the chrome around it (sidebar, nav, translated config, last commit) into
-// one bootstrap payload.
+// the chrome around it (sidebar, nav, last commit) into one bootstrap
+// payload.
 //
 // The source file is the only thing the rest waits on. The chrome loaders
 // start together with the source fetch, the last-commit lookup starts as
@@ -14,7 +14,6 @@ import type { Env } from "./env";
 import { staleSeconds, ttlSeconds } from "./env";
 import type { BootstrapPayload, RepoConfig, RouteContext, VellumConfig } from "../shared/types";
 import { localeSourcePrefix } from "../shared/types";
-import { baseUiStrings } from "../shared/i18n";
 import type { Block } from "../shared/markdown";
 import { swr, type SwrResult } from "./cache";
 import {
@@ -31,14 +30,6 @@ import type { LinkContext } from "./markdown/links";
 import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
-import {
-  isMtTarget,
-  listTranslatedLocalesForPage,
-  readCachedTranslation,
-  translateSiteConfig,
-  translateUiStrings,
-} from "./translate";
-import { triggerSmartTranslation } from "./translate-repo";
 import { pageCacheKey } from "./page-key";
 
 export type PageBuild =
@@ -89,7 +80,6 @@ export async function buildPagePayload(
   const localeSrcPath = localeConfig
     ? localeSourcePrefix(localeConfig, defaultLocale, route.repo)
     : "";
-  const defaultSrcPath = localeSourcePrefix({ code: defaultLocale }, defaultLocale, route.repo);
   const candidates = pageCandidates(route.repo, localeSrcPath, route.pagePath);
 
   // Nothing below needs the page source, so it all starts now.
@@ -97,40 +87,19 @@ export async function buildPagePayload(
   // OPS xrefmap: best-effort. A missing or malformed map means xref tokens
   // render as monospace fallback text.
   const xrefMapP = loadXrefMap(env, route.repo, branch, ctx).catch(() => null);
-  // Translated site config strings (tagline, repo displayName/description,
-  // nav text) and UI dictionary for machine-translated locales, so the
-  // NavBar, brand crumb, home-page repo cards and client `t()` render in the
-  // reader's locale. site.title and site.footer are intentionally not
-  // translated.
   const chromeP = Promise.all([
     loadSidebar(env, route.repo, branch, chromeLocale, defaultLocale, ctx, site),
-    loadRepoNav(env, route.repo, branch, chromeLocale, defaultLocale, ctx, site),
+    loadRepoNav(env, route.repo, branch, chromeLocale, defaultLocale, ctx),
     loadVueComponents(env, route.repo, branch, ctx),
     loadRepoSocialLinks(env, route.repo, branch, ctx),
-    translateSiteConfig(env, ctx, site, route.localeCode),
-    translateUiStrings(env, ctx, site, route.localeCode, baseUiStrings as Record<string, string>),
-    resolveTranslatedLocales(env, site, route),
   ]);
   // A 404 returns without awaiting it.
   chromeP.catch(() => {});
 
-  const ownP = fetchFirstSourceFile(env, route.repo, branch, candidates, { ctx });
-  // Machine-translated locales usually have no file of their own and fall
-  // back to the default locale's, so fetch that alongside instead of after.
-  const fallbackP = isMtTarget(site, route.localeCode)
-    ? fetchFirstSourceFile(
-        env,
-        route.repo,
-        branch,
-        pageCandidates(route.repo, defaultSrcPath, route.pagePath),
-        { ctx },
-      )
-    : null;
-  fallbackP?.catch(() => {});
-
-  const resolved = await resolveSource(env, ctx, site, route, ownP, fallbackP);
-  if (!resolved) return { found: false, candidates };
-  const { source, matchedPath, machineTranslated, translationAttempted } = resolved;
+  const own = await fetchFirstSourceFile(env, route.repo, branch, candidates, { ctx });
+  if (!own) return { found: false, candidates };
+  const source = own.text;
+  const matchedPath = own.path;
 
   // Last updated. Overlaps the markdown render; a failure only drops the
   // "last updated" line.
@@ -156,9 +125,8 @@ export async function buildPagePayload(
     repoUrlBase,
     localePrefix: localeUrlPath,
     localeCode: route.localeCode,
-    // The directory the page was read from; the MT fallback reads the
-    // default locale's.
-    localeSrcDir: translationAttempted ? defaultSrcPath : localeSrcPath,
+    // The directory the page was read from.
+    localeSrcDir: localeSrcPath,
     // `drivers/index.md` served at `/repo/drivers` is a directory page too.
     pageIsIndex: route.pagePath === "index" || matchedPath.endsWith("/index.md"),
     resolveXref: (slug, rest) => {
@@ -194,18 +162,9 @@ export async function buildPagePayload(
   // doesn't have to know about the repo URL layout.
   rewriteFrontmatterLinks(rendered.frontmatter, linkContext);
 
-  const [
-    [
-      sidebar,
-      repoNav,
-      repoComponents,
-      repoSocialFromSource,
-      localizedSite,
-      uiStrings,
-      translatedLocales,
-    ],
-    lastUpdated,
-  ] = await Promise.all([chromeP, lastUpdatedP]);
+  const [[sidebar, repoNav, repoComponents, repoSocialFromSource], lastUpdated] = await Promise.all(
+    [chromeP, lastUpdatedP],
+  );
 
   // Social-link resolution: prefer what we extracted from the repo's own
   // vellum.json / VitePress config; fall back to the per-repo config in
@@ -226,13 +185,10 @@ export async function buildPagePayload(
     heroObj && typeof heroObj === "object"
       ? ((heroObj as Record<string, unknown>).name as string | undefined)
       : undefined;
-  // For the index page, fall back to the translated repo displayName so the
-  // `<title>` and hero match the rest of the localized chrome.
-  const localizedRepo = localizedSite.repos.find((r) => r.slug === route.repoSlug) ?? route.repo;
   const finalTitle =
     rendered.title ||
     heroName ||
-    (route.pagePath === "index" ? localizedRepo.displayName : titleFromPath(route.pagePath));
+    (route.pagePath === "index" ? route.repo.displayName : titleFromPath(route.pagePath));
 
   // Description: frontmatter.description > frontmatter.hero.tagline > repo.description
   const heroTagline =
@@ -242,16 +198,15 @@ export async function buildPagePayload(
   const finalDescription =
     rendered.description ||
     heroTagline ||
-    (route.pagePath === "index" ? localizedRepo.description : undefined);
+    (route.pagePath === "index" ? route.repo.description : undefined);
 
   return {
     found: true,
     payload: {
-      config: localizedSite,
+      config: site,
       route,
       sidebar,
       repoNav,
-      uiStrings,
       repoSocialLinks,
       repoComponents,
       // Set per request by the router.
@@ -267,86 +222,10 @@ export async function buildPagePayload(
           lastUpdated,
           prev,
           next,
-          machineTranslated,
-          translationAttempted,
-          translatedLocales,
         },
       },
     },
   };
-}
-
-interface ResolvedSource {
-  source: string;
-  matchedPath: string;
-  machineTranslated: boolean;
-  translationAttempted: boolean;
-}
-
-// The page's own file when it exists. Otherwise, for machine-translated
-// locales, the default locale's file: the D1 translation when one is
-// cached, else the untranslated source while a background translation
-// fills the cache for the next visit. The banner shows "Translating, you
-// can view this page in …" meanwhile.
-async function resolveSource(
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-  route: RouteContext,
-  ownP: Promise<{ path: string; text: string } | null>,
-  fallbackP: Promise<{ path: string; text: string } | null> | null,
-): Promise<ResolvedSource | null> {
-  const own = await ownP;
-  if (own) {
-    return {
-      source: own.text,
-      matchedPath: own.path,
-      machineTranslated: false,
-      translationAttempted: false,
-    };
-  }
-  const fallback = fallbackP ? await fallbackP : null;
-  if (!fallback) return null;
-
-  const pageKey = `${route.repoSlug}@${route.version.branch}:${route.pagePath}`;
-  const translated = await readCachedTranslation(env, "page", pageKey, route.localeCode);
-  if (!translated) ctx.waitUntil(triggerSmartTranslation(env, ctx, site, route, fallback.text));
-  return {
-    source: translated ?? fallback.text,
-    matchedPath: fallback.path,
-    machineTranslated: !!translated,
-    translationAttempted: true,
-  };
-}
-
-// Build the list of locales that can resolve this page right now:
-//   - The default locale (always — that's where the source lives).
-//   - Every hand-curated non-default locale declared in `site.locales`.
-//     We assume the author has shipped the page; if they didn't, the link
-//     simply 404s — same outcome as the picker without this filter.
-//   - Every machine-translated locale that has a cached row in D1 for this
-//     specific page key. This skips MT locales that have never been
-//     visited (and thus would trigger a fresh model call instead of
-//     resolving instantly).
-//
-// Used to populate `PageMeta.translatedLocales`, consumed by the
-// MachineTranslatedBanner so its inline "view this page in" list only
-// advertises locales the reader can actually navigate to.
-export async function resolveTranslatedLocales(
-  env: Env,
-  site: VellumConfig,
-  route: { repoSlug: string; version: { branch: string }; pagePath: string },
-): Promise<string[]> {
-  const handCurated = site.site.locales.filter((l) => !l.machineTranslated).map((l) => l.code);
-  const cached = await listTranslatedLocalesForPage(
-    env,
-    route.repoSlug,
-    route.version.branch,
-    route.pagePath,
-  );
-  // De-dupe — the default locale is in handCurated; cached entries don't
-  // include it since the source is the source, not a translation row.
-  return [...new Set([...handCurated, ...cached])];
 }
 
 function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {

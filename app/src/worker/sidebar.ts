@@ -21,7 +21,6 @@ import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchFirstSourceFile, fetchSourceFile, fetchSourceTree, docsRootPrefix } from "./sources";
 import { dedupe, readCache, writeCache } from "./cache";
 import { ttlSeconds } from "./env";
-import { translateBundle } from "./translate";
 import { isRecord, readVitePressConfig, themeConfigField } from "./vitepress-config";
 
 // Bundles the URL-side prefix and source-side prefix for a locale into one
@@ -47,18 +46,6 @@ function resolveLocale(
     srcPrefix: localeSourcePrefix(locale, defaultLocaleCode, repo),
     isDefault: locale.code === defaultLocaleCode,
   };
-}
-
-// Machine-translated locales have no tree of their own: they read the
-// default locale's files and config, and keep their own URL prefix.
-function sourceLocaleResolution(
-  locale: LocaleConfig,
-  defaultLocaleCode: string,
-  repo: RepoConfig,
-): LocaleResolution {
-  return locale.machineTranslated
-    ? resolveLocale({ ...locale, code: defaultLocaleCode }, defaultLocaleCode, repo)
-    : resolveLocale(locale, defaultLocaleCode, repo);
 }
 
 // Native `vellum.json` supports two shapes:
@@ -91,96 +78,25 @@ export async function loadSidebar(
   const cached = await readCache<SidebarGroup[]>(env, key);
   if (cached) return cached;
 
-  // For machine-translated locales, the repo doesn't ship a localized tree
-  // for them. Load using the default-locale source layout, then translate
-  // the labels in one batch below. (Locales declared in site.locales but
-  // also listed in translate.targets are treated as author-curated and use
-  // their own srcPrefix — author content wins.)
-  const sourceResolved = sourceLocaleResolution(locale, defaultLocaleCode, repo);
-
   let groups: SidebarGroup[] | null = null;
   const native = await tryLoadNative(env, repo, branch, ctx);
   if (native) {
     const fromNative = pickNativeLocale(native, resolved.code, defaultLocaleCode);
-    if (fromNative) groups = localize(fromNative, repo.slug, resolved, sourceResolved);
+    if (fromNative) groups = localize(fromNative, repo.slug, resolved);
   }
 
   if (!groups) {
-    const vp = await tryLoadVitePress(env, repo, branch, sourceResolved, ctx);
-    if (vp) groups = localize(vp, repo.slug, resolved, sourceResolved);
+    const vp = await tryLoadVitePress(env, repo, branch, resolved, ctx);
+    if (vp) groups = localize(vp, repo.slug, resolved);
   }
 
   if (!groups) {
     const locales = site?.site.locales ?? [locale, { code: defaultLocaleCode }];
-    groups = await buildFromTree(
-      env,
-      repo,
-      branch,
-      sourceResolved,
-      locales,
-      defaultLocaleCode,
-      ctx,
-      resolved,
-    );
-  }
-
-  // Machine-translation pass. Only fires when the locale was synthesized
-  // from site.translate.targets (machineTranslated:true) — author-declared
-  // locales keep their hand-curated labels.
-  if (site && locale.machineTranslated && ctx) {
-    groups = await translateSidebarGroups(env, ctx, site, repo, branch, locale.code, groups);
+    groups = await buildFromTree(env, repo, branch, resolved, locales, defaultLocaleCode, ctx);
   }
 
   await writeCache(env, key, groups, ttlSeconds(env, "raw"), ctx);
   return groups;
-}
-
-// Walk the sidebar tree, collect every `.text` field with a stable structural
-// path key, hand them to the translator in one batch, then walk again to
-// swap the translated text back in. Stable keys mean adding a single new
-// entry to a sidebar doesn't invalidate translations for unchanged items.
-async function translateSidebarGroups(
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-  repo: RepoConfig,
-  branch: string,
-  localeCode: string,
-  groups: SidebarGroup[],
-): Promise<SidebarGroup[]> {
-  const entries: Record<string, string> = {};
-  function collectItem(item: SidebarItem, path: string) {
-    if (item.text) entries[`${path}.t`] = item.text;
-    item.items?.forEach((child, i) => collectItem(child, `${path}.${i}`));
-  }
-  groups.forEach((g, gi) => {
-    if (g.text) entries[`g${gi}.t`] = g.text;
-    g.items?.forEach((item, i) => collectItem(item, `g${gi}.${i}`));
-  });
-  if (!Object.keys(entries).length) return groups;
-
-  const translated = await translateBundle({
-    env,
-    ctx,
-    site,
-    kind: "sidebar",
-    key: `${repo.slug}@${branch}`,
-    locale: localeCode,
-    entries,
-  });
-
-  function rewriteItem(item: SidebarItem, path: string): SidebarItem {
-    return {
-      ...item,
-      text: translated[`${path}.t`] ?? item.text,
-      items: item.items?.map((child, i) => rewriteItem(child, `${path}.${i}`)),
-    };
-  }
-  return groups.map((g, gi) => ({
-    ...g,
-    text: translated[`g${gi}.t`] ?? g.text,
-    items: g.items?.map((item, i) => rewriteItem(item, `g${gi}.${i}`)) ?? [],
-  }));
 }
 
 async function tryLoadNative(
@@ -241,13 +157,13 @@ async function tryLoadVitePress(
   env: Env,
   repo: RepoConfig,
   branch: string,
-  sourceResolved: LocaleResolution,
+  resolved: LocaleResolution,
   ctx?: ExecutionContext,
 ): Promise<SidebarGroup[] | null> {
   const config = await loadVitePressConfig(env, repo, branch, ctx);
   if (!config) return null;
   const groups = toSidebarGroups(
-    themeConfigField(config, vitePressLocaleKey(config, sourceResolved), "sidebar"),
+    themeConfigField(config, vitePressLocaleKey(config, resolved), "sidebar"),
   );
   return groups.length ? groups : null;
 }
@@ -339,19 +255,13 @@ async function buildFromTree(
   env: Env,
   repo: RepoConfig,
   branch: string,
-  sourceResolved: LocaleResolution,
+  resolved: LocaleResolution,
   locales: Pick<LocaleConfig, "code">[],
   defaultLocaleCode: string,
   ctx?: ExecutionContext,
-  urlResolved?: LocaleResolution,
 ): Promise<SidebarGroup[]> {
   const tree = await fetchSourceTree(env, repo, branch, { ctx });
   const prefix = docsRootPrefix(repo.docsRoot);
-  // Source-side locale — whose files to list. For machine-translated
-  // locales it is the default locale so the tree walk finds the actual
-  // files; `urlResolved` carries the target locale's URL prefix for link
-  // construction.
-  const resolved = urlResolved ?? sourceResolved;
 
   // This locale's pages, as paths inside its source directory, without `.md`.
   const files = tree
@@ -359,7 +269,7 @@ async function buildFromTree(
     .flatMap((e) => {
       const rel = e.path.slice(prefix.length).replace(/\.md$/, "");
       const owner = sourceLocale(rel, locales, defaultLocaleCode, repo);
-      return owner?.code === sourceResolved.code ? [owner.path] : [];
+      return owner?.code === resolved.code ? [owner.path] : [];
     });
 
   // Build a directory-aware tree. Files at the docs root land in the "root"
@@ -466,7 +376,6 @@ function localize(
   groups: SidebarGroup[],
   repoSlug: string,
   resolved: LocaleResolution,
-  sourceResolved: LocaleResolution,
 ): SidebarGroup[] {
   // URL-side prefix (always — even for the default locale, now that it
   // carries its own URL prefix). Locale-first canonical: `/{urlPrefix}/{repoSlug}`.
@@ -475,9 +384,8 @@ function localize(
   // Authored configs sometimes write paths prefixed with the locale's
   // *source* directory (the VitePress convention — `/zh/getting-started`
   // inside the zh sidebar). Strip those before prepending our canonical
-  // base so we don't double the segment. Machine-translated locales use
-  // the default locale's config, so its directory is the one to strip.
-  const srcPrefix = sourceResolved.srcPrefix;
+  // base so we don't double the segment.
+  const srcPrefix = resolved.srcPrefix;
 
   function rewrite(href: string): string {
     if (/^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("#"))
@@ -518,16 +426,11 @@ export async function loadRepoNav(
   locale: LocaleConfig,
   defaultLocaleCode: string,
   ctx?: ExecutionContext,
-  site?: VellumConfig,
 ): Promise<NavItem[] | null> {
   const resolved = resolveLocale(locale, defaultLocaleCode, repo);
   const key = `nav:${repo.slug}@${branch}:${resolved.code}`;
   const cached = await readCache<NavItem[] | { empty: true }>(env, key);
   if (cached) return Array.isArray(cached) ? cached : null;
-
-  // Machine-translated locales pull from the default-locale config (no
-  // localized nav exists in the repo) and then translate the labels below.
-  const sourceResolved = sourceLocaleResolution(locale, defaultLocaleCode, repo);
 
   let nav: NavItem[] | null = null;
 
@@ -543,7 +446,7 @@ export async function loadRepoNav(
     try {
       const data = JSON.parse(nativeText) as { nav?: NavItem[] };
       if (Array.isArray(data.nav) && data.nav.length) {
-        nav = localizeNav(data.nav, repo.slug, resolved, sourceResolved);
+        nav = localizeNav(data.nav, repo.slug, resolved);
       }
     } catch {
       // Fall through to VitePress.
@@ -554,9 +457,9 @@ export async function loadRepoNav(
     // 2. VitePress themeConfig.nav.
     const config = await loadVitePressConfig(env, repo, branch, ctx);
     const items = config
-      ? toNavItems(themeConfigField(config, vitePressLocaleKey(config, sourceResolved), "nav"))
+      ? toNavItems(themeConfigField(config, vitePressLocaleKey(config, resolved), "nav"))
       : [];
-    if (items.length) nav = localizeNav(items, repo.slug, resolved, sourceResolved);
+    if (items.length) nav = localizeNav(items, repo.slug, resolved);
   }
 
   if (!nav) {
@@ -564,51 +467,8 @@ export async function loadRepoNav(
     return null;
   }
 
-  // Translate labels for machine-translated locales. Hand-curated locales
-  // keep their author-supplied text even when listed in translate.targets.
-  if (site && locale.machineTranslated && ctx) {
-    nav = await translateNavItems(env, ctx, site, repo, branch, locale.code, nav);
-  }
-
   await writeCache(env, key, nav, ttlSeconds(env, "raw"), ctx);
   return nav;
-}
-
-async function translateNavItems(
-  env: Env,
-  ctx: ExecutionContext,
-  site: VellumConfig,
-  repo: RepoConfig,
-  branch: string,
-  localeCode: string,
-  items: NavItem[],
-): Promise<NavItem[]> {
-  const entries: Record<string, string> = {};
-  function collect(item: NavItem, path: string) {
-    if (item.text) entries[`${path}.t`] = item.text;
-    item.items?.forEach((child, i) => collect(child, `${path}.${i}`));
-  }
-  items.forEach((item, i) => collect(item, `n${i}`));
-  if (!Object.keys(entries).length) return items;
-
-  const translated = await translateBundle({
-    env,
-    ctx,
-    site,
-    kind: "repo-nav",
-    key: `${repo.slug}@${branch}`,
-    locale: localeCode,
-    entries,
-  });
-
-  function rewrite(item: NavItem, path: string): NavItem {
-    return {
-      ...item,
-      text: translated[`${path}.t`] ?? item.text,
-      items: item.items?.map((child, i) => rewrite(child, `${path}.${i}`)),
-    };
-  }
-  return items.map((item, i) => rewrite(item, `n${i}`));
 }
 
 // Per-repo social links. Resolution order: vellum.json#socialLinks → VitePress
@@ -665,19 +525,14 @@ export async function loadRepoSocialLinks(
   return null;
 }
 
-function localizeNav(
-  items: NavItem[],
-  repoSlug: string,
-  resolved: LocaleResolution,
-  sourceResolved: LocaleResolution,
-): NavItem[] {
+function localizeNav(items: NavItem[], repoSlug: string, resolved: LocaleResolution): NavItem[] {
   // URL-side prefix anchors every link to the canonical locale-first path.
   const urlPrefix = resolved.urlPrefix;
   const base = `${urlPrefix ? `/${urlPrefix}` : ""}/${repoSlug}`;
   // Source-side prefix is what authors write inside their locale-keyed
   // config (e.g. `/zh/getting-started`); strip it before reattaching our
   // canonical base.
-  const srcPrefix = sourceResolved.srcPrefix;
+  const srcPrefix = resolved.srcPrefix;
 
   function rewrite(href: string): string {
     if (/^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("#"))

@@ -22,10 +22,6 @@ config:
       - any-glob-to-any-file:
           ["app/vellum.config.json", "app/src/shared/types.ts", "app/src/shared/site-schema.json"]
 
-database:
-  - changed-files:
-      - any-glob-to-any-file: "app/src/worker/db/migrations/**"
-
 ci:
   - changed-files:
       - any-glob-to-any-file: [".github/workflows/**", "app/prek.toml"]

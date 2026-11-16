@@ -105,7 +105,7 @@ const hex = [...new Uint8Array(mac)]
 | 缓存 key                                              | 用途                                   |
 | ----------------------------------------------------- | -------------------------------------- |
 | `commit:{owner}/{repo}@{branch}:{path}`               | "最近更新" 元数据。                    |
-| `page1:{slug}@{branch}:{locale}:{pagePath}` × locales | 缓存的页面，下次读取时会重建。         |
+| `page2:{slug}@{branch}:{locale}:{pagePath}` × locales | 缓存的页面，下次读取时会重建。         |
 
 此外，无论哪些文件改动，每次 push 都会清掉：
 
