@@ -57,7 +57,7 @@ jobs:
           path: |
             app/dist
             app/.sources
-          key: site-${{ github.run_id }}
+          key: site-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: site-
 
       # The app commit the last build was made from, so only content changes.
@@ -105,7 +105,7 @@ jobs:
           path: |
             app/dist
             app/.sources
-          key: site-${{ github.run_id }}
+          key: site-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Fail if the update failed
         if: steps.update.outcome == 'failure'
