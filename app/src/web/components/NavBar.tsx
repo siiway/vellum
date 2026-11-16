@@ -284,8 +284,13 @@ export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
     link: item.link && local(item.link),
     items: item.items?.map(localItem),
   });
-  const homepageHref = local(`/${site.homepageRepo}`);
-  const repoHref = data.route.repoSlug ? local(`/${data.route.repoSlug}`) : homepageHref;
+  // Built with the reader's prefix: an unprefixed link belongs to a locale
+  // without one, when the site has such a locale.
+  const localePrefix =
+    data.config.site.locales.find((l) => l.code === data.route.localeCode)?.prefix ?? "";
+  const prefix = localePrefix ? `/${localePrefix}` : "";
+  const homepageHref = local(`${prefix}/${site.homepageRepo}`);
+  const repoHref = data.route.repoSlug ? local(`${prefix}/${data.route.repoSlug}`) : homepageHref;
   const repo = data.route.repo;
 
   return (
