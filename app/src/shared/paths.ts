@@ -61,8 +61,15 @@ export function payloadPath(pathname: string): string {
   return `/_vellum/pages/${page}.json`;
 }
 
-// The 404 page's payload in one locale. It has a path of its own because the
-// page is served at every URL without a page.
+// The payload the client hydrates a page from: the page's payload without
+// what its HTML already holds (leanAst).
+export function hydrationPath(pathname: string): string {
+  const page = pathname.replace(/^\/+|\/+$/g, "") || "index";
+  return `/_vellum/hydrate/${page}.json`;
+}
+
+// The payload the client hydrates the 404 page from in one locale. It has a
+// path of its own because the page is served at every URL without a page.
 export function notFoundPayloadPath(localeCode: string): string {
   return `/_vellum/404/${encodeURIComponent(localeCode)}.json`;
 }

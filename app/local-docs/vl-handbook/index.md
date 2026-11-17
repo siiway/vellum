@@ -19,8 +19,9 @@ in the same repository as Vellum itself.
 ::: tip Architecture in one paragraph
 The build clones each GitHub repo (or reads local files), parses every page
 once, and writes its HTML. Cloudflare serves the result as static assets, with
-no code running per request. Each page's data is also written as JSON, so the
-React client hydrates without re-parsing and swaps pages without a reload.
+no code running per request. The React client hydrates the HTML from a small
+JSON file without the content the HTML already shows, and swaps pages without a
+reload by fetching the next page's JSON.
 When a docs repo changes, an incremental update re-renders just that repo and
 redeploys.
 :::

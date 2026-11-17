@@ -51,11 +51,19 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { makeStyles } from "../css";
-import type { Block, Inline, MarkdownAst } from "../../shared/markdown";
+import {
+  contentKey,
+  groupBlocks,
+  type Block,
+  type Inline,
+  type MarkdownAst,
+} from "../../shared/markdown";
+import { CODE_KEY_ATTR, STATIC_RUN } from "../prerendered";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
 import { useVellum } from "../context";
@@ -75,7 +83,10 @@ const useStyles = makeStyles({
     maxWidth: "760px",
     marginInline: "auto",
     color: tokens.colorNeutralForeground1,
-    "& :first-child": { marginTop: 0 },
+    // The first block of a static run is its wrapper's first child, but only
+    // the first run's is the page's first block.
+    [`& :first-child:not(:where(.${STATIC_RUN} > *))`]: { marginTop: 0 },
+    [`& > .${STATIC_RUN}:first-child > :first-child`]: { marginTop: 0 },
   },
   paragraph: {
     display: "block",
@@ -467,15 +478,33 @@ export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
   const styles = useStyles();
   return (
     <div className={styles.root}>
-      {ast.blocks.map((b, i) => (
-        <BlockNode key={i} block={b} styles={styles} />
-      ))}
+      {groupBlocks(ast.blocks).map((group, i) =>
+        Array.isArray(group) ? (
+          <div key={`run-${i}`} className={STATIC_RUN}>
+            {group.map((b, j) => (
+              <BlockNode key={j} block={b} styles={styles} />
+            ))}
+          </div>
+        ) : (
+          <BlockNode key={i} block={group} styles={styles} />
+        ),
+      )}
     </div>
   );
 }
 
 function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof useStyles> }) {
   switch (block.type) {
+    case "prerendered":
+      // The run's wrapper, with the run's markup as the page has it
+      // (fillFromPage). Hydrating it, React keeps the page's.
+      return (
+        <div
+          className={STATIC_RUN}
+          dangerouslySetInnerHTML={{ __html: block.html ?? "" }}
+          suppressHydrationWarning
+        />
+      );
     case "paragraph":
       return (
         <Body1 as="p" className={styles.paragraph}>
@@ -960,16 +989,31 @@ function CodeNode({
   styles: ReturnType<typeof useStyles>;
 }) {
   const [copied, setCopied] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const onCopy = useCallback(() => {
-    navigator.clipboard?.writeText(block.code).then(() => {
+    // The code as shown, so without Shiki's `[!code]` annotations. The
+    // payload a page hydrates from has no `code` (leanAst).
+    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });
-  }, [block.code]);
+  }, []);
 
   // Only show the header bar when there's something to put in it; otherwise the
   // code sits in a clean card with a floating copy button that fades in on hover.
   const hasHeader = !!block.filename || !!block.lang;
+
+  // Marked so the client can take the HTML from the page when the payload
+  // leaves it out (fillFromPage). Hydrating it, React keeps the page's.
+  const body = (
+    <div
+      ref={bodyRef}
+      className={styles.codeBody}
+      {...{ [CODE_KEY_ATTR]: block.key ?? contentKey(block.html) }}
+      dangerouslySetInnerHTML={{ __html: block.html }}
+      suppressHydrationWarning
+    />
+  );
 
   const copyIcon = copied ? (
     <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
@@ -990,7 +1034,7 @@ function CodeNode({
             aria-label={copied ? "Copied" : "Copy code"}
           />
         </Tooltip>
-        <div className={styles.codeBody} dangerouslySetInnerHTML={{ __html: block.html }} />
+        {body}
       </Card>
     );
   }
@@ -1010,7 +1054,7 @@ function CodeNode({
           </Button>
         </Tooltip>
       </div>
-      <div className={styles.codeBody} dangerouslySetInnerHTML={{ __html: block.html }} />
+      {body}
     </Card>
   );
 }

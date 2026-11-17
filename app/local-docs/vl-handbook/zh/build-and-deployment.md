@@ -35,7 +35,8 @@ dist/site/
   {prefix}.md, {prefix}/{repo}/….md   每个页面的 Markdown，见下文
   {prefix}/search/, languages/     搜索页和语言页
   _vellum/pages/{page}.json        每个页面的数据，见下文
-  _vellum/404/{locale}.json        404 页面的数据
+  _vellum/hydrate/{page}.json      同上，但不含 HTML 已显示的内容
+  _vellum/404/{locale}.json        404 页面的，同上
   _vellum/search/{locale}/{repo}.json   搜索索引
   _vellum/vue/{repo}/{Name}.vue    页面挂载的 Vue 组件
   _redirects, _headers             由 Cloudflare 应用
@@ -45,8 +46,10 @@ dist/site/
 ```
 
 每个页面的 HTML 都是完整的：预渲染的标记、样式和 SEO head，不运行 JavaScript
-也能阅读。客户端 hydrate 所用的数据不在页面里，而在 `_vellum/pages/` 下该页面的
-JSON 中，由页面的 head 预加载。在站内点击链接时，只会拉取下一个页面的 JSON。
+也能阅读。页面内容只存在于 HTML 中。客户端从 `_vellum/hydrate/` 下该页面的 JSON
+hydrate 页面，由页面的 head 预加载：其中是站点配置、侧边栏和页面元数据，以及需要
+JavaScript 的块（不含代码的代码块、标签页、pivot、组件）。其余部分直接沿用 HTML
+中的内容。在站内点击链接时，会从 `_vellum/pages/` 拉取下一个页面的完整 JSON。
 
 页面以浅色主题渲染。当读者选择了深色，或系统是深色时，每个页面 head 中的脚本会在
 首次绘制之前切换到深色。

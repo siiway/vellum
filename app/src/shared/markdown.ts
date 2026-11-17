@@ -76,6 +76,9 @@ export type Block =
       // Pre-rendered Shiki HTML; the renderer drops it into a FluentUI Card via innerHTML
       // because re-implementing token-by-token highlight rendering in React would 10x the bundle.
       html: string;
+      // Only without `code` and `html` (leanAst): the `contentKey` of the
+      // HTML, which the page marks the block's code with.
+      key?: string;
     }
   | {
       type: "codeGroup";
@@ -132,8 +135,132 @@ export type Block =
       type: "opsTabs";
       tabs: Array<{ id: string; title: string; children: Block[] }>;
     }
-  | { type: "html"; value: string };
+  | { type: "html"; value: string }
+  // A run of static blocks (isStaticBlock) that only the page's HTML holds.
+  // Only in the payload the client hydrates a page from (leanAst), without
+  // `html`: the client takes the run's markup from the page.
+  | { type: "prerendered"; html?: string };
 
 export interface MarkdownAst {
   blocks: Block[];
+}
+
+// Whether a block renders to markup that needs no React once it's on the
+// page: no state, effects or handlers. The client can then adopt it from
+// the page's HTML. Errs on the side of false: a PascalCase tag may be a
+// React component.
+export function isStaticBlock(block: Block): boolean {
+  switch (block.type) {
+    case "paragraph":
+    case "heading":
+      return block.children.every(isStaticInline);
+    case "list":
+      return block.items.every((item) => item.children.every(isStaticBlock));
+    case "blockquote":
+    case "opsRow":
+    case "opsColumn":
+    case "opsMoniker":
+      return block.children.every(isStaticBlock);
+    case "callout":
+      return (block.title ?? []).every(isStaticInline) && block.children.every(isStaticBlock);
+    case "table":
+      return [block.head, ...block.rows].every((row) =>
+        row.every((cell) => cell.children.every(isStaticInline)),
+      );
+    case "html":
+      return !/<[A-Z]/.test(block.value);
+    case "thematicBreak":
+    case "opsImage":
+    case "opsVideo":
+      return true;
+    // The page shows the palette for the theme. Without both, the client
+    // draws it.
+    case "mermaid":
+      return !!(block.svgLight && block.svgDark);
+    // A copy button, tabs, pivots.
+    case "code":
+    case "codeGroup":
+    case "opsZone":
+    case "opsTabs":
+      return false;
+    // Already stands for a run of static blocks: never part of another.
+    case "prerendered":
+      return false;
+  }
+}
+
+function isStaticInline(node: Inline): boolean {
+  switch (node.type) {
+    case "reactComponent":
+      return false;
+    case "link":
+    case "strong":
+    case "em":
+    case "del":
+    case "element":
+      return node.children.every(isStaticInline);
+    default:
+      return true;
+  }
+}
+
+// The page's top-level blocks, with each run of static blocks grouped: the
+// unit the page's HTML wraps and the client adopts.
+export function groupBlocks(blocks: Block[]): Array<Block | Block[]> {
+  const out: Array<Block | Block[]> = [];
+  let run: Block[] | null = null;
+  for (const block of blocks) {
+    if (isStaticBlock(block)) {
+      if (!run) out.push((run = []));
+      run.push(block);
+    } else {
+      run = null;
+      out.push(block);
+    }
+  }
+  return out;
+}
+
+// The AST the client hydrates a page from, without what the page's HTML
+// already holds: each run of static blocks becomes a `prerendered` block,
+// and code blocks keep no code, only the key the page marks it with.
+export function leanAst(ast: MarkdownAst): MarkdownAst {
+  return {
+    blocks: groupBlocks(ast.blocks).map((group) =>
+      Array.isArray(group) ? { type: "prerendered" } : leanBlock(group),
+    ),
+  };
+}
+
+// Blocks that show only some of their children (tabs, pivots) keep them
+// whole: the page holds only those shown first.
+function leanBlock(block: Block): Block {
+  switch (block.type) {
+    case "code":
+      return { ...block, code: "", html: "", key: contentKey(block.html) };
+    case "list":
+      return {
+        ...block,
+        items: block.items.map((item) => ({ ...item, children: item.children.map(leanBlock) })),
+      };
+    case "blockquote":
+    case "callout":
+    case "opsRow":
+    case "opsColumn":
+    case "opsMoniker":
+      return { ...block, children: block.children.map(leanBlock) };
+    default:
+      return block;
+  }
+}
+
+// A short key for a string (FNV-1a, and the length). Equal strings get equal
+// keys, so two blocks with the same key show the same thing.
+export function contentKey(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${s.length.toString(36)}-${(h >>> 0).toString(36)}`;
 }

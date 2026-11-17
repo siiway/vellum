@@ -1,10 +1,13 @@
 // Client entry: hydrate the pre-rendered page. Its payload isn't in the HTML:
-// the build writes it next to the page as JSON, and the page's head preloads it.
+// the build writes it next to the page as JSON, and the page's head preloads
+// it. That leaves out the content the HTML holds, which the client takes
+// from the page.
 
 import { hydrateRoot } from "react-dom/client";
 import { RendererProvider, createDOMRenderer, SSRProvider } from "@fluentui/react-components";
 import { App } from "./App";
 import { registerTools } from "./webmcp";
+import { fillFromPage } from "./prerendered";
 import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { BootstrapPayload } from "../shared/types";
 
@@ -21,6 +24,7 @@ async function start(): Promise<void> {
   const container = document.getElementById("vellum-root");
   if (!container) return;
   const data = await loadPayload();
+  fillFromPage(data.page.ast);
   hydrateRoot(
     container,
     <RendererProvider renderer={createDOMRenderer(document)}>

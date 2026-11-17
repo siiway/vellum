@@ -1,6 +1,6 @@
 // SSR pipeline: render the React tree to a string, extract Griffel CSS, and return a complete
 // HTML document with a full SEO + social-graph head. The payload stays out of the page: the
-// head preloads it from its own JSON file, which the client hydrates from.
+// head preloads the JSON the client hydrates from, which leaves out what the HTML holds.
 
 import { renderToString } from "react-dom/server";
 import {
@@ -23,7 +23,8 @@ export interface RenderOptions {
   origin: string | null;
 }
 
-// `payloadUrl` is where the build writes `payload` as JSON.
+// `payloadUrl` is where the build writes the payload the client hydrates the
+// page from (hydrationPath).
 export function renderPage(
   payload: BootstrapPayload,
   payloadUrl: string,
@@ -90,6 +91,10 @@ body{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Bli
 #vellum-root{min-height:100vh;}
 img,svg{vertical-align:middle;}
 ::selection{background:color-mix(in srgb,var(--colorBrandBackground,#0078d4) 22%,transparent);}
+
+/* The wrapper of a run of static blocks, which the client adopts from this
+   HTML (MarkdownAst.tsx): the blocks lay out as if it weren't there. */
+.vellum-static{display:contents;}
 
 /* A diagram drawn in both palettes (MermaidBlock.tsx) shows the theme's. */
 .vellum-diagram-light,.vellum-diagram-dark{display:contents;}

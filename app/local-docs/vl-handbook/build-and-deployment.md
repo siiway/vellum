@@ -36,7 +36,8 @@ dist/site/
   {prefix}.md, {prefix}/{repo}/….md   each page's Markdown, see below
   {prefix}/search/, languages/     search and language pages
   _vellum/pages/{page}.json        each page's data, see below
-  _vellum/404/{locale}.json        the 404 page's data
+  _vellum/hydrate/{page}.json      the same without what its HTML shows
+  _vellum/404/{locale}.json        the 404 page's, likewise
   _vellum/search/{locale}/{repo}.json   search indexes
   _vellum/vue/{repo}/{Name}.vue    Vue components the pages mount
   _redirects, _headers             applied by Cloudflare
@@ -46,9 +47,12 @@ dist/site/
 ```
 
 Each page's HTML is complete: pre-rendered markup, styles and SEO head, readable
-without JavaScript. The data the client hydrates it from is not in the page but
-in its JSON under `_vellum/pages/`, which the page's head preloads. Following a
-link inside the site fetches only the next page's JSON.
+without JavaScript. Its content is in the HTML only. The client hydrates the page
+from its JSON under `_vellum/hydrate/`, which the page's head preloads: the
+site config, sidebar and page metadata, and only the blocks that need
+JavaScript (code blocks without their code, tabs, pivots, components). The rest
+it takes as the HTML has it. Following a link inside the site fetches the next
+page's full JSON from `_vellum/pages/`.
 
 Pages are rendered in the light theme. A script in each page's head switches
 to dark before the first paint when the reader picked dark, or their system
