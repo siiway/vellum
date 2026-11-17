@@ -105,13 +105,13 @@ The `.well-known` files and the `Link` headers need `site.url`, like the
 sitemap. All of it comes from the config, so `bun run update` leaves it as
 it is.
 
-A page's Markdown is its source file as written, with one change: links to
-other pages are resolved the way the HTML page resolves them and point at
-those pages' Markdown (`./setup.md` → `/en-US/glint/guide/setup.md`). The
-file isn't published where its source sat (`guide/index.md` becomes
-`guide.md`), so relative links wouldn't land. Links to images and other
-files, anything in code, frontmatter links, includes and xrefs stay as
-written.
+A page's Markdown is its source file as written, with one change: links are
+resolved the way the HTML page resolves them. A link to another page points
+at that page's Markdown (`./setup.md` → `/en-US/glint/guide/setup.md`), and
+a link to another file at the URL the page links. The file isn't published
+where its source sat (`guide/index.md` becomes `guide.md`), so relative
+links wouldn't land. Images keep their paths, as on the page. Anything in
+code, frontmatter links, includes and OPS `xref:` links stay as written.
 
 Agent-readiness checkers also look for markdown served on
 `Accept: text/markdown`, API and OAuth metadata, and MCP servers. Those need

@@ -1,14 +1,16 @@
 // The Markdown published next to each page, at the page's URL plus `.md`:
-// the page's source file as written, except for its links to other pages.
+// the page's source file as written, except for its links.
 //
 // A relative link in the source is relative to the source file, which isn't
 // where the Markdown is published (`guide/index.md` is published as
 // `guide.md`, a level up), and an absolute one is relative to the docs root,
-// not the site. So each link to a page is resolved the way the HTML page
-// resolves it and points at that page's Markdown. Links to other files
-// (images, downloads), external links and anchors are left as they are, and
-// so are the frontmatter, code and OPS include directives (their files
-// aren't pages). What's code is what the page's render parsed as code.
+// not the site. So each link is resolved the way the HTML page resolves it:
+// a link to a page points at that page's Markdown, and one to another file
+// at the URL the page links. Images keep their paths, as on the page, which
+// is in the same directory as its Markdown. External links, anchors, the
+// frontmatter, code and OPS include directives (their files aren't pages)
+// are left as they are. What's code is what the page's render parsed as
+// code.
 
 import { unescapeAll } from "markdown-it/lib/common/utils.mjs";
 import { normalizeInternal, type RenderOutput } from "./markdown/index";
@@ -92,7 +94,10 @@ function rewrite(text: string, first: number, prose: Set<number>, ctx: LinkConte
       refDest: string | undefined,
       offset: number,
     ) => {
-      if (inline !== undefined) return inline + destination(dest!, ctx);
+      if (inline !== undefined) {
+        // The page keeps an image's path as written.
+        return isImage(text, offset) ? match : inline + destination(dest!, ctx);
+      }
       if (ref !== undefined) {
         const line = first + (text.slice(0, offset).match(/\n/g)?.length ?? 0);
         return prose.has(line) ? match : ref + destination(refDest!, ctx);
@@ -102,30 +107,38 @@ function rewrite(text: string, first: number, prose: Set<number>, ctx: LinkConte
   );
 }
 
+// Whether the `](` at `at` ends an image's alt text: its `[` follows a `!`.
+function isImage(text: string, at: number): boolean {
+  let depth = 0;
+  for (let i = at - 1; i >= 0; i--) {
+    if (text[i - 1] === "\\") continue;
+    if (text[i] === "]") depth++;
+    else if (text[i] === "[" && depth-- === 0) return text[i - 1] === "!";
+  }
+  return false;
+}
+
 // A destination as written, with its escapes and entities, and as the
 // rewritten URL: in `<...>` when it was, or has spaces or parentheses.
 function destination(dest: string, ctx: LinkContext): string {
   const angled = dest.startsWith("<");
   const href = unescapeAll(angled ? dest.slice(1, -1) : dest);
-  const out = pageHref(href, ctx)?.replace(/[<>]/g, encodeURIComponent);
+  const out = linkHref(href, ctx)?.replace(/[<>]/g, encodeURIComponent);
   if (out === undefined) return dest;
   return angled || /[\s()]/.test(out) ? `<${out}>` : out;
 }
 
-// The Markdown URL of the page `href` links to, or null when it doesn't link
-// to a page.
-function pageHref(href: string, ctx: LinkContext): string | null {
+// What a link to `href` leads to from the Markdown: a page's Markdown, or
+// the site URL the page links for another file. Null keeps it as written.
+function linkHref(href: string, ctx: LinkContext): string | null {
   // External (`https:`, `mailto:`, OPS `xref:`), protocol-relative, or on
   // this page.
   if (!href || /^[a-z][a-z\d+.-]*:/i.test(href) || /^(\/\/|#|\?)/.test(href)) return null;
-  const cut = href.search(/[?#]/);
-  const path = cut < 0 ? href : href.slice(0, cut);
-  // A file other than Markdown. `v0.4` is a directory: an extension starts
-  // with a letter.
-  const ext = /\.([a-z][a-z\d]*)$/i.exec(path)?.[1];
-  if (ext && ext.toLowerCase() !== "md") return null;
-
   const url = normalizeInternal(href, ctx);
-  const at = url.search(/[?#]/);
-  return at < 0 ? markdownUrl(url) : markdownUrl(url.slice(0, at)) + url.slice(at);
+  const cut = url.search(/[?#]/);
+  const path = cut < 0 ? url : url.slice(0, cut);
+  // A file: an extension other than `.md`, which normalizeInternal drops.
+  // It holds a letter, so `v0.4` is a page.
+  if (/\.[a-z\d]*[a-z][a-z\d]*$/i.test(path)) return url;
+  return markdownUrl(path) + url.slice(path.length);
 }
