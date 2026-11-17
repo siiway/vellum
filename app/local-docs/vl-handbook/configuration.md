@@ -54,8 +54,10 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `contentSignal` |          | How AI may use the content, `{ search, "ai-input", "ai-train" }`. See below.        |
 
 `url` makes the canonical, Open Graph and hreflang URLs in each page's head
-absolute, and is what the sitemap needs. Without it those URLs stay
-root-relative, `og:url` is left out, and the build writes no `sitemap.xml`.
+absolute, and is what the sitemap and the
+[files for AI agents](./build-and-deployment#ai-agents) need. Without it those
+URLs stay root-relative, `og:url` is left out, and the build writes neither
+`sitemap.xml` nor the agent files.
 
 `contentSignal` states how AI may use the site's content, as a
 [Content-Signal](https://contentsignals.org) line in `robots.txt`. Each of

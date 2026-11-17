@@ -39,6 +39,7 @@ dist/site/
   _vellum/vue/{repo}/{Name}.vue    Vue components the pages mount
   _redirects, _headers             applied by Cloudflare
   robots.txt, sitemap.xml
+  .well-known/                     files for AI agents, see below
   assets/                          the client bundle
 ```
 
@@ -70,6 +71,31 @@ without its SVG, and the reader's browser renders it with mermaid instead.
 Everything else is served with Cloudflare's default for static assets: the
 browser revalidates and gets a `304` while the file is unchanged. A deploy
 is visible at once; there is no cache to purge.
+
+## AI agents
+
+The site tells AI agents what it holds and how they may use it, with static
+files only:
+
+- `robots.txt` states a [Content Signal](https://contentsignals.org), how AI
+  may use the content, from
+  [`site.contentSignal`](./configuration#siteconfig).
+- `/.well-known/agent-skills/index.json` lists one
+  [agent skill](https://agentskills.io), `{host}/SKILL.md`: which docs the
+  site holds, in which languages, and how to find a page. `{host}` is the
+  site's host with hyphens for dots, e.g. `docs-example-com`.
+- `/.well-known/ai-catalog.json` is an
+  [ARD](https://agenticresourcediscovery.org) catalog listing the same skill.
+- `/` answers with `Link` headers pointing to both.
+
+The `.well-known` files and the `Link` headers need `site.url`, like the
+sitemap. All of it comes from the config, so `bun run update` leaves it as
+it is.
+
+Agent-readiness checkers also look for markdown served on
+`Accept: text/markdown`, API and OAuth metadata, and MCP servers. Those need
+code running per request, or an API the site doesn't have, so a Vellum site
+has none of them.
 
 ## Deploying
 

@@ -53,8 +53,9 @@ Vellum 的构建只读一个文件：`app/vellum.config.json`。它的形状
 | `contentSignal` |      | AI 可以如何使用内容，`{ search, "ai-input", "ai-train" }`。见下文。        |
 
 `url` 让每个页面 head 中的 canonical、Open Graph 和 hreflang URL 成为绝对地址，
-sitemap 也需要它。没有它时这些 URL 保持为以根开头的相对地址，`og:url` 会被省略，
-构建也不会写出 `sitemap.xml`。
+sitemap 和 [给 AI 智能体的文件](./build-and-deployment#ai-智能体) 也需要它。没有它时
+这些 URL 保持为以根开头的相对地址，`og:url` 会被省略，构建既不会写出
+`sitemap.xml`，也不会写出给智能体的文件。
 
 `contentSignal` 声明 AI 可以如何使用站点的内容，写入 `robots.txt` 中的一行
 [Content-Signal](https://contentsignals.org)。`search`（搜索引擎）、`ai-input`
