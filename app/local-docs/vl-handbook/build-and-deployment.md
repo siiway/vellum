@@ -82,8 +82,10 @@ files only:
   `/en-US/glint/guide` at `/en-US/glint/guide.md`, the landing page
   `/en-US` at `/en-US.md`. The page's head links it
   (`<link rel="alternate" type="text/markdown">`), and keeps linking the
-  page on screen as the reader follows links in the site. The redirects
-  that send one page to another send its Markdown along.
+  page on screen as the reader follows links in the site. The Markdown
+  names its page as canonical (a `Link: rel="canonical"` header), so search
+  engines index the page once. The redirects that send one page to another
+  send its Markdown along.
 - `robots.txt` states a [Content Signal](https://contentsignals.org), how AI
   may use the content, from
   [`site.contentSignal`](./configuration#siteconfig).
