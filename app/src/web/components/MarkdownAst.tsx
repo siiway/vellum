@@ -1068,14 +1068,14 @@ function CodeGroupNode({
 }) {
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const onCopy = useCallback(() => {
-    const tab = block.tabs[active];
-    if (!tab) return;
-    navigator.clipboard?.writeText(tab.code).then(() => {
+    // The tab's code as shown, like a code block's (CodeNode).
+    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });
-  }, [block.tabs, active]);
+  }, []);
 
   const tab = block.tabs[active];
   const copyIcon = copied ? (
@@ -1110,7 +1110,13 @@ function CodeGroupNode({
           />
         </Tooltip>
       </div>
-      {tab && <div className={styles.codeBody} dangerouslySetInnerHTML={{ __html: tab.html }} />}
+      {tab && (
+        <div
+          ref={bodyRef}
+          className={styles.codeBody}
+          dangerouslySetInnerHTML={{ __html: tab.html }}
+        />
+      )}
     </Card>
   );
 }
