@@ -346,4 +346,8 @@ export interface BootstrapPayload {
   initialTheme: "light" | "dark";
   // When set, the shell renders an ErrorPage instead of the doc body.
   error?: ErrorState;
+  // Only in the payload the client hydrates a page from: the build the page
+  // is from, as a key of its full payload. The page's HTML names it too;
+  // when the two differ, the browser kept the page from before a deploy.
+  build?: string;
 }

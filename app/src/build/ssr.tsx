@@ -23,11 +23,16 @@ export interface RenderOptions {
   origin: string | null;
 }
 
-// `payloadUrl` is where the build writes the payload the client hydrates the
-// page from (hydrationPath).
+// The payload the client hydrates a page from: where the build writes it
+// (hydrationPath), and the build it names (BootstrapPayload.build).
+export interface Hydration {
+  url: string;
+  build: string;
+}
+
 export function renderPage(
   payload: BootstrapPayload,
-  payloadUrl: string,
+  hydration: Hydration,
   { assets, origin }: RenderOptions,
 ): string {
   const renderer = createDOMRenderer();
@@ -57,7 +62,7 @@ export function renderPage(
   // payload is preloaded the same way; `crossorigin` makes the preload the
   // same request as the client's fetch(), so it reuses the response.
   const jsTags = [
-    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(payloadUrl)}" as="fetch" crossorigin>`,
+    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(hydration.url)}" as="fetch" crossorigin data-build="${escapeAttr(hydration.build)}">`,
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");

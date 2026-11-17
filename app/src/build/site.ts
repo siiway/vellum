@@ -15,7 +15,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import siteConfig from "../../vellum.config.json";
 import type { BootstrapPayload, LocaleConfig, RepoConfig, VellumConfig } from "../shared/types";
-import { leanAst } from "../shared/markdown";
+import { contentKey, leanAst } from "../shared/markdown";
 import {
   hydrationPath,
   notFoundPayloadPath,
@@ -27,7 +27,7 @@ import {
 import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
-import { renderPage, type RenderOptions } from "./ssr";
+import { renderPage, type Hydration, type RenderOptions } from "./ssr";
 import { htmlFile, listRepoPages, localeBase, markdownUrl, pageRoute, stubRoute } from "./routes";
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
@@ -283,10 +283,11 @@ async function writePage(
   markdown?: string,
 ): Promise<void> {
   const url = payload.route.canonicalUrl;
-  const lean = hydrationPath(url);
-  await writeOut(htmlFile(url), renderPage(payload, lean, opts), root);
-  await writeJson(lean, leanPayload(payload), root);
-  await writeJson(payloadPath(url), payload, root);
+  const json = JSON.stringify(payload);
+  const hydration = { url: hydrationPath(url), build: contentKey(json) };
+  await writeOut(htmlFile(url), renderPage(payload, hydration, opts), root);
+  await writeJson(hydration.url, leanPayload(payload, hydration), root);
+  await writeOut(payloadPath(url), json, root);
   const md = payload.page.meta.markdownUrl;
   if (md && markdown !== undefined) await writeOut(md, markdown, root);
 }
@@ -352,15 +353,18 @@ function shellPayload(
 // Writes the locale's 404 page to `file`, and its payload.
 async function writeNotFound(locale: LocaleConfig, file: string, opts: RenderOptions) {
   const payload = notFoundPayload(locale);
-  const lean = notFoundPayloadPath(locale.code);
-  await writeOut(file, renderPage(payload, lean, opts));
-  await writeJson(lean, leanPayload(payload));
+  const hydration = {
+    url: notFoundPayloadPath(locale.code),
+    build: contentKey(JSON.stringify(payload)),
+  };
+  await writeOut(file, renderPage(payload, hydration, opts));
+  await writeJson(hydration.url, leanPayload(payload, hydration));
 }
 
 // The payload the client hydrates a page's HTML from: everything but the
-// content the HTML already holds (leanAst).
-function leanPayload(payload: BootstrapPayload): BootstrapPayload {
-  return { ...payload, page: { ...payload.page, ast: leanAst(payload.page.ast) } };
+// content the HTML already holds (leanAst), and the build it's from.
+function leanPayload(payload: BootstrapPayload, { build }: Hydration): BootstrapPayload {
+  return { ...payload, build, page: { ...payload.page, ast: leanAst(payload.page.ast) } };
 }
 
 // The localized 404, with links to the repos.
