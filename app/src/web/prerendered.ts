@@ -17,8 +17,8 @@ export const CODE_KEY_ATTR = "data-vellum-code";
 
 // Fills what `ast` leaves out back in from the page, before the client
 // hydrates it. React keeps the page's markup when it hydrates, but renders
-// from the payload whenever it mounts the page again: a theme switch does,
-// and so does a hydration that fails.
+// from the payload whenever it mounts the page again, as it does when a
+// hydration fails.
 export function fillFromPage(ast: MarkdownAst): void {
   const root = document.querySelector(`.${MARKDOWN_ROOT}`);
   if (!root) return;

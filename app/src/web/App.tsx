@@ -20,14 +20,10 @@ function ThemedShell() {
   const fluentTheme = useMemo(() => createVellumTheme(theme === "dark", accent), [theme, accent]);
   return (
     <FluentProvider
-      // key={theme} forces FluentProvider to remount when the theme flips.
-      // Without it FluentProvider was occasionally holding onto stale CSS
-      // variables from the previous theme, which produced a "click twice to
-      // actually switch" symptom (the cookie + data-theme updated on the first
-      // click, but FluentUI tokens stayed on the old theme until something
-      // else caused a re-render). Remounting on theme change is cheap relative
-      // to the visual correctness it buys.
-      key={theme}
+      // Not remounted when the theme flips: its tokens follow <html
+      // data-theme> through ssr.tsx's rule for the other theme, from the
+      // first paint on, so none stay stale. A remount would render the page
+      // again, from a payload without its content (fillFromPage).
       theme={fluentTheme}
       style={{ minHeight: "100vh", width: "100%", background: "var(--vellum-canvas)" }}
     >
