@@ -476,9 +476,10 @@ const useStyles = makeStyles({
 
 export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
   const styles = useStyles();
+  const groups = useMemo(() => groupBlocks(ast.blocks), [ast]);
   return (
     <div className={mergeClasses(styles.root, MARKDOWN_ROOT)}>
-      {groupBlocks(ast.blocks).map((group, i) =>
+      {groups.map((group, i) =>
         Array.isArray(group) ? (
           <div key={`run-${i}`} className={STATIC_RUN}>
             {group.map((b, j) => (
@@ -1005,11 +1006,12 @@ function CodeNode({
 
   // Marked so the client can take the HTML from the page when the payload
   // leaves it out (fillFromPage). Hydrating it, React keeps the page's.
+  const key = useMemo(() => block.key ?? contentKey(block.html), [block.key, block.html]);
   const body = (
     <div
       ref={bodyRef}
       className={styles.codeBody}
-      {...{ [CODE_KEY_ATTR]: block.key ?? contentKey(block.html) }}
+      {...{ [CODE_KEY_ATTR]: key }}
       dangerouslySetInnerHTML={{ __html: block.html }}
       suppressHydrationWarning
     />

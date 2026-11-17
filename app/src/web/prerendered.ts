@@ -25,12 +25,16 @@ export function fillFromPage(ast: MarkdownAst): void {
   // Only the root's own: a block's raw HTML may use the class too.
   const runs = root.querySelectorAll(`:scope > .${STATIC_RUN}`);
   let run = 0;
+  const codes = new Map<string, Element>();
+  root.querySelectorAll(`[${CODE_KEY_ATTR}]`).forEach((el) => {
+    const key = el.getAttribute(CODE_KEY_ATTR)!;
+    if (!codes.has(key)) codes.set(key, el);
+  });
   walkBlocks(ast.blocks, (block) => {
     if (block.type === "prerendered") {
       block.html = runs[run++]?.innerHTML ?? "";
     } else if (block.type === "code" && block.key) {
-      const code = root.querySelector(`[${CODE_KEY_ATTR}="${block.key}"]`);
-      block.html = code?.innerHTML ?? "";
+      block.html = codes.get(block.key)?.innerHTML ?? "";
     }
   });
 }
