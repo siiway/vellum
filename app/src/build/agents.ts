@@ -108,8 +108,11 @@ function buildSkill(site: VellumConfig, origin: string, name: string) {
     `# ${title}`,
     "",
     `${origin} is a static documentation site. Every page is also published as`,
-    "Markdown at its URL plus `.md` (`/guide/setup` → `/guide/setup.md`): fetch that",
-    "instead of the HTML. Its links to other pages point at their Markdown.",
+    "Markdown at its URL, without a trailing slash, plus `.md` (`/guide/setup` →",
+    "`/guide/setup.md`): the page's source, with links in its text pointing at",
+    "other pages' Markdown. Fetch it instead of the HTML. Links in its frontmatter",
+    "are as written, and includes (`[!INCLUDE ...]`) aren't expanded: the HTML page",
+    "has their content.",
   ];
   if (repos.length) {
     lines.push("", "## Docs", "");
