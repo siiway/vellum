@@ -7,16 +7,16 @@
 // not the site. So each link to a page is resolved the way the HTML page
 // resolves it and points at that page's Markdown. Links to other files
 // (images, downloads), external links and anchors are left as they are, and
-// so are code and OPS include directives (their files aren't pages).
+// so are the frontmatter, code and OPS include directives (their files
+// aren't pages). What's code is what the page's render parsed as code.
 
-import MarkdownIt from "markdown-it";
-import { normalizeInternal } from "./markdown/index";
+import { normalizeInternal, type RenderOutput } from "./markdown/index";
 import { isIncludeLine } from "./markdown/ops-includes";
 import type { LinkContext } from "./markdown/links";
 import { markdownUrl } from "./routes";
 
-// Only finds the code blocks, so no plugins.
-const md = new MarkdownIt({ html: true });
+// Blocks whose lines are kept as written.
+const VERBATIM = new Set(["fence", "code_block", "math_block", "math_block_eqno"]);
 
 // On one line: a code span (kept as is: it ends at a backtick run as long as
 // the one it starts with), an inline link's destination after `](`, or a link
@@ -26,28 +26,37 @@ const md = new MarkdownIt({ html: true });
 const LINK =
   /(`+)[^\n]*?(?<!`)\1(?!`)|((?<!\\)\]\(\s*)(<[^<>\n]*>|[^\s()<>]+(?:\([^\s()]*\)[^\s()<>]*)*)|^( {0,3}\[(?!\^)[^\]]+\]:[ \t]*)(<[^<>\n]*>|\S+)/g;
 
-export function pageMarkdown(source: string, ctx: LinkContext): string {
-  const lines = source.split("\n");
+// `render` is the page's render of `source`.
+export function pageMarkdown(
+  source: string,
+  { body, blocks }: Pick<RenderOutput, "body" | "blocks">,
+  ctx: LinkContext,
+): string {
+  // gray-matter's body is the end of the source, after the frontmatter.
+  if (!source.endsWith(body)) return source;
+  const front = source.slice(0, source.length - body.length);
   const code = new Set<number>();
-  for (const token of md.parse(source, {})) {
-    if ((token.type === "fence" || token.type === "code_block") && token.map) {
-      for (let i = token.map[0]; i < token.map[1]; i++) code.add(i);
-    }
+  for (const { type, map } of blocks) {
+    if (VERBATIM.has(type)) for (let i = map[0]; i < map[1]; i++) code.add(i);
   }
-  return lines
-    .map((line, i) =>
-      code.has(i) || isIncludeLine(line)
-        ? line
-        : line.replace(
-            LINK,
-            (match, _ticks, inline?: string, dest?: string, ref?: string, refDest?: string) => {
-              if (inline !== undefined) return inline + destination(dest!, ctx);
-              if (ref !== undefined) return ref + destination(refDest!, ctx);
-              return match;
-            },
-          ),
-    )
-    .join("\n");
+  return (
+    front +
+    body
+      .split("\n")
+      .map((line, i) =>
+        code.has(i) || isIncludeLine(line)
+          ? line
+          : line.replace(
+              LINK,
+              (match, _ticks, inline?: string, dest?: string, ref?: string, refDest?: string) => {
+                if (inline !== undefined) return inline + destination(dest!, ctx);
+                if (ref !== undefined) return ref + destination(refDest!, ctx);
+                return match;
+              },
+            ),
+      )
+      .join("\n")
+  );
 }
 
 function destination(dest: string, ctx: LinkContext): string {

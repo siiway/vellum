@@ -174,7 +174,7 @@ export async function buildPagePayload(
     found: true,
     sourcePath: matchedPath,
     source,
-    markdown: pageMarkdown(source, linkContext),
+    markdown: pageMarkdown(source, rendered, linkContext),
     payload: {
       config: site,
       route,

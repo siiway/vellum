@@ -58,6 +58,17 @@ export interface RenderOutput {
   flatOutline: OutlineNode[];
   title: string;
   description?: string;
+  // The source without its frontmatter, and the lines of its blocks as
+  // parsed, for editing the source by line (page-markdown.ts).
+  body: string;
+  blocks: SourceBlock[];
+}
+
+// A block token: its type (`paragraph_open`, `fence`, ...) and the lines it
+// spans in the body, end exclusive.
+export interface SourceBlock {
+  type: string;
+  map: [number, number];
 }
 
 // Walk the token stream and convert math_block / math_inline into html_block /
@@ -317,6 +328,8 @@ export async function renderMarkdown(input: RenderInput): Promise<RenderOutput> 
   const outlineSink = { outline: [] as OutlineNode[] };
   const md = buildMd(outlineSink);
   const tokens = md.parse(body, {});
+  // Before preRenderMath turns math blocks into HTML.
+  const blocks = tokens.flatMap((t) => (t.map ? [{ type: t.type, map: t.map }] : []));
   // markdown-it-mathjax3 emits math_inline / math_block tokens, not HTML, and
   // expects md.renderer to be invoked at the end. We bypass that pipeline (we
   // build our own AST from the token stream), so the math tokens would slip
@@ -348,6 +361,8 @@ export async function renderMarkdown(input: RenderInput): Promise<RenderOutput> 
     frontmatter: front,
     outline: nested,
     flatOutline: outlineSink.outline,
+    body,
+    blocks,
     title,
     description,
   };
