@@ -64,6 +64,7 @@ import {
   type MarkdownAst,
 } from "../../shared/markdown";
 import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
+import { format } from "../../shared/i18n";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
 import { useVellum } from "../context";
@@ -495,6 +496,7 @@ export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
 }
 
 function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof useStyles> }) {
+  const { t } = useVellum();
   switch (block.type) {
     case "prerendered":
       // The run's wrapper, with the run's markup as the page has it
@@ -547,7 +549,7 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
             <Link
               href={`#${block.id}`}
               className={mergeClasses(styles.anchorMark, "vellum-anchor-mark")}
-              aria-label="Permalink to this heading"
+              aria-label={t("ui.permalink")}
               data-no-router="true"
             >
               #
@@ -697,6 +699,7 @@ function InlineNode({
   node: Inline;
   styles: ReturnType<typeof useStyles>;
 }): ReactNode {
+  const { t } = useVellum();
   switch (node.type) {
     case "text":
       return node.value;
@@ -797,7 +800,7 @@ function InlineNode({
       // Unresolved: render as monospace fallback. The dashed border makes it
       // obvious to the author that the uid didn't land in any xrefmap.
       return (
-        <Text className={styles.xrefUnresolved} as="span" title="Unresolved xref">
+        <Text className={styles.xrefUnresolved} as="span" title={t("ui.xref.unresolved")}>
           {node.display ?? node.target}
         </Text>
       );
@@ -894,9 +897,10 @@ function CalloutNode({
   block: Extract<Block, { type: "callout" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
+  const { t } = useVellum();
   // Titles are Inline[] so `code`, **bold**, links inside the title render
-  // through the same InlineNode renderer as paragraph content. `Details`
-  // (capital-D) is the fallback when a `::: details` block didn't carry a
+  // through the same InlineNode renderer as paragraph content. "Details"
+  // (ui.details) is the fallback when a `::: details` block didn't carry a
   // custom summary.
   const titleNodes = block.title?.length
     ? block.title.map((c, i) => (
@@ -925,7 +929,7 @@ function CalloutNode({
             gap: 6,
           }}
         >
-          <ChevronDown24Regular /> <Body1Strong>{titleNodes ?? "Details"}</Body1Strong>
+          <ChevronDown24Regular /> <Body1Strong>{titleNodes ?? t("ui.details")}</Body1Strong>
         </summary>
         <div style={{ marginTop: 8 }}>
           {block.children.map((b, i) => (
@@ -1017,6 +1021,8 @@ function CodeNode({
     />
   );
 
+  const { t } = useVellum();
+  const copyLabel = t(copied ? "ui.copied" : "ui.copyCode");
   const copyIcon = copied ? (
     <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
   ) : (
@@ -1026,14 +1032,14 @@ function CodeNode({
   if (!hasHeader) {
     return (
       <Card className={mergeClasses(styles.codeCard, styles.codeCardHover)} appearance="outline">
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
+        <Tooltip content={copyLabel} relationship="label">
           <Button
             appearance="subtle"
             size="small"
             icon={copyIcon}
             onClick={onCopy}
             className={mergeClasses(styles.copyFloating, "vellum-copy-floating")}
-            aria-label={copied ? "Copied" : "Copy code"}
+            aria-label={copyLabel}
           />
         </Tooltip>
         {body}
@@ -1050,9 +1056,9 @@ function CodeNode({
           <div className={styles.codeFilename} />
         )}
         {block.lang && <Caption1 className={styles.codeLang}>{block.lang}</Caption1>}
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
+        <Tooltip content={copyLabel} relationship="label">
           <Button appearance="subtle" size="small" icon={copyIcon} onClick={onCopy}>
-            {copied ? "Copied" : "Copy"}
+            {t(copied ? "ui.copied" : "ui.copy")}
           </Button>
         </Tooltip>
       </div>
@@ -1079,6 +1085,8 @@ function CodeGroupNode({
     });
   }, []);
 
+  const { t } = useVellum();
+  const copyLabel = t(copied ? "ui.copied" : "ui.copyCode");
   const tab = block.tabs[active];
   const copyIcon = copied ? (
     <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
@@ -1094,21 +1102,21 @@ function CodeGroupNode({
           size="small"
           appearance="transparent"
         >
-          {block.tabs.map((t, i) => (
+          {block.tabs.map((item, i) => (
             <Tab key={i} value={i}>
-              {t.label}
+              {item.label}
             </Tab>
           ))}
         </TabList>
         <div style={{ flex: 1 }} />
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
+        <Tooltip content={copyLabel} relationship="label">
           <Button
             appearance="subtle"
             size="small"
             icon={copyIcon}
             onClick={onCopy}
             style={{ marginRight: 8 }}
-            aria-label={copied ? "Copied" : "Copy code"}
+            aria-label={copyLabel}
           />
         </Tooltip>
       </div>
@@ -1158,6 +1166,7 @@ function OpsImageNode({
 
 function OpsVideoNode({ block }: { block: Extract<Block, { type: "opsVideo" }> }) {
   const styles = useStyles();
+  const { t } = useVellum();
   const src = block.src;
   // Heuristic: YouTube embed URLs and channel9 URLs render in an iframe;
   // raw video file URLs (mp4/webm/ogg) render via <video>. Anything we can't
@@ -1168,7 +1177,7 @@ function OpsVideoNode({ block }: { block: Extract<Block, { type: "opsVideo" }> }
       {isMediaFile ? (
         <video controls preload="metadata" src={src} title={block.title} />
       ) : (
-        <iframe src={src} title={block.title ?? "Video"} allowFullScreen loading="lazy" />
+        <iframe src={src} title={block.title ?? t("ui.video")} allowFullScreen loading="lazy" />
       )}
     </div>
   );
@@ -1262,9 +1271,12 @@ function OpsMonikerNode({
   // moniker pane prefixed with a small notice so the reader knows the content
   // is version-scoped. A future pass can wire up a version selector and hide
   // panes that don't match.
+  const { t } = useVellum();
   return (
     <div className={styles.opsZonePane} data-moniker={block.range}>
-      <div className={styles.opsMonikerNotice}>Applies to: {block.range}</div>
+      <div className={styles.opsMonikerNotice}>
+        {format(t("ui.moniker.appliesTo"), { range: block.range })}
+      </div>
       {block.children.map((b, i) => (
         <BlockNode key={i} block={b} styles={styles} />
       ))}
@@ -1334,9 +1346,10 @@ function TableNode({
   block: Extract<Block, { type: "table" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
+  const { t } = useVellum();
   return (
     <div className={styles.tableWrap}>
-      <Table className={styles.table} aria-label="Markdown table" size="small">
+      <Table className={styles.table} aria-label={t("ui.table")} size="small">
         {block.head.length > 0 && (
           <TableHeader>
             <TableRow>
