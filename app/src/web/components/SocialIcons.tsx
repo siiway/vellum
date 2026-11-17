@@ -57,8 +57,9 @@ export function getSocialIconSvg(name: SocialIconName | { svg: string }): string
   return SOCIAL_SVGS[name] ?? "";
 }
 
-export function defaultSocialLabel(name: SocialIconName | { svg: string }): string {
-  if (typeof name === "object") return "External link";
+// The name of the site an icon stands for, which a custom icon doesn't say.
+export function defaultSocialLabel(name: SocialIconName | { svg: string }): string | undefined {
+  if (typeof name === "object") return undefined;
   // Title-cased version of the icon id — "x" becomes "X", "linkedin" → "LinkedIn".
   return name === "x" ? "X" : name[0]!.toUpperCase() + name.slice(1);
 }

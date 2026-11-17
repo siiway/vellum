@@ -71,6 +71,7 @@ const en: MessageMap = {
   "ui.xref.unresolved": "Unresolved xref",
   "ui.moniker.appliesTo": "Applies to: {range}",
   "ui.socialLinks": "Social links",
+  "ui.externalLink": "External link",
 
   "ui.notFound.title": "We couldn't find that page",
   "ui.notFound.message": "The URL might be misspelled, or the page may have been moved or removed.",
@@ -159,6 +160,7 @@ const zh: MessageMap = {
   "ui.xref.unresolved": "未解析的 xref",
   "ui.moniker.appliesTo": "适用于：{range}",
   "ui.socialLinks": "社交链接",
+  "ui.externalLink": "外部链接",
 
   "ui.notFound.title": "找不到该页面",
   "ui.notFound.message": "URL 可能拼写有误，或该页面已被移动或删除。",
