@@ -37,18 +37,20 @@ top navigation (each repo can override it with `vellum.json#nav`).
 
 ## SiteConfig
 
-| Field           | Required | Notes                                                                              |
-| --------------- | :------: | ---------------------------------------------------------------------------------- |
-| `title`         |    ✓     | Brand name in the NavBar and `<title>` suffix.                                     |
-| `homepageRepo`  |    ✓     | Slug of the repo whose root is the landing page, served at `/{prefix}`.            |
-| `defaultLocale` |    ✓     | Locale code used when the URL has no locale prefix.                                |
-| `locales`       |    ✓     | `[ { code, label, prefix } ]`. Empty `prefix` means the locale lives at repo root. |
-| `tagline`       |          | Shown on landing pages with the `home` layout.                                     |
-| `logo`          |          | URL of the site logo.                                                              |
-| `favicon`       |          | URL of the favicon.                                                                |
+| Field           | Required | Notes                                                                               |
+| --------------- | :------: | ----------------------------------------------------------------------------------- |
+| `title`         |    ✓     | Brand name in the NavBar and `<title>` suffix.                                      |
+| `homepageRepo`  |    ✓     | Slug of the repo whose root is the landing page, served at `/{prefix}`.             |
+| `defaultLocale` |    ✓     | Locale that URLs without a locale prefix go to, and `/` falls back to.              |
+| `locales`       |    ✓     | `[ { code, label, prefix } ]`. An empty `prefix` serves the locale without one.     |
+| `tagline`       |          | Shown on landing pages with the `home` layout.                                      |
+| `logo`          |          | URL of the site logo.                                                               |
+| `favicon`       |          | URL of the favicon.                                                                 |
 | `themeColor`    |          | Accent hex (buttons, links, focus) and `<meta name="theme-color">`, e.g. `#0078d4`. |
-| `footer`        |          | Footer text rendered below every page.                                             |
-| `url`           |          | Public origin, e.g. `https://docs.example.com`. See below.                         |
+| `footer`        |          | Footer text rendered below every page.                                              |
+| `url`           |          | Public origin, e.g. `https://docs.example.com`. See below.                          |
+| `socialLinks`   |          | NavBar icon links, `[ { icon, link, ariaLabel? } ]`, as in VitePress.               |
+| `searchAliases` |          | Search synonyms, `{ term: [synonyms] }`. See [Search](./search#synonyms).           |
 
 `url` makes the canonical, Open Graph and hreflang URLs in each page's head
 absolute, and is what the sitemap needs. Without it those URLs stay
@@ -63,27 +65,30 @@ config does exactly this — the landing page lives in `local-docs/homepage/`.
 ## RepoConfig
 
 A repo is a slice of documentation — one section in the URL space
-(`/<slug>/...`), one sidebar, one search index. You'll typically have one
+(`/{prefix}/{slug}/...`), one sidebar, one search index. You'll typically have one
 RepoConfig per actual GitHub repo you're documenting, plus optional local
 sources for your handbook and landing page.
 
-| Field             | Required | Notes                                                                                  |
-| ----------------- | :------: | -------------------------------------------------------------------------------------- |
-| `slug`            |    ✓     | URL segment. Must match `^[a-z0-9][a-z0-9-]*$`.                                        |
-| `displayName`     |    ✓     | Shown in the brand crumb and 404 suggestions.                                          |
-| `docsRoot`        |    ✓     | Path inside the source to the docs tree. Empty string means the source root.           |
-| `source`          |          | `"github"` (default) or `"local"`. See [Sources](./sources).                           |
-| `owner`           |    ✓¹    | GitHub owner. Required when `source: "github"`.                                        |
-| `repo`            |    ✓¹    | GitHub repo. Required when `source: "github"`.                                         |
-| `branch`          |    ✓¹    | Branch the build clones. Required when `source: "github"`.                             |
-| `localPath`       |          | Override for `local-docs/{slug}`. Local sources only.                                  |
-| `description`     |          | Tagline shown on the repo home page and SSR meta description fallback.                 |
-| `logo`            |          | Per-repo logo URL.                                                                     |
-| `editLinkPattern` |          | Template for "Edit this page" — `:path` is replaced with the docs-root-relative path.  |
-| `versions`        |          | Optional. `[ { label, branch, default? } ]`; the build renders the default one.        |
-| `localeDirs`      |          | Source directory per locale code. See [i18n](./i18n#per-repo-content-layout).          |
-| `landingPage`     |          | Path the repo's root URL redirects to, e.g. `"v0.4"` for docs versioned by directory.  |
-| `hideInBrand`     |          | Hides the repo's displayName crumb after the site title. Useful for the homepage repo. |
+| Field               | Required | Notes                                                                                  |
+| ------------------- | :------: | -------------------------------------------------------------------------------------- |
+| `slug`              |    ✓     | URL segment. Must match `^[a-z0-9][a-z0-9-]*$`.                                        |
+| `displayName`       |    ✓     | Shown in the brand crumb and 404 suggestions.                                          |
+| `docsRoot`          |    ✓     | Path inside the source to the docs tree. Empty string means the source root.           |
+| `source`            |          | `"github"` (default) or `"local"`. See [Sources](./sources).                           |
+| `owner`             |    ✓¹    | GitHub owner. Required when `source: "github"`.                                        |
+| `repo`              |    ✓¹    | GitHub repo. Required when `source: "github"`.                                         |
+| `branch`            |    ✓¹    | Branch the build clones. Required when `source: "github"`.                             |
+| `localPath`         |          | Override for `local-docs/{slug}`. Local sources only.                                  |
+| `description`       |          | Description of the repo's index page when its frontmatter sets none.                   |
+| `logo`              |          | Per-repo logo URL.                                                                     |
+| `editLinkPattern`   |          | Template for "Edit this page" — `:path` is replaced with the docs-root-relative path.  |
+| `versions`          |          | `[ { label, branch, default? } ]`. Only the `default` entry (else the first) is built. |
+| `localeDirs`        |          | Source directory per locale code. See [i18n](./i18n#per-repo-content-layout).          |
+| `landingPage`       |          | Path the repo's root URL redirects to, e.g. `"v0.4"` for docs versioned by directory.  |
+| `hideInBrand`       |          | Hides the repo's displayName crumb after the site title. Useful for the homepage repo. |
+| `excludeFromSearch` |          | Leaves the repo out of cross-repo search, e.g. the homepage repo.                      |
+| `socialLinks`       |          | NavBar icon links inside this repo, instead of the site's.                             |
+| `searchAliases`     |          | Search synonyms for this repo, on top of the site's.                                   |
 
 ¹ Conditionally required: the JSON schema enforces `owner` / `repo` / `branch`
 when `source` is `"github"` (or omitted).
@@ -101,10 +106,7 @@ when `source` is `"github"` (or omitted).
   "description": "Self-hosted OAuth 2.0 / OpenID Connect on Cloudflare Workers.",
   "logo": "https://icons.siiway.org/prism/icon.svg",
   "editLinkPattern": "https://github.com/siiway/prism/edit/main/docs/:path",
-  "versions": [
-    { "label": "main", "branch": "main", "default": true },
-    { "label": "v1", "branch": "v1" }
-  ]
+  "searchAliases": { "idp": ["identity provider", "oidc"] }
 }
 ```
 

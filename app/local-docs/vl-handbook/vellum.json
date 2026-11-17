@@ -30,7 +30,7 @@
           "items": [
             { "text": "Search", "link": "/search" },
             { "text": "Internationalisation", "link": "/i18n" },
-            { "text": "Build & deployment", "link": "/caching-and-deployment" },
+            { "text": "Build & deployment", "link": "/build-and-deployment" },
             { "text": "Updating content", "link": "/updating-content" }
           ]
         },
@@ -83,7 +83,7 @@
           "items": [
             { "text": "搜索", "link": "/search" },
             { "text": "国际化", "link": "/i18n" },
-            { "text": "构建与部署", "link": "/caching-and-deployment" },
+            { "text": "构建与部署", "link": "/build-and-deployment" },
             { "text": "更新内容", "link": "/updating-content" }
           ]
         },

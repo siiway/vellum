@@ -6,8 +6,8 @@ description: "The VitePress-compatible markdown vocabulary Vellum understands."
 # Markdown features
 
 Vellum's parser is [markdown-it](https://github.com/markdown-it/markdown-it)
-with a curated plugin set. Anything that works in VitePress should work
-identically here; the OPS extensions stack on top
+with a curated plugin set. Most VitePress markdown works the same
+here, and the OPS extensions stack on top
 (see [OPS extensions](./ops-extensions)).
 
 For exhaustive visual tests of every feature, see the
@@ -99,7 +99,7 @@ GitHub's `> [!KIND]` syntax is rewritten into the same callout primitives:
 
 ```md
 > [!NOTE]
-> Equivalent to ::: info.
+> Equivalent to ::: note.
 
 > [!TIP]
 > Equivalent to ::: tip.
@@ -116,18 +116,21 @@ GitHub's `> [!KIND]` syntax is rewritten into the same callout primitives:
 
 ## Code blocks
 
-Fenced blocks are highlighted with Shiki at parse time, server-side. The
+Fenced blocks are highlighted with Shiki at build time. The
 fence info string accepts language, filename, line numbers, and highlight
 ranges:
 
-```md
-`​``ts:line-numbers [src/build/sources.ts] {2,4-6}
-export async function fetchSourceFile(env, repo, ref, path) {
-  if (repo.source === "local") return fetchLocalFile(env, repo, path);
-  return fetchGitHubRaw(env, repo.owner, repo.repo, ref, path);
+````md
+```ts:line-numbers [src/build/sources.ts] {2,4-6}
+export async function readSourceFile(repo: RepoConfig, path: string) {
+  const root = await realpath(repoDir(repo));
+  const full = await realpath(resolve(root, path));
+  // A symlink out of the repo reads as missing.
+  if (!isInside(root, full)) return null;
+  return await readFile(full, "utf8");
 }
-`​``
 ```
+````
 
 The card chrome (header bar with filename + language pill + copy button)
 appears whenever `filename` or `lang` is set; otherwise it's just the code
@@ -137,19 +140,19 @@ surface with a floating copy button on hover.
 
 `::: code-group` wraps multiple fences into a tab strip:
 
-```md
+````md
 ::: code-group
 
-`​``ts [TypeScript]
+```ts [TypeScript]
 console.log("ts");
-`​``
+```
 
-`​``py [Python]
+```py [Python]
 print("py")
-`​``
+```
 
 :::
-```
+````
 
 ::: code-group
 
@@ -175,20 +178,20 @@ Standard pipe tables with optional alignment:
 ## Mermaid
 
 Fenced blocks with the `mermaid` language are pre-rendered at build time via
-[Kroki](./caching-and-deployment#external-services) in **both** light and
+[Kroki](./build-and-deployment#external-services) in **both** light and
 dark palettes, so theme switching is instant and doesn't need to load any
 mermaid JS in the browser.
 
-```md
-`​``mermaid
+````md
+```mermaid
 flowchart LR
   A[Build] --> B{Source?}
   B -->|github| C[git clone]
   B -->|local| D[local-docs/]
   C & D --> E[Render]
   E --> F[Static HTML]
-`​``
 ```
+````
 
 ```mermaid
 flowchart LR
@@ -199,15 +202,15 @@ flowchart LR
   E --> F[Static HTML]
 ```
 
-When Kroki is unreachable, the client lazy-loads the ~600KB mermaid runtime
-and renders the diagram itself — graceful degradation rather than a blank
-card.
+When Kroki is unreachable during the build, the diagram ships without its
+SVGs, and the reader's browser lazy-loads the ~600KB mermaid runtime to draw
+it — graceful degradation rather than a blank card.
 
 ## Math
 
 `$inline$` and `$$display$$` math are rendered to inline SVG by
 [markdown-it-mathjax3](https://www.npmjs.com/package/markdown-it-mathjax3)
-at parse time. No client-side library required.
+at build time. No client-side library required.
 
 ```md
 The Pythagorean theorem is $a^2 + b^2 = c^2$.

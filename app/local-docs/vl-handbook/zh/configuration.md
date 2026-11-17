@@ -40,14 +40,16 @@ Vellum 的构建只读一个文件：`app/vellum.config.json`。它的形状
 | --------------- | :--: | -------------------------------------------------------------------------- |
 | `title`         |  ✓   | NavBar 中的品牌名以及 `<title>` 后缀。                                     |
 | `homepageRepo`  |  ✓   | 充当主页的仓库 slug，主页位于 `/{prefix}`。                                |
-| `defaultLocale` |  ✓   | URL 中没有语言前缀时使用的语言代码。                                       |
-| `locales`       |  ✓   | `[ { code, label, prefix } ]`。`prefix` 为空表示该语言位于每个仓库的根。   |
+| `defaultLocale` |  ✓   | 没有语言前缀的 URL 所去的语言，也是 `/` 最后的回退。                       |
+| `locales`       |  ✓   | `[ { code, label, prefix } ]`。`prefix` 为空表示该语言的 URL 不带前缀。    |
 | `tagline`       |      | 在 `home` 布局的落地页上显示。                                             |
 | `logo`          |      | 站点 logo 的 URL。                                                         |
 | `favicon`       |      | favicon 的 URL。                                                           |
 | `themeColor`    |      | 强调色（按钮、链接、焦点）及 `<meta name="theme-color">`，例如 `#0078d4`。 |
 | `footer`        |      | 每个页面底部展示的页脚文字。                                               |
 | `url`           |      | 站点的公开源地址，例如 `https://docs.example.com`。见下文。                |
+| `socialLinks`   |      | NavBar 中的图标链接，`[ { icon, link, ariaLabel? } ]`，同 VitePress。      |
+| `searchAliases` |      | 搜索同义词，`{ 词: [同义词] }`。见 [搜索](./search#同义词)。               |
 
 `url` 让每个页面 head 中的 canonical、Open Graph 和 hreflang URL 成为绝对地址，
 sitemap 也需要它。没有它时这些 URL 保持为以根开头的相对地址，`og:url` 会被省略，
@@ -61,27 +63,30 @@ sitemap 也需要它。没有它时这些 URL 保持为以根开头的相对地�
 
 ## RepoConfig
 
-一个仓库代表一段文档——URL 空间里的一个区段（`/<slug>/...`）、一份
+一个仓库代表一段文档——URL 空间里的一个区段（`/{prefix}/{slug}/...`）、一份
 侧边栏、一份搜索索引。通常每个你需要写文档的 GitHub 仓库对应一条
 RepoConfig，外加几个可选的本地源用于手册和落地页。
 
-| 字段              | 必填 | 说明                                                                          |
-| ----------------- | :--: | ----------------------------------------------------------------------------- |
-| `slug`            |  ✓   | URL 片段。必须匹配 `^[a-z0-9][a-z0-9-]*$`。                                   |
-| `displayName`     |  ✓   | 显示在品牌面包屑和 404 建议里。                                               |
-| `docsRoot`        |  ✓   | 数据源内到文档树的相对路径。空字符串表示数据源根目录。                        |
-| `source`          |      | `"github"`（默认）或 `"local"`。详见 [数据源](./sources)。                    |
-| `owner`           | ✓¹   | GitHub 用户/组织名。仅当 `source: "github"` 时必填。                          |
-| `repo`            | ✓¹   | GitHub 仓库名。仅当 `source: "github"` 时必填。                               |
-| `branch`          | ✓¹   | 构建克隆的分支。仅当 `source: "github"` 时必填。                              |
-| `localPath`       |      | 覆盖默认的 `local-docs/{slug}`。仅适用于本地源。                              |
-| `description`     |      | 仓库主页上显示的简介，也是 SSR meta description 的回退。                      |
-| `logo`            |      | 仓库级别的 logo URL。                                                         |
-| `editLinkPattern` |      | "编辑此页面" 的模板——`:path` 会被替换成文档根的相对路径。                     |
-| `versions`        |      | 可选。`[ { label, branch, default? } ]`；构建渲染默认的那一个。               |
-| `localeDirs`      |      | 各语言代码对应的源目录。详见 [国际化](./i18n#每个仓库的内容布局)。            |
-| `landingPage`     |      | 仓库根 URL 重定向到的路径，例如按目录分版本的文档用 `"v0.4"`。                |
-| `hideInBrand`     |      | 在站点标题后隐藏该仓库的 displayName 面包屑。对主页仓库很有用。               |
+| 字段                | 必填 | 说明                                                                             |
+| ------------------- | :--: | -------------------------------------------------------------------------------- |
+| `slug`              |  ✓   | URL 片段。必须匹配 `^[a-z0-9][a-z0-9-]*$`。                                      |
+| `displayName`       |  ✓   | 显示在品牌面包屑和 404 建议里。                                                  |
+| `docsRoot`          |  ✓   | 数据源内到文档树的相对路径。空字符串表示数据源根目录。                           |
+| `source`            |      | `"github"`（默认）或 `"local"`。详见 [数据源](./sources)。                       |
+| `owner`             |  ✓¹  | GitHub 用户/组织名。仅当 `source: "github"` 时必填。                             |
+| `repo`              |  ✓¹  | GitHub 仓库名。仅当 `source: "github"` 时必填。                                  |
+| `branch`            |  ✓¹  | 构建克隆的分支。仅当 `source: "github"` 时必填。                                 |
+| `localPath`         |      | 覆盖默认的 `local-docs/{slug}`。仅适用于本地源。                                 |
+| `description`       |      | 仓库首页的 frontmatter 没有设置描述时，用作它的描述。                            |
+| `logo`              |      | 仓库级别的 logo URL。                                                            |
+| `editLinkPattern`   |      | "编辑此页面" 的模板——`:path` 会被替换成文档根的相对路径。                        |
+| `versions`          |      | `[ { label, branch, default? } ]`。只构建 `default` 的那一项（没有则取第一项）。 |
+| `localeDirs`        |      | 各语言代码对应的源目录。详见 [国际化](./i18n#每个仓库的内容布局)。               |
+| `landingPage`       |      | 仓库根 URL 重定向到的路径，例如按目录分版本的文档用 `"v0.4"`。                   |
+| `hideInBrand`       |      | 在站点标题后隐藏该仓库的 displayName 面包屑。对主页仓库很有用。                  |
+| `excludeFromSearch` |      | 不参与跨仓库搜索，例如主页仓库。                                                 |
+| `socialLinks`       |      | 读者位于该仓库内时 NavBar 显示的图标链接，替代站点级的。                         |
+| `searchAliases`     |      | 该仓库的搜索同义词，叠加在站点级之上。                                           |
 
 ¹ 条件性必填：JSON Schema 在 `source` 为 `"github"`（或省略）时强制要求
 `owner` / `repo` / `branch`。
@@ -99,10 +104,7 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
   "description": "Self-hosted OAuth 2.0 / OpenID Connect on Cloudflare Workers.",
   "logo": "https://icons.siiway.org/prism/icon.svg",
   "editLinkPattern": "https://github.com/siiway/prism/edit/main/docs/:path",
-  "versions": [
-    { "label": "main", "branch": "main", "default": true },
-    { "label": "v1", "branch": "v1" }
-  ]
+  "searchAliases": { "idp": ["identity provider", "oidc"] }
 }
 ```
 
@@ -113,12 +115,12 @@ RepoConfig，外加几个可选的本地源用于手册和落地页。
 站点级别的顶部导航。当读者位于某个仓库内时，该仓库的 nav
 （来自 `vellum.json#nav` 或 VitePress 的 `themeConfig.nav`）优先于站点级。
 
-| 字段          | 必填 | 说明                                                                |
-| ------------- | :--: | ------------------------------------------------------------------- |
-| `text`        |  ✓   | NavBar 上显示的文字。                                               |
-| `link`        | ✓²   | 目标 URL 或站点根相对路径。`link` 和 `items` 必须二选一。           |
-| `items`       | ✓²   | 子项，把当前项变成下拉菜单。                                        |
-| `activeMatch` |      | 一个针对仓库内相对路径的正则，匹配时把该项保持高亮。                |
+| 字段          | 必填 | 说明                                                      |
+| ------------- | :--: | --------------------------------------------------------- |
+| `text`        |  ✓   | NavBar 上显示的文字。                                     |
+| `link`        |  ✓²  | 目标 URL 或站点根相对路径。`link` 和 `items` 必须二选一。 |
+| `items`       |  ✓²  | 子项，把当前项变成下拉菜单。                              |
+| `activeMatch` |      | 一个针对仓库内相对路径的正则，匹配时把该项保持高亮。      |
 
 ² `link` / `items` 必须恰好二选一（由 JSON Schema 的 `oneOf` 强制）。
 

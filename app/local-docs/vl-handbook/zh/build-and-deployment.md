@@ -41,7 +41,7 @@ dist/site/
   assets/                          客户端 bundle
 ```
 
-每个页面的 HTML 都是完整的：服务端渲染的标记、样式、SEO head，以及客户端
+每个页面的 HTML 都是完整的：预渲染的标记、样式、SEO head，以及客户端
 hydrate 所用的数据。在站内点击链接时，只会从 `_vellum/pages/` 拉取下一个页面的
 JSON。
 

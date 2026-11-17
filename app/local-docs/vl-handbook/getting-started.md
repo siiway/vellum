@@ -117,10 +117,6 @@ flowchart LR
 ```
 ````
 
-`​``
-
-````
-
 Rebuild and reload — the page is at `/{prefix}/my-docs`, under your locale's
 URL prefix (`/en-US/my-docs` with the bundled config).
 
@@ -130,7 +126,7 @@ When you're ready to push to Cloudflare:
 
 ```bash
 bun run deploy
-````
+```
 
 `bun run deploy` runs the full build, then `wrangler deploy`, which uploads
 `dist/site` as static assets. You'll see a
@@ -150,7 +146,7 @@ do it. See [Updating content](./updating-content).
 | Sidebar discovery     |       ✓       |      ✓       |
 | Search index          |       ✓       |      ✓       |
 | OPS extensions        |       ✓       |      ✓       |
-| Mermaid SSR via Kroki |       ✓       |      ✓       |
+| Mermaid via Kroki     |       ✓       |      ✓       |
 | Math (MathJax)        |       ✓       |      ✓       |
 | xref resolution       |       ✓       |      ✓       |
 | "Last updated" footer |       ✓       |      —       |

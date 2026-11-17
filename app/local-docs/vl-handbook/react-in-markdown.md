@@ -39,7 +39,7 @@ mid-paragraph or as a standalone block:
 
 ```md
 Click <Button appearance="primary">this button</Button> to continue,
-or read the <Link href="/handbook/getting-started">getting started</Link>
+or read the <Link href="/vl-handbook/getting-started">getting started</Link>
 guide first.
 
 For a bigger call to action:
@@ -127,13 +127,48 @@ Eager-importing a heavy component means every page pays for it. Lazy import
 unless the component is used everywhere in the chrome.
 :::
 
+## Vue components
+
+A docs repo written for VitePress keeps the Vue components it registers in
+`.vitepress/theme/index.ts` under its docs root:
+
+```ts
+// .vitepress/theme/index.ts
+import DefaultTheme from "vitepress/theme";
+import ScopeBuilder from "./ScopeBuilder.vue";
+
+export default {
+  extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component("ScopeBuilder", ScopeBuilder);
+  },
+};
+```
+
+The build reads that file without running it, takes each
+`app.component("Name", X)` whose `X` is imported from a `.vue` file, and
+publishes that file at `/_vellum/vue/{repo}/{Name}.vue`. A `<ScopeBuilder />`
+in a page becomes a placeholder, and the reader's browser loads Vue and
+`vue3-sfc-loader` (only on pages that have one) and mounts the component in
+it.
+
+- Only registered components load, and a component can import only `vue`
+  and `vitepress`.
+- From `vitepress`, `useData()` and `useRoute()` exist, with the page's
+  locale, title, frontmatter and theme; nothing else does.
+- Attributes become props (numbers and booleans converted); children and
+  slots are dropped.
+- The component renders only in the browser, so it's not in the
+  pre-rendered HTML or in search.
+
 ## Safety
 
-The registry is a closed set — authors cannot mount arbitrary React
-components or arbitrary HTML elements by tag name. Inline HTML tags
-(lowercase) still pass through `dangerouslySetInnerHTML` for things like
-`<sub>`, `<kbd>`, etc., but they can't introduce `<script>` because the
-markdown parser strips raw script tags before they reach the AST builder.
+The registry is a closed set: a tag name mounts only a component listed in
+it. That doesn't sandbox the rest of the page, though. Raw HTML (`<sub>`,
+`<kbd>`, …) is kept as written, `<script>` tags and event handlers
+included, and ends up in the pre-rendered page. Vellum doesn't sanitize
+docs content, so only publish repos whose authors you trust with the
+site.
 
 If you need a brand-new interactive primitive, add it to the registry
-rather than encouraging authors to write inline `<script>` tags.
+rather than having authors write inline `<script>` tags.

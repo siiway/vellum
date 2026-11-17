@@ -6,7 +6,7 @@ description: "Vellum 支持的、与 VitePress 兼容的 markdown 词汇表。"
 # Markdown 特性
 
 Vellum 的解析器是 [markdown-it](https://github.com/markdown-it/markdown-it)
-加上一套精选的插件集合。任何在 VitePress 里能用的写法在这里都能用；
+加上一套精选的插件集合。大部分 VitePress 的 markdown 写法在这里效果相同，
 OPS 扩展叠加在它之上（见 [OPS 扩展](./ops-extensions)）。
 
 每个特性都有完整的视觉测试，详见 [功能测试](./tests/) 一节。
@@ -94,7 +94,7 @@ GitHub 的 `> [!KIND]` 语法被重写到同一套提示框原语上：
 
 ```md
 > [!NOTE]
-> Equivalent to ::: info.
+> Equivalent to ::: note.
 
 > [!TIP]
 > Equivalent to ::: tip.
@@ -111,17 +111,20 @@ GitHub 的 `> [!KIND]` 语法被重写到同一套提示框原语上：
 
 ## 代码块
 
-围栏代码块在解析期就被 Shiki 在服务端高亮。fence 信息串支持
+围栏代码块在构建时由 Shiki 高亮。fence 信息串支持
 语言、文件名、行号、高亮范围：
 
-```md
-`​``ts:line-numbers [src/build/sources.ts] {2,4-6}
-export async function fetchSourceFile(env, repo, ref, path) {
-  if (repo.source === "local") return fetchLocalFile(env, repo, path);
-  return fetchGitHubRaw(env, repo.owner, repo.repo, ref, path);
+````md
+```ts:line-numbers [src/build/sources.ts] {2,4-6}
+export async function readSourceFile(repo: RepoConfig, path: string) {
+  const root = await realpath(repoDir(repo));
+  const full = await realpath(resolve(root, path));
+  // A symlink out of the repo reads as missing.
+  if (!isInside(root, full)) return null;
+  return await readFile(full, "utf8");
 }
-`​``
 ```
+````
 
 只要设置了 `filename` 或 `lang`，就会出现卡片样式的顶栏（文件名 +
 语言徽章 + 复制按钮）；否则仅显示代码区域，鼠标悬停时出现浮动的
@@ -131,19 +134,19 @@ export async function fetchSourceFile(env, repo, ref, path) {
 
 `::: code-group` 把多个 fence 包装成一个 tab 条：
 
-```md
+````md
 ::: code-group
 
-`​``ts [TypeScript]
+```ts [TypeScript]
 console.log("ts");
-`​``
+```
 
-`​``py [Python]
+```py [Python]
 print("py")
-`​``
+```
 
 :::
-```
+````
 
 ::: code-group
 
@@ -169,20 +172,20 @@ print("py")
 ## Mermaid
 
 `mermaid` 语言的围栏代码块会通过
-[Kroki](./caching-and-deployment#外部服务) 在构建时 **同时**
+[Kroki](./build-and-deployment#外部服务) 在构建时 **同时**
 预渲染浅色和深色两个版本，所以切换主题是瞬时的，浏览器无需加载任何
 mermaid JS。
 
-```md
-`​``mermaid
+````md
+```mermaid
 flowchart LR
   A[Build] --> B{Source?}
   B -->|github| C[git clone]
   B -->|local| D[local-docs/]
   C & D --> E[Render]
   E --> F[Static HTML]
-`​``
 ```
+````
 
 ```mermaid
 flowchart LR
@@ -193,14 +196,14 @@ flowchart LR
   E --> F[Static HTML]
 ```
 
-当 Kroki 不可达时，客户端会按需懒加载 ~600KB 的 mermaid 运行时
-并在本地渲染——优雅降级而非显示空白卡片。
+如果构建时 Kroki 不可达，图表发布时不带 SVG，读者的浏览器会按需懒加载
+~600KB 的 mermaid 运行时来绘制——优雅降级而非显示空白卡片。
 
 ## 数学公式
 
 `$inline$` 与 `$$display$$` 形式的数学公式由
 [markdown-it-mathjax3](https://www.npmjs.com/package/markdown-it-mathjax3)
-在解析期渲染为行内 SVG。不需要任何客户端库。
+在构建时渲染为行内 SVG。不需要任何客户端库。
 
 ```md
 The Pythagorean theorem is $a^2 + b^2 = c^2$.

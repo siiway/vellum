@@ -30,14 +30,14 @@ Build → Sources (git clone of each GitHub repo, local files)
 - **Build-time diagrams.** Mermaid rendered through Kroki in both light
   and dark palettes — theme switching is instant, no client mermaid bundle
   needed when both palettes are populated.
-- **First-class i18n.** Locale-first URLs (`/zh/repo/page`), translated site
+- **First-class i18n.** Locale-first URLs (`/zh-CN/repo/page`), translated site
   chrome, hreflang alternates in the SEO head, sitemap with `xhtml:link`
   siblings.
-- **Search.** Per-repo Ctrl-K dialog plus a full-page `/search` that fans
-  out across every repo, over indexes the build writes. Advanced query syntax
-  (`"phrase"`, `-exclude`, `title:`, `repo:`).
-- **React in Markdown.** Drop FluentUI primitives directly into `.md`
-  files — they mount as real components, not inert HTML.
+- **Search.** Per-repo Ctrl-K dialog plus a full-page search that fans
+  out across every repo, run in the browser over indexes the build writes.
+  Query syntax (`"phrase"`, `-exclude`, `title:`, `repo:`) and synonyms.
+- **Components in Markdown.** FluentUI primitives and a repo's VitePress Vue
+  components mount as real components, not inert HTML.
 - **SEO out of the box.** Open Graph + Twitter Card + JSON-LD (WebSite,
   BreadcrumbList, TechArticle), `/robots.txt`, `/sitemap.xml`.
 - **Static and incremental.** No runtime, no cache to purge. `bun run update`
@@ -106,8 +106,8 @@ for every field.
 .github/            # PR checks, deploy, update-content and triage workflows
 app/
   src/
-    build/          # Static site build — sources, markdown pipeline, SSR,
-                    #   search indexes, redirects, sitemap
+    build/          # Static site build — sources, markdown pipeline,
+                    #   pre-rendering, search indexes, redirects, sitemap
     web/            # React client — Layout, NavBar, Sidebar, Outline,
                     #   SearchDialog, SearchPage, MarkdownAst renderer
     shared/         # Types, i18n and search shared by the build and client
@@ -153,7 +153,7 @@ extension, the search/i18n/build/update details — read the handbook:
 - [React components in Markdown](./app/local-docs/vl-handbook/react-in-markdown.md)
 - [Search](./app/local-docs/vl-handbook/search.md)
 - [Internationalisation](./app/local-docs/vl-handbook/i18n.md)
-- [Build & deployment](./app/local-docs/vl-handbook/caching-and-deployment.md)
+- [Build & deployment](./app/local-docs/vl-handbook/build-and-deployment.md)
 - [Updating content](./app/local-docs/vl-handbook/updating-content.md)
 
 The handbook is itself built by Vellum from the bundled `vl-handbook`

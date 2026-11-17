@@ -85,9 +85,10 @@ Python-specific instructions.
 :::zone-end:::
 ```
 
-Readers pick a pivot via `?pivot=...` in the URL. With no pivot set, every
-zone is visible so the page reads top-to-bottom — a deliberate design
-choice for SSR-friendliness.
+Readers pick a pivot via `?pivot=...` in the URL. The page is pre-rendered
+with every zone visible; the client then hides the zones that don't match
+the pivot. With no pivot set, or without JavaScript, every zone stays
+visible, so the page reads top-to-bottom.
 
 ## Monikers
 
@@ -131,7 +132,7 @@ independent.
 
 ## Includes
 
-`[!INCLUDE [label](path)]` fetches another Markdown file and splices its
+`[!INCLUDE [label](path)]` reads another Markdown file and splices its
 parsed blocks into the current AST. Containers / code / xref inside the
 include all keep working.
 
@@ -144,7 +145,7 @@ images). To prevent runaway recursion, Vellum drops the include-resolver
 on the inner call — so an include can use mermaid, math, xref, etc., but
 not another `[!INCLUDE]`.
 
-When the resolver returns null (file missing, network error), a visible
+When the file can't be read (missing, or outside the repo), a visible
 "Failed to resolve INCLUDE" callout appears with the offending path so the
 author can spot the broken reference.
 

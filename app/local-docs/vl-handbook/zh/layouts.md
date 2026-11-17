@@ -19,7 +19,7 @@ description: Optional tagline shown under the H1.
 ---
 ```
 
-正文列最大宽度 780px，采用标准的正文排版：
+正文列最大宽度 760px，采用标准的正文排版：
 
 - 鼠标悬停时显示的标题锚点
 - 浅色背景的行内代码
@@ -57,13 +57,13 @@ hero:
 features:
   - icon: 🚀
     title: Fast
-    details: Sub-millisecond responses from the edge.
+    details: Pre-rendered pages, served as static files.
   - icon: 🔒
     title: Secure
     details: OAuth, OIDC, CSRF, the works.
   - icon: 📦
     title: Small
-    details: Worker bundle under 1 MB gzipped.
+    details: No server code to run.
 ---
 ```
 
@@ -80,12 +80,12 @@ Frontmatter 之后的任何 Markdown 都会渲染在特性网格下方。
 layout: ms-learn
 hero:
   title: SiiWay Documentation
-  tagline: "Build, ship, and run apps at the edge."
+  tagline: "Building open-source software in the AI era."
   searchPlaceholder: Search SiiWay docs
   actions:
     - text: Get started
       theme: brand
-      link: /handbook/getting-started
+      link: /vl-handbook/getting-started
 getStarted:
   title: Get started
   description: Pick a path.
@@ -93,7 +93,7 @@ getStarted:
     - title: Quickstart
       description: Spin up your first project in five minutes.
       icon: Rocket24Regular
-      link: /handbook/getting-started
+      link: /vl-handbook/getting-started
 products:
   title: Browse our products
   items:
@@ -107,7 +107,7 @@ roles:
     - title: Developers
       description: Build apps with SiiWay's primitives.
       icon: Code24Regular
-      link: /handbook/
+      link: /vl-handbook/
 resources:
   title: More resources
   items:
