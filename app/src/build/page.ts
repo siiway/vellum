@@ -103,8 +103,7 @@ export async function buildPagePayload(
     resolveXref: (slug, rest) => {
       const r = site.repos.find((x) => x.slug === slug);
       if (!r) return null;
-      const base = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`;
-      return `${base}/${rest.replace(/\.md$/, "")}`.replace(/\/+/g, "/");
+      return xrefUrl(`${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`, rest);
     },
   };
 
@@ -199,6 +198,18 @@ export async function buildPagePayload(
       },
     },
   };
+}
+
+// The URL a cross-repo link `@{slug}/{rest}` leads to, under that repo's URL
+// `base`. Like a link to a page of the same repo, `.md` and a final `index`
+// are dropped, ahead of any `#hash` or `?query`.
+export function xrefUrl(base: string, rest: string): string {
+  const cut = rest.search(/[?#]/);
+  const path = (cut < 0 ? rest : rest.slice(0, cut))
+    .replace(/\.md$/i, "")
+    .replace(/(^|\/)index$/i, "$1");
+  const url = `${base}/${path}`.replace(/\/+/g, "/").replace(/(.)\/$/, "$1");
+  return url + (cut < 0 ? "" : rest.slice(cut));
 }
 
 function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {
