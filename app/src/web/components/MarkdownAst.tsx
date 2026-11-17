@@ -53,7 +53,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { makeStyles } from "../css";
 import {
@@ -64,6 +66,7 @@ import {
   type MarkdownAst,
 } from "../../shared/markdown";
 import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
+import { format } from "../../shared/i18n";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
 import { useVellum } from "../context";
@@ -494,6 +497,10 @@ export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
   );
 }
 
+// On a page's first load, React doesn't render the blocks isStaticBlock
+// (shared/markdown.ts) counts as static: the client adopts their markup
+// from the page. Their renderers below can't rely on state, effects or
+// handlers; one that needs them makes its block not static there first.
 function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof useStyles> }) {
   switch (block.type) {
     case "prerendered":
@@ -543,16 +550,7 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
           {block.children.map((c, i) => (
             <InlineNode key={i} node={c} styles={styles} />
           ))}
-          {block.id && (
-            <Link
-              href={`#${block.id}`}
-              className={mergeClasses(styles.anchorMark, "vellum-anchor-mark")}
-              aria-label="Permalink to this heading"
-              data-no-router="true"
-            >
-              #
-            </Link>
-          )}
+          {block.id && <Permalink id={block.id} styles={styles} />}
         </HeadingComp>
       );
     }
@@ -579,7 +577,7 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
     case "table":
       return <TableNode block={block} styles={styles} />;
     case "mermaid":
-      return <MermaidBlock code={block.code} svgLight={block.svgLight} svgDark={block.svgDark} />;
+      return <MermaidBlock block={block} />;
     case "html":
       return <HtmlBlock value={block.value} />;
     case "opsImage":
@@ -794,14 +792,42 @@ function InlineNode({
           </Link>
         );
       }
-      // Unresolved: render as monospace fallback. The dashed border makes it
-      // obvious to the author that the uid didn't land in any xrefmap.
-      return (
-        <Text className={styles.xrefUnresolved} as="span" title="Unresolved xref">
-          {node.display ?? node.target}
-        </Text>
-      );
+      return <UnresolvedXref node={node} styles={styles} />;
   }
+}
+
+// The few nodes that need the UI's text read it themselves, so the many
+// other blocks and inlines don't render again whenever the context changes.
+
+function Permalink({ id, styles }: { id: string; styles: ReturnType<typeof useStyles> }) {
+  const { t } = useVellum();
+  return (
+    <Link
+      href={`#${id}`}
+      className={mergeClasses(styles.anchorMark, "vellum-anchor-mark")}
+      aria-label={t("ui.permalink")}
+      data-no-router="true"
+    >
+      #
+    </Link>
+  );
+}
+
+// Render as monospace fallback. The dashed border makes it obvious to the
+// author that the uid didn't land in any xrefmap.
+function UnresolvedXref({
+  node,
+  styles,
+}: {
+  node: Extract<Inline, { type: "xref" }>;
+  styles: ReturnType<typeof useStyles>;
+}) {
+  const { t } = useVellum();
+  return (
+    <Text className={styles.xrefUnresolved} as="span" title={t("ui.xref.unresolved")}>
+      {node.display ?? node.target}
+    </Text>
+  );
 }
 
 // An inline `<Name>` tag, its open/close pair (or self-closing form) merged
@@ -894,9 +920,10 @@ function CalloutNode({
   block: Extract<Block, { type: "callout" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
+  const { t } = useVellum();
   // Titles are Inline[] so `code`, **bold**, links inside the title render
-  // through the same InlineNode renderer as paragraph content. `Details`
-  // (capital-D) is the fallback when a `::: details` block didn't carry a
+  // through the same InlineNode renderer as paragraph content. "Details"
+  // (ui.details) is the fallback when a `::: details` block didn't carry a
   // custom summary.
   const titleNodes = block.title?.length
     ? block.title.map((c, i) => (
@@ -925,7 +952,7 @@ function CalloutNode({
             gap: 6,
           }}
         >
-          <ChevronDown24Regular /> <Body1Strong>{titleNodes ?? "Details"}</Body1Strong>
+          <ChevronDown24Regular /> <Body1Strong>{titleNodes ?? t("ui.details")}</Body1Strong>
         </summary>
         <div style={{ marginTop: 8 }}>
           {block.children.map((b, i) => (
@@ -989,16 +1016,7 @@ function CodeNode({
   block: Extract<Block, { type: "code" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
-  const [copied, setCopied] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const onCopy = useCallback(() => {
-    // The code as shown, so without Shiki's `[!code]` annotations. The
-    // payload a page hydrates from has no `code` (leanAst).
-    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    });
-  }, []);
 
   // Only show the header bar when there's something to put in it; otherwise the
   // code sits in a clean card with a floating copy button that fades in on hover.
@@ -1017,25 +1035,13 @@ function CodeNode({
     />
   );
 
-  const copyIcon = copied ? (
-    <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
-  ) : (
-    <Copy24Regular />
-  );
-
   if (!hasHeader) {
     return (
       <Card className={mergeClasses(styles.codeCard, styles.codeCardHover)} appearance="outline">
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={copyIcon}
-            onClick={onCopy}
-            className={mergeClasses(styles.copyFloating, "vellum-copy-floating")}
-            aria-label={copied ? "Copied" : "Copy code"}
-          />
-        </Tooltip>
+        <CopyButton
+          source={bodyRef}
+          className={mergeClasses(styles.copyFloating, "vellum-copy-floating")}
+        />
         {body}
       </Card>
     );
@@ -1050,11 +1056,7 @@ function CodeNode({
           <div className={styles.codeFilename} />
         )}
         {block.lang && <Caption1 className={styles.codeLang}>{block.lang}</Caption1>}
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
-          <Button appearance="subtle" size="small" icon={copyIcon} onClick={onCopy}>
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </Tooltip>
+        <CopyButton source={bodyRef} withText />
       </div>
       {body}
     </Card>
@@ -1069,22 +1071,8 @@ function CodeGroupNode({
   styles: ReturnType<typeof useStyles>;
 }) {
   const [active, setActive] = useState(0);
-  const [copied, setCopied] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const onCopy = useCallback(() => {
-    // The tab's code as shown, like a code block's (CodeNode).
-    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    });
-  }, []);
-
   const tab = block.tabs[active];
-  const copyIcon = copied ? (
-    <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
-  ) : (
-    <Copy24Regular />
-  );
   return (
     <Card className={styles.codeGroup} appearance="outline">
       <div className={styles.codeGroupTabs}>
@@ -1094,23 +1082,14 @@ function CodeGroupNode({
           size="small"
           appearance="transparent"
         >
-          {block.tabs.map((t, i) => (
+          {block.tabs.map((item, i) => (
             <Tab key={i} value={i}>
-              {t.label}
+              {item.label}
             </Tab>
           ))}
         </TabList>
         <div style={{ flex: 1 }} />
-        <Tooltip content={copied ? "Copied" : "Copy code"} relationship="label">
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={copyIcon}
-            onClick={onCopy}
-            style={{ marginRight: 8 }}
-            aria-label={copied ? "Copied" : "Copy code"}
-          />
-        </Tooltip>
+        <CopyButton source={bodyRef} style={{ marginRight: 8 }} />
       </div>
       {tab && (
         <div
@@ -1120,6 +1099,54 @@ function CodeGroupNode({
         />
       )}
     </Card>
+  );
+}
+
+// Copies the code in `source` as shown, so without Shiki's `[!code]`
+// annotations: the payload a page hydrates from has no `code` (leanAst).
+// Says so for a moment after. `withText` puts what it does next to its icon.
+function CopyButton({
+  source,
+  withText = false,
+  className,
+  style,
+}: {
+  source: RefObject<HTMLElement>;
+  withText?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const { t } = useVellum();
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(() => {
+    navigator.clipboard?.writeText(source.current?.textContent ?? "").then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    });
+  }, [source]);
+  const label = t(copied ? "ui.copied" : "ui.copyCode");
+  return (
+    <Tooltip content={label} relationship="label">
+      <Button
+        appearance="subtle"
+        size="small"
+        icon={
+          copied ? (
+            <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
+          ) : (
+            <Copy24Regular />
+          )
+        }
+        onClick={onCopy}
+        className={className}
+        style={style}
+        // With text, the Tooltip names it. An aria-label prop, even an
+        // undefined one, would override that.
+        {...(withText ? {} : { "aria-label": label })}
+      >
+        {withText ? t(copied ? "ui.copied" : "ui.copy") : undefined}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -1158,6 +1185,7 @@ function OpsImageNode({
 
 function OpsVideoNode({ block }: { block: Extract<Block, { type: "opsVideo" }> }) {
   const styles = useStyles();
+  const { t } = useVellum();
   const src = block.src;
   // Heuristic: YouTube embed URLs and channel9 URLs render in an iframe;
   // raw video file URLs (mp4/webm/ogg) render via <video>. Anything we can't
@@ -1168,7 +1196,7 @@ function OpsVideoNode({ block }: { block: Extract<Block, { type: "opsVideo" }> }
       {isMediaFile ? (
         <video controls preload="metadata" src={src} title={block.title} />
       ) : (
-        <iframe src={src} title={block.title ?? "Video"} allowFullScreen loading="lazy" />
+        <iframe src={src} title={block.title ?? t("ui.video")} allowFullScreen loading="lazy" />
       )}
     </div>
   );
@@ -1262,9 +1290,12 @@ function OpsMonikerNode({
   // moniker pane prefixed with a small notice so the reader knows the content
   // is version-scoped. A future pass can wire up a version selector and hide
   // panes that don't match.
+  const { t } = useVellum();
   return (
     <div className={styles.opsZonePane} data-moniker={block.range}>
-      <div className={styles.opsMonikerNotice}>Applies to: {block.range}</div>
+      <div className={styles.opsMonikerNotice}>
+        {format(t("ui.moniker.appliesTo"), { range: block.range })}
+      </div>
       {block.children.map((b, i) => (
         <BlockNode key={i} block={b} styles={styles} />
       ))}
@@ -1334,9 +1365,10 @@ function TableNode({
   block: Extract<Block, { type: "table" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
+  const { t } = useVellum();
   return (
     <div className={styles.tableWrap}>
-      <Table className={styles.table} aria-label="Markdown table" size="small">
+      <Table className={styles.table} aria-label={t("ui.table")} size="small">
         {block.head.length > 0 && (
           <TableHeader>
             <TableRow>

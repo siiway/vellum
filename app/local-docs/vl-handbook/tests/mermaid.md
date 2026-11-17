@@ -6,9 +6,9 @@ description: Drawn by Kroki at build time in both palettes; the client falls bac
 # Mermaid Diagrams
 
 The build pre-renders each diagram against Kroki in both light and dark themes
-and ships both SVGs in the page data. Toggling the theme swaps them
-instantly. If Kroki was unreachable, the client downloads the ~600KB mermaid
-runtime and renders client-side.
+and puts both SVGs in the page, where CSS shows the one for the theme. Toggling
+the theme swaps them instantly, with no JavaScript. If Kroki was unreachable,
+the client downloads the ~600KB mermaid runtime and renders client-side.
 
 ## Flowchart
 
@@ -83,3 +83,18 @@ pie title Where the bytes come from
     "Local"  : 25
     "Cache"  : 15
 ```
+
+## Inside a block with code
+
+::: details A diagram next to a code block
+
+```sh
+bun run build
+```
+
+```mermaid
+flowchart LR
+  A[Markdown] --> B[HTML]
+```
+
+:::

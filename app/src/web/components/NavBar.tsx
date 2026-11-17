@@ -475,16 +475,16 @@ function ThemeSwitch() {
 // anything not in the registry.
 function SocialLinks() {
   const styles = useStyles();
-  const { data } = useVellum();
+  const { data, t } = useVellum();
   // Per-repo overrides site-level. The build resolves vellum.json /
   // VitePress / RepoConfig sources into `repoSocialLinks`; only when none of
   // those produced anything do we fall back to the site-wide list.
   const links = data.repoSocialLinks ?? data.config.site.socialLinks ?? [];
   if (links.length === 0) return null;
   return (
-    <div className={styles.socials} aria-label="Social links">
+    <div className={styles.socials} role="group" aria-label={t("ui.socialLinks")}>
       {links.map((l, i) => {
-        const label = l.ariaLabel ?? defaultSocialLabel(l.icon);
+        const label = l.ariaLabel ?? defaultSocialLabel(l.icon) ?? t("ui.externalLink");
         const svg = getSocialIconSvg(l.icon);
         return (
           <Tooltip key={i} content={label} relationship="label">

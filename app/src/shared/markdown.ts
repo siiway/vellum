@@ -102,7 +102,15 @@ export type Block =
   // available; when absent (no env binding, Kroki failure, etc.) the client
   // falls back to its own mermaid render. Both palettes are shipped so theme
   // switching is instant and doesn't need to fetch a fresh SVG.
-  | { type: "mermaid"; code: string; svgLight?: string; svgDark?: string }
+  | {
+      type: "mermaid";
+      code: string;
+      svgLight?: string;
+      svgDark?: string;
+      // Only without the SVGs (leanAst): the `contentKey` of `code`, which
+      // the page marks its palettes with.
+      key?: string;
+    }
   // OPS / Microsoft Learn extensions.
   //
   // opsImage replaces the inline image for richer metadata (caption, lightbox,
@@ -168,6 +176,11 @@ export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
 // page: no state, effects or handlers. The client can then adopt it from
 // the page's HTML. Errs on the side of false: a PascalCase tag may be a
 // React component.
+//
+// This states what the renderers in MarkdownAst.tsx do, and nothing checks
+// it: on a page's first load React never renders a static block, so a
+// handler or effect given to its renderer would only work after a
+// navigation. A renderer that gets one makes its block not static here.
 export function isStaticBlock(block: Block): boolean {
   switch (block.type) {
     case "paragraph":
@@ -242,7 +255,8 @@ export function groupBlocks(blocks: Block[]): Array<Block | Block[]> {
 
 // The AST the client hydrates a page from, without what the page's HTML
 // already holds: each run of static blocks becomes a `prerendered` block,
-// and code blocks keep no code, only the key the page marks it with.
+// and code blocks and diagrams drawn by the build, also in other blocks,
+// keep no HTML, only the key the page marks it with.
 export function leanAst(ast: MarkdownAst): MarkdownAst {
   return {
     blocks: groupBlocks(ast.blocks).map((group) =>
@@ -251,12 +265,17 @@ export function leanAst(ast: MarkdownAst): MarkdownAst {
   };
 }
 
-// Blocks that show only some of their children (tabs, pivots) keep them
-// whole: the page holds only those shown first.
+// The page holds a pivot's zones all, but only the first tab of a set: tabs
+// keep their children whole.
 function leanBlock(block: Block): Block {
   switch (block.type) {
     case "code":
       return { ...block, code: "", html: "", key: contentKey(block.html) };
+    case "mermaid": {
+      if (!block.svgLight || !block.svgDark) return block;
+      const { svgLight: _light, svgDark: _dark, ...rest } = block;
+      return { ...rest, key: contentKey(block.code) };
+    }
     case "list":
       return {
         ...block,
@@ -267,6 +286,7 @@ function leanBlock(block: Block): Block {
     case "opsRow":
     case "opsColumn":
     case "opsMoniker":
+    case "opsZone":
       return { ...block, children: block.children.map(leanBlock) };
     default:
       return block;
