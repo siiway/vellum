@@ -24,15 +24,16 @@ const VERBATIM = new Set([
   "ops_code_include",
 ]);
 
-// On one line: a code span (kept as is: it ends at a backtick run as long as
-// the one it starts with), an inline link's destination after `](`, or a link
-// reference definition's (`[label]: dest`, not a footnote's `[^1]:`). A
-// destination is `<...>`, or has no spaces and balanced parentheses one
-// level deep.
+// In a block's text: a code span (kept as is), an inline link's destination
+// after `](`, or a link reference definition's (`[label]: dest`, not a
+// footnote's `[^1]:`). A code span starts at a whole run of backticks that
+// isn't escaped and ends at the next run as long, on any of the block's
+// lines. A destination is `<...>`, or has no spaces and balanced parentheses
+// one level deep.
 const LINK =
-  /(`+)[^\n]*?(?<!`)\1(?!`)|((?<!\\)\]\(\s*)(<[^<>\n]*>|[^\s()<>]+(?:\([^\s()]*\)[^\s()<>]*)*)|^( {0,3}\[(?!\^)[^\]]+\]:[ \t]*)(<[^<>\n]*>|\S+)/g;
+  /(?<![\\`])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|((?<!\\)\]\(\s*)(<[^<>\n]*>|[^\s()<>]+(?:\([^\s()]*\)[^\s()<>]*)*)|^( {0,3}\[(?!\^)[^\]]+\]:[ \t]*)(<[^<>\n]*>|\S+)/gm;
 
-// `render` is the page's render of `source`.
+// `body` and `blocks` are from the page's render of `source`.
 export function pageMarkdown(
   source: string,
   { body, blocks }: Pick<RenderOutput, "body" | "blocks">,
@@ -41,27 +42,42 @@ export function pageMarkdown(
   // gray-matter's body is the end of the source, after the frontmatter.
   if (!source.endsWith(body)) return source;
   const front = source.slice(0, source.length - body.length);
-  const code = new Set<number>();
+  const verbatim = new Set<number>();
+  const starts = new Set<number>();
   for (const { type, map } of blocks) {
-    if (VERBATIM.has(type)) for (let i = map[0]; i < map[1]; i++) code.add(i);
+    starts.add(map[0]);
+    if (VERBATIM.has(type)) for (let i = map[0]; i < map[1]; i++) verbatim.add(i);
   }
-  return (
-    front +
-    body
-      .split("\n")
-      .map((line, i) =>
-        code.has(i)
-          ? line
-          : line.replace(
-              LINK,
-              (match, _ticks, inline?: string, dest?: string, ref?: string, refDest?: string) => {
-                if (inline !== undefined) return inline + destination(dest!, ctx);
-                if (ref !== undefined) return ref + destination(refDest!, ctx);
-                return match;
-              },
-            ),
-      )
-      .join("\n")
+
+  // Lines go through in runs a code span can stretch across: inside one
+  // block, up to a blank line.
+  const out: string[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length) out.push(rewrite(run.join("\n"), ctx));
+    run = [];
+  };
+  body.split("\n").forEach((line, i) => {
+    if (verbatim.has(i) || !line.trim()) {
+      flush();
+      out.push(line);
+      return;
+    }
+    if (starts.has(i)) flush();
+    run.push(line);
+  });
+  flush();
+  return front + out.join("\n");
+}
+
+function rewrite(text: string, ctx: LinkContext): string {
+  return text.replace(
+    LINK,
+    (match, _ticks, inline?: string, dest?: string, ref?: string, refDest?: string) => {
+      if (inline !== undefined) return inline + destination(dest!, ctx);
+      if (ref !== undefined) return ref + destination(refDest!, ctx);
+      return match;
+    },
   );
 }
 
