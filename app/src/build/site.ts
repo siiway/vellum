@@ -22,6 +22,8 @@ import { htmlFile, listRepoPages, localeBase, pageRoute, stubRoute } from "./rou
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
 import { buildRedirects } from "./redirects";
+import { buildHeaders } from "./headers";
+import { buildAgentFiles } from "./agents";
 import { rootPage } from "./root-page";
 import { buildRobots, buildSitemap } from "./sitemap";
 import {
@@ -168,8 +170,30 @@ export async function updateSite(): Promise<UpdateResult | null> {
 
 async function renderOptions(): Promise<RenderOptions> {
   const origin = SITE.site.url?.replace(/\/+$/, "") || null;
-  if (!origin) console.warn("[vellum] site.url is not set: no sitemap, root-relative URLs");
+  if (!origin) {
+    console.warn("[vellum] site.url is not set: no sitemap or agent files, root-relative URLs");
+  } else if (!isOrigin(origin)) {
+    // Before a build starts deleting anything.
+    throw new Error(
+      `site.url must be an origin like "https://docs.example.com", not ${JSON.stringify(SITE.site.url)}`,
+    );
+  }
   return { assets: await readClientAssets(CLIENT_DIR), origin };
+}
+
+function isOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      /^https?:$/.test(url.protocol) &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash &&
+      !url.username
+    );
+  } catch {
+    return false;
+  }
 }
 
 // --- Repos --------------------------------------------------------------------
@@ -246,7 +270,8 @@ async function writePage(
   await writeJson(payloadPath(url), payload, root);
 }
 
-// Pages that belong to no repo, the redirects and the crawler files.
+// Pages that belong to no repo, the redirects and headers, and the files for
+// crawlers and agents.
 async function writeSiteFiles(opts: RenderOptions, repos: Record<string, RepoState>) {
   const { locales, defaultLocale } = SITE.site;
   for (const locale of locales) {
@@ -262,8 +287,14 @@ async function writeSiteFiles(opts: RenderOptions, repos: Record<string, RepoSta
   if (locales.every((l) => l.prefix)) await writeOut("index.html", rootPage(SITE));
 
   await writeOut("_redirects", buildRedirects(SITE));
-  await writeOut("robots.txt", buildRobots(opts.origin));
+  await writeOut("_headers", buildHeaders(opts.origin));
+  await writeOut("robots.txt", buildRobots(SITE, opts.origin));
   await writeSitemap(opts, repos);
+  if (opts.origin) {
+    for (const [path, content] of Object.entries(buildAgentFiles(SITE, opts.origin))) {
+      await writeOut(path, content);
+    }
+  }
 }
 
 async function writeSitemap(opts: RenderOptions, repos: Record<string, RepoState>) {

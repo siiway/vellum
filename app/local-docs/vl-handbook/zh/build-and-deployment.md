@@ -38,6 +38,7 @@ dist/site/
   _vellum/vue/{repo}/{Name}.vue    页面挂载的 Vue 组件
   _redirects, _headers             由 Cloudflare 应用
   robots.txt, sitemap.xml
+  .well-known/                     给 AI 智能体的文件，见下文
   assets/                          客户端 bundle
 ```
 
@@ -66,6 +67,32 @@ mermaid 渲染。
 `_headers` 让 `/assets/` 下带 hash 的 bundle 在一年内不可变。其它文件使用
 Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未变时得到 `304`。部署
 立即可见，没有需要清除的缓存。
+
+## AI 智能体
+
+站点只用静态文件告诉 AI 智能体它有哪些内容、可以如何使用：
+
+- `robots.txt` 声明 [Content Signal](https://contentsignals.org)，即 AI 可以
+  如何使用内容，取自 [`site.contentSignal`](./configuration#siteconfig)。
+- `/.well-known/agent-skills/index.json` 列出一个
+  [agent skill](https://agentskills.io)，`{host}/SKILL.md`：站点有哪些文档、
+  有哪些语言、怎样找到一个页面。`{host}` 是站点的主机名，点换成连字符，例如
+  `docs-example-com`。
+- `/.well-known/ard.json` 是一个
+  [ARD](https://agenticresourcediscovery.org) 目录，列出同一个 skill。
+  它也位于 `/.well-known/ai-catalog.json`，即 ARD 前身的路径，较旧的读取方和
+  智能体就绪检查会查找这里。
+- `/` 的响应带有指向 skills 索引和该目录的 `Link` 头。
+- 每个页面都向在读者浏览器中工作的智能体提供一个 `search_docs`
+  [WebMCP](https://webmachinelearning.github.io/webmcp/) 工具。它运行站内搜索；
+  不支持 WebMCP 的浏览器会跳过它。
+
+`.well-known` 下的文件和 `Link` 头与 sitemap 一样需要 `site.url`。它们全部来自
+配置，所以 `bun run update` 不会改动它们。
+
+智能体就绪检查还会查找对 `Accept: text/markdown` 返回的 markdown、API 与 OAuth
+元数据以及 MCP 服务器。这些需要按请求运行的代码，或站点并没有的 API，所以 Vellum
+站点都不提供。
 
 ## 部署
 

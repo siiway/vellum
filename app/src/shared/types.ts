@@ -208,7 +208,7 @@ export interface SocialLink {
 export interface SiteConfig {
   title: string;
   // Public origin of the site (e.g. "https://docs.example.com"), for absolute
-  // URLs in the page head and the sitemap.
+  // URLs in the page head, the sitemap and the files for AI agents.
   url?: string;
   tagline?: string;
   logo?: string;
@@ -231,6 +231,19 @@ export interface SiteConfig {
   // auth/oauth, ws/websocket, …) so config only needs to spell out the
   // product-specific vocabulary.
   searchAliases?: Record<string, string[]>;
+  // How AI may use the site's content, declared in robots.txt as a
+  // Content-Signal (https://contentsignals.org). Signals left out state no
+  // preference.
+  contentSignal?: ContentSignal;
+}
+
+export interface ContentSignal {
+  // Building a search index and linking to the content in results.
+  search?: boolean;
+  // Feeding the content to an AI model to answer a question (RAG, grounding).
+  "ai-input"?: boolean;
+  // Training or fine-tuning AI models.
+  "ai-train"?: boolean;
 }
 
 export interface VellumConfig {
