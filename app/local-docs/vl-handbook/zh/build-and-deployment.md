@@ -81,6 +81,9 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 - `/.well-known/ai-catalog.json` 是一个
   [ARD](https://agenticresourcediscovery.org) 目录，列出同一个 skill。
 - `/` 的响应带有指向这两者的 `Link` 头。
+- 每个页面都向在读者浏览器中工作的智能体提供一个 `search_docs`
+  [WebMCP](https://webmachinelearning.github.io/webmcp/) 工具。它运行站内搜索；
+  不支持 WebMCP 的浏览器会跳过它。
 
 `.well-known` 下的文件和 `Link` 头与 sitemap 一样需要 `site.url`。它们全部来自
 配置，所以 `bun run update` 不会改动它们。

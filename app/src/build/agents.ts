@@ -134,6 +134,7 @@ function buildSkill(site: VellumConfig, origin: string, name: string) {
     "",
     `${origin}/sitemap.xml lists every page, with links between its translations.`,
     "Page paths follow the docs' source files, so a path usually names its topic.",
+    "In a browser that supports WebMCP, the site's pages also offer a `search_docs` tool.",
     "",
   );
   return { text: lines.join("\n"), description, repos };

@@ -3,6 +3,7 @@
 import { hydrateRoot, createRoot } from "react-dom/client";
 import { RendererProvider, createDOMRenderer, SSRProvider } from "@fluentui/react-components";
 import { App } from "./App";
+import { registerTools } from "./webmcp";
 import type { BootstrapPayload } from "../shared/types";
 
 function bootstrap(): BootstrapPayload | null {
@@ -40,6 +41,7 @@ if (data && container) {
   } else {
     hydrateRoot(container, tree);
   }
+  void registerTools(data.config);
 } else if (container) {
   container.innerHTML =
     '<p style="font-family: system-ui; padding: 2rem;">Bootstrap payload missing. Reload the page.</p>';

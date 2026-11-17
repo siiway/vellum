@@ -87,6 +87,10 @@ files only:
 - `/.well-known/ai-catalog.json` is an
   [ARD](https://agenticresourcediscovery.org) catalog listing the same skill.
 - `/` answers with `Link` headers pointing to both.
+- Every page offers a `search_docs`
+  [WebMCP](https://webmachinelearning.github.io/webmcp/) tool to agents
+  working in the reader's browser. It runs the site search, and is skipped in
+  browsers without WebMCP.
 
 The `.well-known` files and the `Link` headers need `site.url`, like the
 sitemap. All of it comes from the config, so `bun run update` leaves it as
