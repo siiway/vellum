@@ -11,7 +11,7 @@ import type { BootstrapPayload, RepoConfig, RouteContext, VellumConfig } from ".
 import { localeSourcePrefix } from "../shared/types";
 import type { Block } from "../shared/markdown";
 import { docsRootPrefix, fetchFirstSourceFile, readSourceFile, lastCommit } from "./sources";
-import { normalizeInternal, renderMarkdown } from "./markdown/index";
+import { normalizeInternal, renderMarkdown, splitHref } from "./markdown/index";
 import { renderMermaidThemed } from "./markdown/diagrams";
 import { extractCodeSlice, type CodeIncludeMeta } from "./markdown/ops-includes";
 import { highlightCode } from "./markdown/highlight";
@@ -204,12 +204,9 @@ export async function buildPagePayload(
 // `base`. Like a link to a page of the same repo, `.md` and a final `index`
 // are dropped, ahead of any `#hash` or `?query`.
 export function xrefUrl(base: string, rest: string): string {
-  const cut = rest.search(/[?#]/);
-  const path = (cut < 0 ? rest : rest.slice(0, cut))
-    .replace(/\.md$/i, "")
-    .replace(/(^|\/)index$/i, "$1");
-  const url = `${base}/${path}`.replace(/\/+/g, "/").replace(/(.)\/$/, "$1");
-  return url + (cut < 0 ? "" : rest.slice(cut));
+  const [path, suffix] = splitHref(rest);
+  const page = path.replace(/\.md$/i, "").replace(/(^|\/)index$/i, "$1");
+  return `${base}/${page}`.replace(/\/+/g, "/").replace(/(.)\/$/, "$1") + suffix;
 }
 
 function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {

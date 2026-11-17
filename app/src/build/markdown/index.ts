@@ -139,13 +139,21 @@ function buildMd(outlineSink: { outline: OutlineNode[] }): MarkdownIt {
   return md;
 }
 
+// A link's path, and the `?query` or `#hash` after it.
+export function splitHref(href: string): [path: string, suffix: string] {
+  const cut = href.search(/[?#]/);
+  return cut < 0 ? [href, ""] : [href.slice(0, cut), href.slice(cut)];
+}
+
 // Resolves an internal href so it lands inside this repo's URL space.
 // VitePress / Markdown convention: an absolute path like "/getting-started" is
 // treated as docs-root-relative — for us that means the current repo's root.
 // We also handle locale-prefixed absolute paths (e.g. "/zh/getting-started" from a
 // localized hero) by collapsing them into the repo's locale prefix.
+// External links (any scheme, `tel:` and OPS `xref:` too, or protocol-
+// relative) and links on the page itself come back as written.
 export function normalizeInternal(href: string, c: LinkContext): string {
-  if (/^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("#")) return href;
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href)) return href;
   // Cross-repo xref: `@other-repo/page`.
   if (href.startsWith("@")) {
     const m = href.match(/^@([a-z0-9-]+)\/(.*)$/i);
@@ -154,19 +162,9 @@ export function normalizeInternal(href: string, c: LinkContext): string {
       if (resolved) return resolved;
     }
   }
-  const hashIdx = href.indexOf("#");
-  const queryIdx = href.indexOf("?");
-  let path = href;
-  let suffix = "";
-  if (hashIdx >= 0 || queryIdx >= 0) {
-    const cut = [hashIdx, queryIdx]
-      .filter((n) => n >= 0)
-      .reduce((a, b) => Math.min(a, b), Infinity);
-    path = href.slice(0, cut);
-    suffix = href.slice(cut);
-  }
+  const [file, suffix] = splitHref(href);
   // `index.md` (bare, or after a slash) is its directory's page.
-  path = path.replace(/\.md$/i, "").replace(/(^|\/)index$/i, "$1");
+  const path = file.replace(/\.md$/i, "").replace(/(^|\/)index$/i, "$1");
 
   const repoBase = c.repoUrlBase.replace(/\/$/, "");
   const localePrefix = c.localePrefix ?? "";

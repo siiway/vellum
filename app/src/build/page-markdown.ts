@@ -13,7 +13,7 @@
 // code.
 
 import { escapeHtml, unescapeAll } from "markdown-it/lib/common/utils.mjs";
-import { normalizeInternal, type RenderOutput } from "./markdown/index";
+import { normalizeInternal, splitHref, type RenderOutput } from "./markdown/index";
 import type { LinkContext } from "./markdown/links";
 import { markdownUrl } from "./routes";
 
@@ -158,14 +158,12 @@ function destination(dest: string, ctx: LinkContext): string {
 // What a link to `href` leads to from the Markdown: a page's Markdown, or
 // the site URL the page links for another file. Null keeps it as written.
 function linkHref(href: string, ctx: LinkContext): string | null {
-  // External (`https:`, `mailto:`, OPS `xref:`), protocol-relative, or on
-  // this page.
-  if (!href || /^[a-z][a-z\d+.-]*:/i.test(href) || /^(\/\/|#|\?)/.test(href)) return null;
   const url = normalizeInternal(href, ctx);
-  const cut = url.search(/[?#]/);
-  const path = cut < 0 ? url : url.slice(0, cut);
+  // External, or on this page.
+  if (!url.startsWith("/") || url.startsWith("//")) return null;
+  const [path, suffix] = splitHref(url);
   // A file: an extension other than `.md`, which normalizeInternal drops.
   // It holds a letter, so `v0.4` is a page.
   if (/\.[a-z\d]*[a-z][a-z\d]*$/i.test(path)) return url;
-  return markdownUrl(path) + url.slice(path.length);
+  return markdownUrl(path) + suffix;
 }
