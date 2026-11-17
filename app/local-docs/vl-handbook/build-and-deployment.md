@@ -110,8 +110,9 @@ resolved the way the HTML page resolves them. A link to another page points
 at that page's Markdown (`./setup.md` → `/en-US/glint/guide/setup.md`), and
 a link to another file at the URL the page links. The file isn't published
 where its source sat (`guide/index.md` becomes `guide.md`), so relative
-links wouldn't land. Images keep their paths, as on the page. Anything in
-code, frontmatter links, includes and OPS `xref:` links stay as written.
+links wouldn't land. That goes for `<a href>` in a paragraph too. Images
+keep their paths, as on the page. Code, HTML blocks, frontmatter links,
+includes and OPS `xref:` links stay as written.
 
 Agent-readiness checkers also look for markdown served on
 `Accept: text/markdown`, API and OAuth metadata, and MCP servers. Those need

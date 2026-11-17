@@ -98,8 +98,9 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 页面的 Markdown 就是它的源文件原样，只改了一处：链接按 HTML 页面的方式解析。指向
 其他页面的链接指向那些页面的 Markdown（`./setup.md` → `/en-US/glint/guide/setup.md`），
 指向其他文件的链接则指向页面所链接的 URL。这个文件发布的位置不是源文件所在的位置
-（`guide/index.md` 变成 `guide.md`），所以相对链接会落空。图片保持原路径，和页面上
-一样。代码里的内容、frontmatter 里的链接、include 和 OPS `xref:` 链接都保持原样。
+（`guide/index.md` 变成 `guide.md`），所以相对链接会落空。段落里的 `<a href>` 也一样。
+图片保持原路径，和页面上一样。代码、HTML 块、frontmatter 里的链接、include 和 OPS
+`xref:` 链接都保持原样。
 
 智能体就绪检查还会查找对 `Accept: text/markdown` 返回的 markdown、API 与 OAuth
 元数据以及 MCP 服务器。这些需要按请求运行的代码，或站点并没有的 API，所以 Vellum
