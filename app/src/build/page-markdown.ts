@@ -10,6 +10,7 @@
 // so are the frontmatter, code and OPS include directives (their files
 // aren't pages). What's code is what the page's render parsed as code.
 
+import { unescapeAll } from "markdown-it/lib/common/utils.mjs";
 import { normalizeInternal, type RenderOutput } from "./markdown/index";
 import type { LinkContext } from "./markdown/links";
 import { markdownUrl } from "./routes";
@@ -28,11 +29,12 @@ const VERBATIM = new Set([
 // after `](`, or a link reference definition's (`[label]: dest`, not a
 // footnote's `[^1]:`). A code span starts at a whole run of backticks that
 // isn't escaped and ends at the next run as long, on any of the block's
-// lines. A destination is `<...>`, or has no spaces and balanced parentheses
-// one level deep. A definition may sit in a blockquote or a list item, and
-// its destination is followed by a title or nothing.
+// lines. A `]` is escaped by an odd number of backslashes. A destination is
+// `<...>`, or has no spaces and balanced parentheses one level deep, and
+// either may hold backslash escapes. A definition may sit in a blockquote or
+// a list item, and its destination is followed by a title or nothing.
 const LINK =
-  /(?<![\\`])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|((?<!\\)\]\(\s*)(<[^<>\n]*>|[^\s()<>]+(?:\([^\s()]*\)[^\s()<>]*)*)|^((?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?\[(?!\^)[^\]\n]+\]:[ \t]*)(<[^<>\n]*>|[^\s<>]+)(?=[ \t]*(?:\r?$|["'(]))/gm;
+  /(?<![\\`])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|((?<!(?<!\\)(?:\\\\)*\\)\]\(\s*)(<(?:\\.|[^<>\n\\])*>|(?:\\.|[^\s()<>\\])+(?:\((?:\\.|[^\s()\\])*\)(?:\\.|[^\s()<>\\])*)*)|^((?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?\[(?!\^)[^\]\n]+\]:[ \t]*)(<(?:\\.|[^<>\n\\])*>|[^\s<>]+)(?=[ \t]*(?:\r?$|["'(]))/gm;
 
 // `body` and `blocks` are from the page's render of `source`.
 export function pageMarkdown(
@@ -100,12 +102,14 @@ function rewrite(text: string, first: number, prose: Set<number>, ctx: LinkConte
   );
 }
 
+// A destination as written, with its escapes and entities, and as the
+// rewritten URL: in `<...>` when it was, or has spaces or parentheses.
 function destination(dest: string, ctx: LinkContext): string {
   const angled = dest.startsWith("<");
-  const href = angled ? dest.slice(1, -1) : dest;
-  const out = pageHref(href, ctx);
-  if (out === null) return dest;
-  return angled ? `<${out}>` : out;
+  const href = unescapeAll(angled ? dest.slice(1, -1) : dest);
+  const out = pageHref(href, ctx)?.replace(/[<>]/g, encodeURIComponent);
+  if (out === undefined) return dest;
+  return angled || /[\s()]/.test(out) ? `<${out}>` : out;
 }
 
 // The Markdown URL of the page `href` links to, or null when it doesn't link
