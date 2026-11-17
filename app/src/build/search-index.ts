@@ -46,13 +46,13 @@ function extractIndexableContent(
   let body = raw;
   try {
     // Options skip gray-matter's cache, which would keep every file for the
-    // isolate's lifetime.
+    // whole build.
     const parsed = matter(raw, {});
     front = parsed.data as Record<string, unknown>;
     body = parsed.content;
   } catch {
     // Malformed frontmatter — fall back to the raw file. Worst case: a noisy
-    // index entry, not a broken endpoint.
+    // index entry, not a failed build.
   }
 
   const isHome = (front.layout as string | undefined) === "home";

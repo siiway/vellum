@@ -65,7 +65,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
   },
   SiteConfig: {
     descriptions: {
-      title: "Brand name shown in the NavBar and as the SSR <title> suffix.",
+      title: "Brand name shown in the NavBar and as the page <title> suffix.",
       url: 'Public origin of the site, e.g. "https://docs.example.com". Used for absolute canonical / Open Graph / hreflang URLs and the sitemap; without it those URLs stay root-relative and no sitemap is written.',
       tagline: "Short subtitle shown on the landing page hero.",
       logo: "URL of the site logo (SVG recommended).",
@@ -110,8 +110,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
       docsRoot:
         'Path inside the repo (or local source) to the docs tree, e.g. "docs". Empty string means the repo root is the docs root.',
       displayName: "Human-readable name shown in the NavBar brand crumb and 404 suggestions.",
-      description:
-        "Short tagline shown on the repo's home page and as the SSR meta description fallback.",
+      description: "Description of the repo's index page when its frontmatter sets none.",
       logo: "URL of the per-repo logo (SVG recommended).",
       editLinkPattern:
         'Template for the "Edit this page" link in the page footer. `:path` is substituted with the docs-root-relative path. Omit for local repos.',

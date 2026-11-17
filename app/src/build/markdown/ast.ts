@@ -27,7 +27,7 @@ export interface AstBuildOptions {
   // Hook for image src.
   rewriteImage?: (src: string) => string;
   // Optional async hook for rendering a mermaid diagram to themed SVGs
-  // (server-side via Kroki, etc.). Called once per mermaid block in parallel
+  // (via Kroki at build time, etc.). Called once per mermaid block in parallel
   // with code fences. Either palette may be null — the client falls back to
   // its own mermaid bundle for whichever palette is missing.
   renderDiagram?: (code: string) => Promise<{ light: string | null; dark: string | null }>;

@@ -35,7 +35,7 @@
       "properties": {
         "title": {
           "type": "string",
-          "description": "Brand name shown in the NavBar and as the SSR <title> suffix."
+          "description": "Brand name shown in the NavBar and as the page <title> suffix."
         },
         "url": {
           "type": "string",
@@ -226,7 +226,7 @@
         },
         "description": {
           "type": "string",
-          "description": "Short tagline shown on the repo's home page and as the SSR meta description fallback."
+          "description": "Description of the repo's index page when its frontmatter sets none."
         },
         "logo": {
           "type": "string",

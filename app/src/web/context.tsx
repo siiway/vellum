@@ -53,7 +53,7 @@ export function VellumProvider({
   children: ReactNode;
 }) {
   const [data, setData] = useState<BootstrapPayload>(initial);
-  // Hydrate in the theme the server rendered, so the markup matches, then
+  // Hydrate in the theme the page was rendered in, so the markup matches, then
   // take the one the head pre-script put on <html data-theme> (cookie, else
   // OS). They differ on a first visit or after an OS theme switch. The page
   // CSS and FluentUI tokens already follow data-theme before this runs; the

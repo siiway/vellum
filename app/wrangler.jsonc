@@ -22,7 +22,7 @@
 			"custom_domain": true
 		}
 	],
-	// Preview environment: deploys to vellum.siiway.workers.dev.
+	// Preview environment: deploys to vellum-preview.siiway.workers.dev.
 	// Deploy with: wrangler deploy --env preview
 	"env": {
 		"preview": {

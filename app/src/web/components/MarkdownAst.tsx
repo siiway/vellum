@@ -1147,7 +1147,7 @@ function OpsZoneNode({
     setPivot(readActivePivot());
   }, []);
 
-  // Server render + initial hydrate: show every zone so the SSR HTML is
+  // Pre-render + initial hydrate: show every zone so the pre-rendered HTML is
   // consistent across pivot choices. Once we know the active pivot on the
   // client, hide non-matching zones in the next render. This also means the
   // page reads top-to-bottom for users without JS.

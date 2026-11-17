@@ -61,7 +61,7 @@ export function MermaidBlock({
   const safeId = `mermaid-${reactId.replace(/[^a-zA-Z0-9]/g, "")}`;
   // Pre-rendered SVG for the active palette, if Kroki gave us one. Lets us
   // skip the ~600KB mermaid client bundle entirely when both palettes were
-  // rendered server-side. Falls back to client mermaid only when the active
+  // rendered at build time. Falls back to client mermaid only when the active
   // palette is missing.
   const ssrSvg = theme === "dark" ? svgDark : svgLight;
   const [svg, setSvg] = useState<string | null>(ssrSvg ?? null);
