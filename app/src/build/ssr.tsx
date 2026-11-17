@@ -312,6 +312,13 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
     const defaultHref = `${origin}${swapLocalePrefix(route.canonicalUrl, currentLocale!, defaultLocaleConfig)}`;
     lines.push(`  <link rel="alternate" hreflang="x-default" href="${escapeAttr(defaultHref)}">`);
   }
+  // The same page as Markdown, for agents. The client updates it as it
+  // navigates (context.tsx).
+  if (page.meta.markdownUrl) {
+    lines.push(
+      `  <link rel="alternate" type="text/markdown" href="${escapeAttr(`${origin}${page.meta.markdownUrl}`)}">`,
+    );
+  }
 
   // Open Graph.
   lines.push(`  <meta property="og:site_name" content="${escapeAttr(site.title)}">`);

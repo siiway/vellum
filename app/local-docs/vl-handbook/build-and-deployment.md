@@ -33,6 +33,7 @@ dist/site/
   404.html, {prefix}/404.html      the 404 page, per locale
   {prefix}/index.html              the landing page (homepage repo)
   {prefix}/{repo}/…/index.html     one per page
+  {prefix}.md, {prefix}/{repo}/….md   each page's Markdown, see below
   {prefix}/search/, languages/     search and language pages
   _vellum/pages/{page}.json        each page's data, for client navigation
   _vellum/search/{locale}/{repo}.json   search indexes
@@ -77,13 +78,21 @@ is visible at once; there is no cache to purge.
 The site tells AI agents what it holds and how they may use it, with static
 files only:
 
+- Every docs page is also published as Markdown, at its URL plus `.md`:
+  `/en-US/glint/guide` at `/en-US/glint/guide.md`, the landing page
+  `/en-US` at `/en-US.md`. The page's head links it
+  (`<link rel="alternate" type="text/markdown">`), and keeps linking the
+  page on screen as the reader follows links in the site. The Markdown
+  names its page as canonical (a `Link: rel="canonical"` header), so search
+  engines index the page once. The redirects that send one page to another
+  send its Markdown along.
 - `robots.txt` states a [Content Signal](https://contentsignals.org), how AI
   may use the content, from
   [`site.contentSignal`](./configuration#siteconfig).
 - `/.well-known/agent-skills/index.json` lists one
   [agent skill](https://agentskills.io), `{host}/SKILL.md`: which docs the
-  site holds, in which languages, and how to find a page. `{host}` is the
-  site's host with hyphens for dots, e.g. `docs-example-com`.
+  site holds, in which languages, and how to find and read a page. `{host}`
+  is the site's host with hyphens for dots, e.g. `docs-example-com`.
 - `/.well-known/ard.json` is an
   [ARD](https://agenticresourcediscovery.org) catalog listing the same skill.
   It's also at `/.well-known/ai-catalog.json`, the path of ARD's predecessor,
@@ -99,10 +108,19 @@ The `.well-known` files and the `Link` headers need `site.url`, like the
 sitemap. All of it comes from the config, so `bun run update` leaves it as
 it is.
 
+A page's Markdown is its source file as written, with one change: links are
+resolved the way the HTML page resolves them. A link to another page points
+at that page's Markdown (`./setup.md` → `/en-US/glint/guide/setup.md`), and
+a link to another file at the URL the page links. The file isn't published
+where its source sat (`guide/index.md` becomes `guide.md`), so relative
+links wouldn't land. That goes for `<a href>` in a paragraph too. Images
+keep their paths, as on the page. Code, HTML blocks, frontmatter links,
+includes and OPS `xref:` links stay as written.
+
 Agent-readiness checkers also look for markdown served on
 `Accept: text/markdown`, API and OAuth metadata, and MCP servers. Those need
 code running per request, or an API the site doesn't have, so a Vellum site
-has none of them.
+has none of them. Its Markdown is at the `.md` URLs instead.
 
 ## Deploying
 

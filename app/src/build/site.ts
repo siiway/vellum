@@ -1,6 +1,7 @@
 // The static site build. Renders every page of every repo to HTML (plus the
-// JSON payload client-side navigation swaps in) under dist/site, next to a
-// copy of the client bundle, ready for `wrangler deploy` as static assets.
+// JSON payload client-side navigation swaps in, and the page's Markdown)
+// under dist/site, next to a copy of the client bundle, ready for
+// `wrangler deploy` as static assets.
 //
 // The work is per repo: `renderRepo` writes a repo's pages, its search
 // indexes and its Vue components, and records its commit and page list in
@@ -18,7 +19,7 @@ import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
 import { renderPage, type RenderOptions } from "./ssr";
-import { htmlFile, listRepoPages, localeBase, pageRoute, stubRoute } from "./routes";
+import { htmlFile, listRepoPages, localeBase, markdownUrl, pageRoute, stubRoute } from "./routes";
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
 import { buildRedirects } from "./redirects";
@@ -222,7 +223,7 @@ async function renderRepo(
       }
       // An empty file.
       if (!build.found) return;
-      await writePage(build.payload, opts, root);
+      await writePage(build.payload, opts, root, build.markdown);
       done.push(pagePath);
       index.push({ url: route.canonicalUrl, path: build.sourcePath, raw: build.source });
     });
@@ -252,7 +253,7 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
     removals.push(searchIndexPath(locale.code, repo.slug));
     for (const pagePath of last.pages[locale.code] ?? []) {
       const { canonicalUrl } = pageRoute(SITE, repo, locale, pagePath);
-      removals.push(htmlFile(canonicalUrl), payloadPath(canonicalUrl));
+      removals.push(htmlFile(canonicalUrl), markdownUrl(canonicalUrl), payloadPath(canonicalUrl));
     }
   }
   await Promise.all(removals.map((path) => rm(outPath(path), { recursive: true, force: true })));
@@ -260,14 +261,18 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
 
 // --- Pages --------------------------------------------------------------------
 
+// A docs page also gets its Markdown, at its URL plus `.md`.
 async function writePage(
   payload: BootstrapPayload,
   opts: RenderOptions,
   root = SITE_DIR,
+  markdown?: string,
 ): Promise<void> {
   const url = payload.route.canonicalUrl;
   await writeOut(htmlFile(url), renderPage(payload, opts), root);
   await writeJson(payloadPath(url), payload, root);
+  const md = payload.page.meta.markdownUrl;
+  if (md && markdown !== undefined) await writeOut(md, markdown, root);
 }
 
 // Pages that belong to no repo, the redirects and headers, and the files for

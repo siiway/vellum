@@ -11,7 +11,7 @@ import type { BootstrapPayload, RepoConfig, RouteContext, VellumConfig } from ".
 import { localeSourcePrefix } from "../shared/types";
 import type { Block } from "../shared/markdown";
 import { docsRootPrefix, fetchFirstSourceFile, readSourceFile, lastCommit } from "./sources";
-import { normalizeInternal, renderMarkdown } from "./markdown/index";
+import { normalizeInternal, renderMarkdown, splitHref } from "./markdown/index";
 import { renderMermaidThemed } from "./markdown/diagrams";
 import { extractCodeSlice, type CodeIncludeMeta } from "./markdown/ops-includes";
 import { highlightCode } from "./markdown/highlight";
@@ -19,9 +19,18 @@ import type { LinkContext } from "./markdown/links";
 import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
+import { pageMarkdown } from "./page-markdown";
+import { markdownUrl } from "./routes";
 
 export type PageBuild =
-  | { found: true; payload: BootstrapPayload; sourcePath: string; source: string }
+  | {
+      found: true;
+      payload: BootstrapPayload;
+      sourcePath: string;
+      source: string;
+      // The page's Markdown (page-markdown.ts).
+      markdown: string;
+    }
   // `candidates` are the source paths that were tried.
   | { found: false; candidates: string[] };
 
@@ -95,8 +104,7 @@ export async function buildPagePayload(
     resolveXref: (slug, rest) => {
       const r = site.repos.find((x) => x.slug === slug);
       if (!r) return null;
-      const base = `${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`;
-      return `${base}/${rest.replace(/\.md$/, "")}`.replace(/\/+/g, "/");
+      return xrefUrl(`${localeUrlPath ? `/${localeUrlPath}` : ""}/${r.slug}`, rest);
     },
   };
 
@@ -166,6 +174,7 @@ export async function buildPagePayload(
     found: true,
     sourcePath: matchedPath,
     source,
+    markdown: pageMarkdown(source, rendered, linkContext),
     payload: {
       config: site,
       route,
@@ -186,10 +195,20 @@ export async function buildPagePayload(
           lastUpdated,
           prev,
           next,
+          markdownUrl: markdownUrl(route.canonicalUrl),
         },
       },
     },
   };
+}
+
+// The URL a cross-repo link `@{slug}/{rest}` leads to, under that repo's URL
+// `base`. Like a link to a page of the same repo, `.md` and a final `index`
+// are dropped, ahead of any `#hash` or `?query`.
+export function xrefUrl(base: string, rest: string): string {
+  const [path, suffix] = splitHref(rest);
+  const page = path.replace(/\.md$/i, "").replace(/(^|\/)index$/i, "$1");
+  return `${base}/${page}`.replace(/\/+/g, "/").replace(/(.)\/$/, "$1") + suffix;
 }
 
 function pageCandidates(repo: RepoConfig, localePath: string, pagePath: string): string[] {
