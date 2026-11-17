@@ -84,9 +84,12 @@ files only:
   [agent skill](https://agentskills.io), `{host}/SKILL.md`: which docs the
   site holds, in which languages, and how to find a page. `{host}` is the
   site's host with hyphens for dots, e.g. `docs-example-com`.
-- `/.well-known/ai-catalog.json` is an
+- `/.well-known/ard.json` is an
   [ARD](https://agenticresourcediscovery.org) catalog listing the same skill.
-- `/` answers with `Link` headers pointing to both.
+  It's also at `/.well-known/ai-catalog.json`, the path of ARD's predecessor,
+  which older readers and agent-readiness checkers look for.
+- `/` answers with `Link` headers pointing to the skills index and the
+  catalog.
 - Every page offers a `search_docs`
   [WebMCP](https://webmachinelearning.github.io/webmcp/) tool to agents
   working in the reader's browser. It runs the site search, and is skipped in

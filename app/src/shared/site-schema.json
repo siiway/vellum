@@ -39,7 +39,7 @@
         },
         "url": {
           "type": "string",
-          "description": "Public origin of the site, e.g. \"https://docs.example.com\". Used for absolute canonical / Open Graph / hreflang URLs and the sitemap; without it those URLs stay root-relative and no sitemap is written.",
+          "description": "Public origin of the site, e.g. \"https://docs.example.com\". Used for absolute canonical / Open Graph / hreflang URLs, the sitemap and the files for AI agents (/.well-known/ and the Link headers on /); without it those URLs stay root-relative and neither the sitemap nor the agent files are written.",
           "pattern": "^https?://[^/]+$"
         },
         "tagline": {

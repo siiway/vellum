@@ -170,8 +170,30 @@ export async function updateSite(): Promise<UpdateResult | null> {
 
 async function renderOptions(): Promise<RenderOptions> {
   const origin = SITE.site.url?.replace(/\/+$/, "") || null;
-  if (!origin) console.warn("[vellum] site.url is not set: no sitemap, root-relative URLs");
+  if (!origin) {
+    console.warn("[vellum] site.url is not set: no sitemap or agent files, root-relative URLs");
+  } else if (!isOrigin(origin)) {
+    // Before a build starts deleting anything.
+    throw new Error(
+      `site.url must be an origin like "https://docs.example.com", not ${JSON.stringify(SITE.site.url)}`,
+    );
+  }
   return { assets: await readClientAssets(CLIENT_DIR), origin };
+}
+
+function isOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      /^https?:$/.test(url.protocol) &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash &&
+      !url.username
+    );
+  } catch {
+    return false;
+  }
 }
 
 // --- Repos --------------------------------------------------------------------

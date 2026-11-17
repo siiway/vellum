@@ -4,8 +4,11 @@
 //     (https://github.com/cloudflare/agent-skills-discovery-rfc), listing
 //   /.well-known/agent-skills/{name}/SKILL.md one skill: what the site
 //     documents, in which languages, and how to find a page
-//   /.well-known/ai-catalog.json              the ARD catalog
+//   /.well-known/ard.json                     the ARD catalog
 //     (https://agenticresourcediscovery.org), listing the same skill
+//   /.well-known/ai-catalog.json              the same catalog at the path
+//     of ARD's predecessor, which older readers and agent-readiness checkers
+//     still look for
 //
 // They need absolute URLs, so like the sitemap they're only written when
 // `site.url` is set. They depend only on the config.
@@ -15,7 +18,8 @@ import type { VellumConfig } from "../shared/types";
 import { canonicalHref } from "../shared/paths";
 
 export const SKILLS_INDEX_PATH = "/.well-known/agent-skills/index.json";
-export const AI_CATALOG_PATH = "/.well-known/ai-catalog.json";
+export const ARD_PATH = "/.well-known/ard.json";
+const AI_CATALOG_PATH = "/.well-known/ai-catalog.json";
 
 // Output path → content.
 export function buildAgentFiles(site: VellumConfig, origin: string): Record<string, string> {
@@ -76,6 +80,7 @@ export function buildAgentFiles(site: VellumConfig, origin: string): Record<stri
   return {
     [skillPath]: skill.text,
     [SKILLS_INDEX_PATH]: json(index),
+    [ARD_PATH]: json(catalog),
     [AI_CATALOG_PATH]: json(catalog),
   };
 }

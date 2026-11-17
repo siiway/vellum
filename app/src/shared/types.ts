@@ -208,7 +208,7 @@ export interface SocialLink {
 export interface SiteConfig {
   title: string;
   // Public origin of the site (e.g. "https://docs.example.com"), for absolute
-  // URLs in the page head and the sitemap.
+  // URLs in the page head, the sitemap and the files for AI agents.
   url?: string;
   tagline?: string;
   logo?: string;

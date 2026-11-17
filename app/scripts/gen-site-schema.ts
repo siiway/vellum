@@ -66,7 +66,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
   SiteConfig: {
     descriptions: {
       title: "Brand name shown in the NavBar and as the page <title> suffix.",
-      url: 'Public origin of the site, e.g. "https://docs.example.com". Used for absolute canonical / Open Graph / hreflang URLs and the sitemap; without it those URLs stay root-relative and no sitemap is written.',
+      url: 'Public origin of the site, e.g. "https://docs.example.com". Used for absolute canonical / Open Graph / hreflang URLs, the sitemap and the files for AI agents (/.well-known/ and the Link headers on /); without it those URLs stay root-relative and neither the sitemap nor the agent files are written.',
       tagline: "Short subtitle shown on the landing page hero.",
       logo: "URL of the site logo (SVG recommended).",
       favicon: "URL of the favicon.",

@@ -3,10 +3,11 @@
 //   - The hashed bundles under /assets/ never change, so they're cached for
 //     a year.
 //   - With the agent files written (`site.url` set), the homepage points
-//     agents at them with Link headers (RFC 8288), and other origins may
-//     fetch them (the ARD catalog asks for CORS).
+//     agents at them with Link headers (RFC 8288; `ard` is the relation ARD
+//     defines for its catalog), and other origins may fetch them (the ARD
+//     catalog asks for CORS).
 
-import { AI_CATALOG_PATH, SKILLS_INDEX_PATH } from "./agents";
+import { ARD_PATH, SKILLS_INDEX_PATH } from "./agents";
 
 export function buildHeaders(origin: string | null): string {
   const rules = [["/assets/*", "Cache-Control: public, max-age=31536000, immutable"]];
@@ -14,7 +15,7 @@ export function buildHeaders(origin: string | null): string {
     rules.push(
       [
         "/",
-        `Link: <${AI_CATALOG_PATH}>; rel="describedby"; type="application/json"`,
+        `Link: <${ARD_PATH}>; rel="ard describedby"; type="application/json"`,
         `Link: <${SKILLS_INDEX_PATH}>; rel="describedby"; type="application/json"`,
       ],
       ["/.well-known/*", "Access-Control-Allow-Origin: *"],

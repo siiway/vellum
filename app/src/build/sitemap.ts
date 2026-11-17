@@ -39,7 +39,7 @@ export function buildRobots(site: VellumConfig, origin: string | null): string {
 function contentSignal(signal: ContentSignal | undefined): string | null {
   const keys = ["search", "ai-input", "ai-train"] as const;
   const parts = keys
-    .filter((key) => signal?.[key] !== undefined)
+    .filter((key) => typeof signal?.[key] === "boolean")
     .map((key) => `${key}=${signal![key] ? "yes" : "no"}`);
   return parts.length ? parts.join(", ") : null;
 }

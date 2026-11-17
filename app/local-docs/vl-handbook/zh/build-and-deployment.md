@@ -78,9 +78,11 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
   [agent skill](https://agentskills.io)，`{host}/SKILL.md`：站点有哪些文档、
   有哪些语言、怎样找到一个页面。`{host}` 是站点的主机名，点换成连字符，例如
   `docs-example-com`。
-- `/.well-known/ai-catalog.json` 是一个
+- `/.well-known/ard.json` 是一个
   [ARD](https://agenticresourcediscovery.org) 目录，列出同一个 skill。
-- `/` 的响应带有指向这两者的 `Link` 头。
+  它也位于 `/.well-known/ai-catalog.json`，即 ARD 前身的路径，较旧的读取方和
+  智能体就绪检查会查找这里。
+- `/` 的响应带有指向 skills 索引和该目录的 `Link` 头。
 - 每个页面都向在读者浏览器中工作的智能体提供一个 `search_docs`
   [WebMCP](https://webmachinelearning.github.io/webmcp/) 工具。它运行站内搜索；
   不支持 WebMCP 的浏览器会跳过它。
