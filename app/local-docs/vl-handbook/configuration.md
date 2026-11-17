@@ -117,12 +117,12 @@ when `source` is `"github"` (or omitted).
 The site-level top nav. Per-repo navs (from `vellum.json#nav` or VitePress
 `themeConfig.nav`) take precedence when a reader is inside that repo.
 
-| Field         | Required | Notes                                                                               |
-| ------------- | :------: | ----------------------------------------------------------------------------------- |
-| `text`        |    ✓     | Label shown in the NavBar.                                                          |
-| `link`        |    ✓²    | Destination URL or site-relative path. Either `link` or `items` is required.        |
-| `items`       |    ✓²    | Sub-items, turning the entry into a dropdown.                                       |
-| `activeMatch` |          | Regex against the repo-relative path that keeps the entry highlighted in a section. |
+| Field         | Required | Notes                                                                           |
+| ------------- | :------: | ------------------------------------------------------------------------------- |
+| `text`        |    ✓     | Label shown in the NavBar.                                                      |
+| `link`        |    ✓²    | Destination URL or site-relative path. Either `link` or `items` is required.    |
+| `items`       |    ✓²    | Sub-items, turning the entry into a dropdown.                                   |
+| `activeMatch` |          | Regex against the page's path in the docs (`/zh/guide/intro`), as in VitePress. |
 
 ² Exactly one of `link` / `items` must be set (enforced by the JSON schema's `oneOf`).
 

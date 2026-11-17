@@ -32,7 +32,7 @@ import {
 import { useEffect, useState } from "react";
 import { useVellum, type ThemeMode } from "../context";
 import { canonicalHref } from "../../shared/paths";
-import type { NavItem } from "../../shared/types";
+import { localeSourcePrefix, type NavItem } from "../../shared/types";
 import { getSocialIconSvg, defaultSocialLabel } from "./SocialIcons";
 import { Segmented } from "./Segmented";
 
@@ -292,6 +292,14 @@ export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
   const homepageHref = local(`${prefix}/${site.homepageRepo}`);
   const repoHref = data.route.repoSlug ? local(`${prefix}/${data.route.repoSlug}`) : homepageHref;
   const repo = data.route.repo;
+  // The page's path in the docs, locale directory included, for activeMatch.
+  const srcDir = localeSourcePrefix(
+    { code: data.route.localeCode },
+    data.config.site.defaultLocale,
+    data.route.repo,
+  );
+  const srcPage = data.route.pagePath === "index" ? "" : data.route.pagePath;
+  const srcPath = `/${srcDir ? `${srcDir}/` : ""}${srcPage}`;
 
   return (
     <header className={styles.root}>
@@ -318,10 +326,12 @@ export function NavBar({ onOpenSearch, onOpenSidebar }: NavBarProps) {
       </div>
       <nav className={styles.navLinks} aria-label={t("ui.nav.primary")}>
         {(data.repoNav ?? data.config.nav ?? []).map(localItem).map((item) => {
-          const active = isActiveNav(item, data.route.canonicalUrl);
+          const active = isActiveNav(item, srcPath, data.route.canonicalUrl);
           if (item.items) {
             // Highlight the dropdown trigger if any of its children match.
-            const childActive = item.items.some((sub) => isActiveNav(sub, data.route.canonicalUrl));
+            const childActive = item.items.some((sub) =>
+              isActiveNav(sub, srcPath, data.route.canonicalUrl),
+            );
             return (
               <Menu key={item.text}>
                 <MenuTrigger disableButtonEnhancement>
@@ -501,21 +511,17 @@ function SocialLinks() {
 }
 
 // VitePress-style active match: an item is active if `activeMatch` (a regex
-// string against the current URL path within the repo) matches, or if the
-// item's resolved link matches the current canonical URL.
-function isActiveNav(item: { link?: string; activeMatch?: string }, canonicalUrl: string): boolean {
+// string) matches the page's source path, which is how VitePress tests it
+// ("/zh/guide/foo" for zh/guide/foo.md), or if the item's resolved link is
+// the current canonical URL.
+function isActiveNav(
+  item: { link?: string; activeMatch?: string },
+  srcPath: string,
+  canonicalUrl: string,
+): boolean {
   if (item.activeMatch) {
     try {
-      // activeMatch is written against the repo-relative path (e.g. "^/api"),
-      // so we strip the /repo/[locale] prefix before testing. We just take
-      // the substring starting at the first slash that isn't part of the prefix.
-      const parts = canonicalUrl.split("/").filter(Boolean);
-      // Drop repo slug + optional locale: keep everything from index 1 (or 2 if
-      // the second segment is a 2-3 char locale). Cheap heuristic — locales in
-      // configs are typically short codes.
-      const localeLike = parts[1] && parts[1].length <= 5 && /^[a-z-]+$/.test(parts[1]);
-      const rel = "/" + parts.slice(localeLike ? 2 : 1).join("/");
-      return new RegExp(item.activeMatch).test(rel || "/");
+      return new RegExp(item.activeMatch).test(srcPath);
     } catch {
       return false;
     }
