@@ -50,8 +50,8 @@ Each page's HTML is complete: pre-rendered markup, styles and SEO head, readable
 without JavaScript. Its content is in the HTML only. The client hydrates the page
 from its JSON under `_vellum/hydrate/`, which the page's head preloads: the
 site config, sidebar and page metadata, and only the blocks that need
-JavaScript (code blocks without their code, tabs, pivots, components). The rest
-it takes as the HTML has it. When the page is from another build than that JSON
+JavaScript (code blocks, tabs, pivots, components), without the code and
+diagrams the HTML already shows. The rest it takes as the HTML has it. When the page is from another build than that JSON
 (the browser kept it from before a deploy), the JSON doesn't load, or the page
 lacks something the JSON leaves out, the client renders the page's full JSON
 instead. Following a link inside the site fetches the next page's full JSON
