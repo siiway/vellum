@@ -164,11 +164,11 @@ it.
 ## Safety
 
 The registry is a closed set: a tag name mounts only a component listed in
-it. That doesn't sandbox the rest of the page, though. Raw HTML (`<sub>`,
-`<kbd>`, …) is kept as written, `<script>` tags and event handlers
-included, and ends up in the pre-rendered page. Vellum doesn't sanitize
-docs content, so only publish repos whose authors you trust with the
-site.
+it. That doesn't sandbox the rest of the page, though. `<script>` tags are
+dropped, as in VitePress, but other raw HTML (`<sub>`, `<kbd>`, …) is kept
+as written, and a repo's Vue components are its own code running in the
+reader's browser. Vellum doesn't sanitize docs content, so only publish
+repos whose authors you trust with the site.
 
-If you need a brand-new interactive primitive, add it to the registry
-rather than having authors write inline `<script>` tags.
+If you need a brand-new interactive primitive, add it to the registry:
+a `<script>` in markdown doesn't run.

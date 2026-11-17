@@ -80,6 +80,12 @@ Below is another.
 | `monospace` | with **emphasis** |    ok    |        42,000 |
 | [link](../) | another row       |   yes    |          0.01 |
 
+## Inline HTML
+
+Press <kbd>Ctrl</kbd> + <kbd>K</kbd> to search. Water is H<sub>2</sub>O and
+E = mc<sup>2</sup>. A raw <a href="https://example.com">HTML link</a>, and
+<mark>**bold** inside a mark</mark>.
+
 ## Inline images
 
 Inline images render via FluentUI's Image:

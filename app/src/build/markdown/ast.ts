@@ -795,7 +795,8 @@ function parseBlocks(
           continue;
         }
       }
-      blocks.push({ type: "html", value: tok.content });
+      const html = dropScripts(tok.content);
+      if (html.trim()) blocks.push({ type: "html", value: html });
       i++;
       continue;
     }
@@ -965,7 +966,36 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
             break;
           }
         }
-        top.push({ type: "html", value: content });
+        // A plain tag pair (`<kbd>Ctrl</kbd>`) becomes an element node. Kept
+        // as HTML, each tag would be its own empty element and the content
+        // would sit outside it.
+        const tagOpen = content.match(/^<([a-z][a-z0-9-]*)((?:\s[^>]*)?)>$/);
+        if (
+          tagOpen &&
+          !NOT_PAIRED.has(tagOpen[1]!) &&
+          !tagOpen[2]!.trimEnd().endsWith("/") &&
+          hasInlineClose(tokens, i, tagOpen[1]!)
+        ) {
+          const node: Inline = {
+            type: "element",
+            tag: tagOpen[1]!,
+            attrs: parseRawAttrs(tagOpen[2]!),
+            children: [],
+          };
+          top.push(node);
+          stack.push(node.children);
+          break;
+        }
+        const tagClose = content.match(/^<\/([a-z][a-z0-9-]*)\s*>$/);
+        if (tagClose && stack.length > 1) {
+          const parent = parentOfTop(stack, out);
+          if (parent?.type === "element" && parent.tag === tagClose[1]) {
+            stack.pop();
+            break;
+          }
+        }
+        const html = dropScripts(content);
+        if (html) top.push({ type: "html", value: html });
         break;
       }
       case "ops_xref": {
@@ -1006,6 +1036,54 @@ function parentOfTop(stack: Inline[][], root: Inline[]): Inline | null {
   return null;
 }
 
+// In VitePress a `<script>` in markdown is part of the page's Vue component
+// (`<script setup>` importing a .vue file), never script for the browser.
+// Kept as HTML it would throw on a full load and not run at all after
+// client navigation, so it's dropped, as VitePress drops it.
+const SCRIPT_RE = /<script(?=[\s/>])[^>]*>[\s\S]*?(?:<\/script\s*>|$)|<\/script\s*>/gi;
+
+function dropScripts(html: string): string {
+  return html.replace(SCRIPT_RE, "");
+}
+
+// Tags never paired into an element node: void elements take no children,
+// `<script>` is dropped, and React can't render the others' content as given.
+const NOT_PAIRED = new Set(
+  "area base br col embed hr img input link meta source track wbr script style textarea".split(" "),
+);
+
+// Whether the inline tag opened at `openIdx` is closed later in the run at
+// the same markdown nesting, so pairing it can't unbalance the stack (as
+// `**a <kbd>b** c</kbd>` would).
+function hasInlineClose(tokens: Token[], openIdx: number, tag: string): boolean {
+  let nesting = 0;
+  let open = 0;
+  for (let k = openIdx + 1; k < tokens.length; k++) {
+    const t = tokens[k]!;
+    nesting += t.nesting;
+    if (nesting < 0) return false;
+    if (t.type !== "html_inline") continue;
+    const m = t.content.match(/^<(\/?)([a-z][a-z0-9-]*)[\s/>]/);
+    if (m?.[2] !== tag) continue;
+    if (!m[1]) open++;
+    else if (open) open--;
+    else return nesting === 0;
+  }
+  return false;
+}
+
+const ATTR_RE = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
+// Attributes of a plain inline tag, as written. Event handlers are left
+// out: React won't set a string as one.
+function parseRawAttrs(src: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of src.matchAll(ATTR_RE)) {
+    if (!/^on/i.test(m[1]!)) out[m[1]!] = m[2] ?? m[3] ?? m[4] ?? "";
+  }
+  return out;
+}
+
 // Parse attribute strings from HTML opening tags ("a=\"b\" c='d' bare"). Used
 // when folding inline `<Comp ...>` tags into structured reactComponent nodes.
 // Values that look numeric / boolean are coerced so authors can write
@@ -1013,9 +1091,7 @@ function parentOfTop(stack: Inline[][], root: Inline[]): Inline | null {
 // as numbers by FluentUI when appropriate).
 function parseHtmlAttrs(src: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const re = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
+  for (const m of src.matchAll(ATTR_RE)) {
     const key = m[1]!;
     const raw = m[2] ?? m[3] ?? m[4];
     const outKey = key === "class" ? "className" : key === "for" ? "htmlFor" : key;

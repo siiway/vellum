@@ -62,6 +62,7 @@ import { useVellum } from "../context";
 import {
   parseHtml,
   domToReact,
+  attributesToProps,
   type DOMNode,
   type HTMLReactParserOptions,
   Element as DomElement,
@@ -761,6 +762,13 @@ function InlineNode({
       }
       return <>{kids}</>;
     }
+    case "element":
+      // A plain inline tag pair (`<kbd>Ctrl</kbd>`), paired up by the build.
+      return createElement(
+        node.tag,
+        attributesToProps(node.attrs, node.tag),
+        ...node.children.map((c, i) => <InlineNode key={i} node={c} styles={styles} />),
+      );
     case "xref":
       if (node.href) {
         return (
