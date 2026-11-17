@@ -37,6 +37,26 @@ export type ThemeMode = "system" | "light" | "dark";
 
 const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
+// Points the head's link to the page's Markdown, which the server wrote for
+// the first page, at the page now shown, or removes it from a page without
+// Markdown.
+function setMarkdownLink(url: string | undefined): void {
+  let link = document.head.querySelector<HTMLLinkElement>(
+    'link[rel="alternate"][type="text/markdown"]',
+  );
+  if (!url) {
+    link?.remove();
+    return;
+  }
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "alternate";
+    link.type = "text/markdown";
+    document.head.append(link);
+  }
+  link.href = url;
+}
+
 function osPrefersDark(): boolean {
   return (
     typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches
@@ -229,6 +249,7 @@ export function VellumProvider({
         document.title = payload.page.meta.title
           ? `${payload.page.meta.title} · ${payload.config.site.title}`
           : payload.config.site.title;
+        setMarkdownLink(payload.page.meta.markdownUrl);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           window.location.href = url.toString();

@@ -20,6 +20,7 @@ import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
 import { pageMarkdown } from "./page-markdown";
+import { markdownUrl } from "./routes";
 
 export type PageBuild =
   | {
@@ -194,6 +195,7 @@ export async function buildPagePayload(
           lastUpdated,
           prev,
           next,
+          markdownUrl: markdownUrl(route.canonicalUrl),
         },
       },
     },

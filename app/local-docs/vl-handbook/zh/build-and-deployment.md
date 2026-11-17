@@ -76,7 +76,8 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 - 每个文档页面也以 Markdown 发布，地址是页面 URL 加上 `.md`：
   `/en-US/glint/guide` 的位于 `/en-US/glint/guide.md`，落地页 `/en-US` 的位于
   `/en-US.md`。页面的 head 会链接它（`<link rel="alternate" type="text/markdown">`），
-  把一个页面重定向到另一个页面的规则也会同样重定向它的 Markdown。
+  读者在站内点击链接时，它会一直指向当前显示的页面。把一个页面重定向到另一个页面的
+  规则也会同样重定向它的 Markdown。
 - `robots.txt` 声明 [Content Signal](https://contentsignals.org)，即 AI 可以
   如何使用内容，取自 [`site.contentSignal`](./configuration#siteconfig)。
 - `/.well-known/agent-skills/index.json` 列出一个

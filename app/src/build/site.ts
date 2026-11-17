@@ -269,10 +269,10 @@ async function writePage(
   markdown?: string,
 ): Promise<void> {
   const url = payload.route.canonicalUrl;
-  const md = markdown === undefined ? null : markdownUrl(url);
-  await writeOut(htmlFile(url), renderPage(payload, opts, md), root);
+  await writeOut(htmlFile(url), renderPage(payload, opts), root);
   await writeJson(payloadPath(url), payload, root);
-  if (markdown !== undefined) await writeOut(markdownUrl(url), markdown, root);
+  const md = payload.page.meta.markdownUrl;
+  if (md && markdown !== undefined) await writeOut(md, markdown, root);
 }
 
 // Pages that belong to no repo, the redirects and headers, and the files for

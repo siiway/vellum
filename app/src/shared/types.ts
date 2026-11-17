@@ -286,6 +286,9 @@ export interface PageMeta {
   lastUpdated?: { iso: string; author?: string; sha: string } | null;
   prev?: { text: string; link: string } | null;
   next?: { text: string; link: string } | null;
+  // Where a docs page's Markdown is published: its URL plus `.md`. The head
+  // links it.
+  markdownUrl?: string;
 }
 
 // Forward declaration so types.ts doesn't have to import the markdown module.
