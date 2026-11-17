@@ -82,5 +82,14 @@ export function buildRedirects(site: VellumConfig): string {
     exact("/languages", `/${fallback.prefix}/languages`, 302);
   }
 
+  // `/` plus `.md` is `/.md`. A locale at `/` has its Markdown at
+  // `/index.md`; without one, `/` picks a locale, and its Markdown is the
+  // default locale's.
+  if (locales.some((l) => !l.prefix)) add("/.md", "/index.md", 301);
+  else if (fallback) {
+    add("/.md", markdownUrl(`/${fallback.prefix}`), 302);
+    add("/index.md", markdownUrl(`/${fallback.prefix}`), 302);
+  }
+
   return `${lines.join("\n")}\n`;
 }
