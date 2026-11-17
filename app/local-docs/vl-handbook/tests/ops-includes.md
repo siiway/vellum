@@ -1,13 +1,13 @@
 ---
 title: OPS Includes
-description: "[!INCLUDE] and [!code-lang] directives — fetched + spliced into the AST."
+description: "[!INCLUDE] and [!code-lang] directives — read and spliced into the AST."
 ---
 
 # OPS Includes
 
 ## Markdown INCLUDE
 
-The directive `[!INCLUDE [label](../_includes/install.md)]` fetches the referenced
+The directive `[!INCLUDE [label](../_includes/install.md)]` reads the referenced
 file (via the same source as the parent page), parses it through the full
 markdown pipeline, and splices the resulting blocks into the current AST.
 Containers / code / xref inside the include all keep working.

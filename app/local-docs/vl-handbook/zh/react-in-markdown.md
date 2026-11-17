@@ -16,16 +16,16 @@ React 组件挂载，而不是通过 `dangerouslySetInnerHTML` 当作惰性 HTML
 注册表预装了在文档里好用的 FluentUI v9 原语。markdown 里任何匹配 key 的
 PascalCase 标签都会被挂载：
 
-| 组件                                                                                                                                                                       | 说明                                                                                                |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `Button`                                                                                                                                                                   | 按钮和行动号召。                                                                                    |
-| `Card`                                                                                                                                                                     | 卡片容器。                                                                                          |
-| `Divider`                                                                                                                                                                  | 横向 / 纵向分割线。                                                                                 |
-| `Image`                                                                                                                                                                    | 带 `fit` 等属性的 FluentUI 图片。                                                                   |
-| `Link`                                                                                                                                                                     | 主题化链接。                                                                                        |
-| `Tab` / `TabList`                                                                                                                                                          | tabs（直接声明用；要做内容 tabs 请用 [DocFX tabs](./ops-extensions#tabs)）。                        |
-| `Tooltip`                                                                                                                                                                  | 工具提示。                                                                                          |
-| `Avatar`、`Badge`、`CardFooter`、`CardHeader`、`CardPreview`、`CounterBadge`、`InfoLabel`、`Input`、`PresenceBadge`、`ProgressBar`、`Spinner`、`Switch`、`Tag`、`Textarea` | 页面第一次使用时按需懒加载。                                                                        |
+| 组件                                                                                                                                                                       | 说明                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `Button`                                                                                                                                                                   | 按钮和行动号召。                                                             |
+| `Card`                                                                                                                                                                     | 卡片容器。                                                                   |
+| `Divider`                                                                                                                                                                  | 横向 / 纵向分割线。                                                          |
+| `Image`                                                                                                                                                                    | 带 `fit` 等属性的 FluentUI 图片。                                            |
+| `Link`                                                                                                                                                                     | 主题化链接。                                                                 |
+| `Tab` / `TabList`                                                                                                                                                          | tabs（直接声明用；要做内容 tabs 请用 [DocFX tabs](./ops-extensions#tabs)）。 |
+| `Tooltip`                                                                                                                                                                  | 工具提示。                                                                   |
+| `Avatar`、`Badge`、`CardFooter`、`CardHeader`、`CardPreview`、`CounterBadge`、`InfoLabel`、`Input`、`PresenceBadge`、`ProgressBar`、`Spinner`、`Switch`、`Tag`、`Textarea` | 页面第一次使用时按需懒加载。                                                 |
 
 前面一组在主客户端 bundle 中（Vellum 外壳本来就在用）。懒加载的那一组
 位于单独的 chunk，所以不使用它们的页面零开销。
@@ -38,7 +38,7 @@ PascalCase 标签都会被挂载：
 
 ```md
 Click <Button appearance="primary">this button</Button> to continue,
-or read the <Link href="/handbook/getting-started">getting started</Link>
+or read the <Link href="/vl-handbook/getting-started">getting started</Link>
 guide first.
 
 For a bigger call to action:
@@ -125,12 +125,43 @@ export const REACT_COMPONENTS = {
 全局使用，否则懒加载。
 :::
 
+## Vue 组件
+
+为 VitePress 编写的文档仓库，可以继续使用它在文档根下
+`.vitepress/theme/index.ts` 中注册的 Vue 组件：
+
+```ts
+// .vitepress/theme/index.ts
+import DefaultTheme from "vitepress/theme";
+import ScopeBuilder from "./ScopeBuilder.vue";
+
+export default {
+  extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component("ScopeBuilder", ScopeBuilder);
+  },
+};
+```
+
+构建会读取这个文件（不会运行它），找出每个 `app.component("Name", X)`
+中 `X` 从 `.vue` 文件导入的组件，并把该文件发布到
+`/_vellum/vue/{repo}/{Name}.vue`。页面里的 `<ScopeBuilder />` 会变成一个
+占位元素，读者的浏览器加载 Vue 和 `vue3-sfc-loader`（只在包含组件的页面上），
+再把组件挂载进去。
+
+- 只有注册过的组件会加载，组件只能导入 `vue` 和 `vitepress`。
+- `vitepress` 只提供 `useData()` 和 `useRoute()`，包含页面的语言、标题、
+  frontmatter 和主题；没有其他 API。
+- 属性会变成 props（数字和布尔值会被转换）；子内容和插槽会被丢弃。
+- 组件只在浏览器中渲染，所以不在预渲染的 HTML 里，也不会被搜索到。
+
 ## 安全
 
-注册表是一个封闭集合——作者无法通过标签名挂载任意 React 组件或任意
-HTML 元素。行内 HTML 标签（小写）仍然通过 `dangerouslySetInnerHTML`
-透传（用于 `<sub>`、`<kbd>` 等），但它们不能引入 `<script>`，
-因为 markdown 解析器在到达 AST 构建器之前就把原始 script 标签剥掉了。
+注册表是一个封闭集合：标签名只能挂载注册表中列出的组件。但这并不能
+隔离页面的其余部分。`<script>` 标签会像在 VitePress 中一样被丢弃，但其他
+原始 HTML（`<sub>`、`<kbd>` ……）会原样保留，而仓库的 Vue 组件就是它自己的
+代码，会在读者的浏览器中运行。Vellum 不会对文档内容做清理，所以只发布你
+信任其作者的仓库。
 
-如果你需要一个全新的交互式原语，把它加进注册表，而不是鼓励作者
-直接写行内 `<script>`。
+如果你需要一个全新的交互式原语，把它加进注册表：markdown 中的 `<script>`
+不会运行。

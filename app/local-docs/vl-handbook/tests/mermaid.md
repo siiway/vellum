@@ -1,12 +1,12 @@
 ---
 title: Mermaid Diagrams
-description: SSR via Kroki for both palettes; client falls back to mermaid.js if Kroki failed.
+description: Drawn by Kroki at build time in both palettes; the client falls back to mermaid.js if Kroki failed.
 ---
 
 # Mermaid Diagrams
 
 The build pre-renders each diagram against Kroki in both light and dark themes
-and ships both SVGs in the bootstrap payload. Toggling the theme swaps them
+and ships both SVGs in the page data. Toggling the theme swaps them
 instantly. If Kroki was unreachable, the client downloads the ~600KB mermaid
 runtime and renders client-side.
 

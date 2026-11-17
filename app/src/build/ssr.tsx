@@ -160,14 +160,14 @@ html[data-theme="dark"] .shiki span[style*="--shiki-dark-text-decoration"]{text-
   // When the result differs from the theme the page was rendered in, nothing
   // reloads: the page CSS keys off [data-theme], `themeTokenCss` below covers
   // FluentUI's tokens, and the client switches its own state after hydration.
-  const serverTheme = payload.initialTheme;
-  const themeScript = `(function(){var d=document.documentElement;try{var m=document.cookie.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){d.dataset.theme=m[1];return;}d.dataset.theme=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}catch(e){d.dataset.theme=${JSON.stringify(serverTheme)};}})();`;
+  const pageTheme = payload.initialTheme;
+  const themeScript = `(function(){var d=document.documentElement;try{var m=document.cookie.match(/(?:^|; )vellum-theme=(light|dark)/);if(m){d.dataset.theme=m[1];return;}d.dataset.theme=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}catch(e){d.dataset.theme=${JSON.stringify(pageTheme)};}})();`;
 
-  // FluentProvider SSRs only the server theme's tokens. This rule carries
+  // FluentProvider renders only the page theme's tokens. This rule carries
   // the other theme's, applied when the script above picked it. It outranks
   // FluentProvider's own `.fui-FluentProviderR0` rule, and once the client
   // has switched themes the two agree.
-  const otherTheme = serverTheme === "dark" ? "light" : "dark";
+  const otherTheme = pageTheme === "dark" ? "light" : "dark";
   const themeTokenCss = createCSSRuleFromTheme(
     `html[data-theme="${otherTheme}"] .fui-FluentProvider`,
     createVellumTheme(otherTheme === "dark", site.themeColor),

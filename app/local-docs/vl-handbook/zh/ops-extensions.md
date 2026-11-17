@@ -9,17 +9,17 @@ Microsoft 的 **Open Publishing System**（OPS，现已更名为 Microsoft Learn
 在 CommonMark 之上提供了一套 Markdown 扩展。Vellum 实现了完整集，
 所以为 Learn 撰写的文档无需修改即可在这里渲染。
 
-| 扩展                  | Vellum 的支持情况                                            |
-| --------------------- | ------------------------------------------------------------ |
-| 三冒号 image          | ✓ —— 见 [图片与视频](#图片与视频)                            |
-| 三冒号 video          | ✓                                                            |
-| 行 / 列网格           | ✓ —— 12 列响应式网格，见 [网格布局](#网格布局)                |
-| Zone 切换             | ✓ —— 见 [Zones](#zones)                                      |
-| Moniker 范围          | ✓ —— 见 [Monikers](#monikers)                                |
-| DocFX tabs            | ✓ —— 见 [Tabs](#tabs)                                        |
-| `[!INCLUDE]`          | ✓ —— 见 [Includes](#includes)                                |
-| `[!code-<lang>]`      | ✓ —— 见 [代码包含](#代码包含)                                |
-| `<xref:Uid>`          | ✓ —— 见 [xref](#xref)                                        |
+| 扩展             | Vellum 的支持情况                              |
+| ---------------- | ---------------------------------------------- |
+| 三冒号 image     | ✓ —— 见 [图片与视频](#图片与视频)              |
+| 三冒号 video     | ✓                                              |
+| 行 / 列网格      | ✓ —— 12 列响应式网格，见 [网格布局](#网格布局) |
+| Zone 切换        | ✓ —— 见 [Zones](#zones)                        |
+| Moniker 范围     | ✓ —— 见 [Monikers](#monikers)                  |
+| DocFX tabs       | ✓ —— 见 [Tabs](#tabs)                          |
+| `[!INCLUDE]`     | ✓ —— 见 [Includes](#includes)                  |
+| `[!code-<lang>]` | ✓ —— 见 [代码包含](#代码包含)                  |
+| `<xref:Uid>`     | ✓ —— 见 [xref](#xref)                          |
 
 每个扩展在 [功能测试](./tests/) 一节都有可工作的示例——把那些页面
 和本参考一起打开对照阅读。
@@ -86,9 +86,9 @@ Python-specific instructions.
 :::zone-end:::
 ```
 
-读者通过 URL 上的 `?pivot=...` 来选择 pivot。当没有设置 pivot 时，
-所有 zone 都会显示，让页面从头到尾读得通——这是一个有意为之的、
-SSR 友好的设计选择。
+读者通过 URL 上的 `?pivot=...` 来选择 pivot。页面预渲染时显示所有 zone，
+之后由客户端隐藏与 pivot 不匹配的 zone。没有设置 pivot 或没有 JavaScript 时，
+所有 zone 都保持显示，让页面从头到尾读得通。
 
 ## Monikers
 
@@ -130,7 +130,7 @@ tab id 集合，所以不相关的 tab 组互不影响。
 
 ## Includes
 
-`[!INCLUDE [label](path)]` 会拉取另一份 Markdown 文件，并把它解析后的
+`[!INCLUDE [label](path)]` 会读取另一份 Markdown 文件，并把它解析后的
 块拼进当前 AST。include 内部的容器 / 代码 / xref 都能继续工作。
 
 ```md
@@ -141,7 +141,7 @@ tab id 集合，所以不相关的 tab 组互不影响。
 Vellum 在内层调用时会把 include 解析器去掉——所以 include 内部
 可以用 mermaid、math、xref 等等，但不能再嵌一个 `[!INCLUDE]`。
 
-当解析器返回 null（文件缺失、网络错误等）时，会显示一个可见的
+当文件无法读取（不存在，或位于仓库之外）时，会显示一个可见的
 "Failed to resolve INCLUDE" 提示框，并附上出问题的路径，
 让作者一眼能看到坏掉的引用。
 

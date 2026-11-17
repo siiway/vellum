@@ -30,6 +30,10 @@ export type Inline =
       props: Record<string, unknown>;
       children: Inline[];
     }
+  // Inline HTML element with content, e.g. `<kbd>Ctrl</kbd>`. markdown-it
+  // emits its tags as separate tokens; the AST builder pairs them so the
+  // content nests inside. `attrs` are as written, minus event handlers.
+  | { type: "element"; tag: string; attrs: Record<string, string>; children: Inline[] }
   // OPS / Microsoft Learn cross-reference. `target` is the uid (e.g. System.Console).
   // `href` is the resolved URL when the build found a matching xrefmap entry;
   // when unresolved, the client renders the uid as monospace fallback text.

@@ -24,4 +24,4 @@ export function parseHtml(
 
 export { domToReact };
 export type { HTMLReactParserOptions, DOMNode };
-export { Element } from "html-react-parser";
+export { Element, attributesToProps } from "html-react-parser";

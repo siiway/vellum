@@ -109,7 +109,7 @@ export async function buildPagePayload(
   const rendered = await renderMarkdown({
     source,
     linkContext,
-    // Render mermaid blocks server-side via Kroki — both light + dark palettes
+    // Render mermaid blocks via Kroki at build time — both light + dark palettes
     // so the client can swap instantly without a fresh fetch when the user
     // toggles theme. Either side may come back null on Kroki failure; the
     // client component falls back to its own mermaid bundle then.

@@ -30,13 +30,13 @@ redeploys.
 | **Sources**              | GitHub repos and local files in the same site; switch per-repo via `source: "github"` or `"local"`.  |
 | **VitePress markdown**   | Containers (`::: tip`), code groups, GFM alerts, task lists, footnotes, table of contents.           |
 | **OPS / Learn**          | Triple-colon image / video / row / column / zone / moniker; DocFX tabs; INCLUDE; code-include; xref. |
-| **Code highlighting**    | Shiki, server-rendered. Filename, line numbers, highlight ranges.                                    |
-| **Mermaid**              | Rendered server-side via Kroki in both light and dark palettes.                                      |
-| **Math**                 | MathJax inline + display, server-rendered to SVG.                                                    |
-| **i18n**                 | Per-repo locales with URL prefixes (e.g. `/zh/...`). Site chrome is translated.                      |
-| **Search**               | Per-repo dialog (Ctrl K) and full-page cross-repo search at `/search`.                               |
+| **Code highlighting**    | Shiki, at build time. Filename, line numbers, highlight ranges.                                      |
+| **Mermaid**              | Drawn by Kroki at build time, in both light and dark palettes.                                       |
+| **Math**                 | MathJax inline + display, rendered to SVG at build time.                                             |
+| **i18n**                 | Site-wide locales with URL prefixes (e.g. `/zh-CN/...`). Site chrome is translated.                  |
+| **Search**               | Per-repo dialog (Ctrl K) and full-page cross-repo search, run in the browser.                        |
 | **Theming**              | Light / dark / system, remembered in a cookie.                                                       |
-| **Components in MD**     | Drop FluentUI primitives (`<Button>`, `<Card>`, `<Spinner>`, …) directly into your `.md` files.      |
+| **Components in MD**     | FluentUI primitives (`<Button>`, `<Card>`, …) and a repo's VitePress Vue components.                 |
 | **Static output**        | Pre-rendered HTML on Workers static assets; incremental updates re-render only changed repos.        |
 | **SPA-style navigation** | Internal links use `history.pushState` and refetch only the JSON payload.                            |
 
@@ -75,7 +75,7 @@ Start with [Markdown features](./markdown) for the VitePress vocabulary, then
 
 - [Search](./search)
 - [Internationalisation](./i18n)
-- [Build & deployment](./caching-and-deployment)
+- [Build & deployment](./build-and-deployment)
 - [Updating content](./updating-content)
   :::column-end:::
   :::column span="6":::

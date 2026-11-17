@@ -14,7 +14,7 @@ renderer or markdown pipeline.
 - **[Basic Markdown](./basic-markdown)** — headings, lists, links, tables, blockquotes.
 - **[Code Blocks](./code-blocks)** — fenced, with langs, line numbers, highlights, filenames, code-group tabs.
 - **[Containers & Alerts](./containers)** — VitePress containers, GFM alerts.
-- **[Mermaid Diagrams](./mermaid)** — SSR via Kroki (light + dark) with client fallback.
+- **[Mermaid Diagrams](./mermaid)** — drawn by Kroki at build time (light + dark), with a client fallback.
 - **[Math & Emoji](./math)** — MathJax inline + display, GitHub emoji shortcodes, task lists, footnotes.
 - **[OPS Tabs](./ops-tabs)** — DocFX `# [Title](#tab/id)` heading-based tab groups.
 - **[OPS Image & Video](./ops-image-video)** — `:::image:::` and `:::video:::` self-closing blocks.
@@ -33,6 +33,7 @@ the top. Examples:
 :::
 
 ::: warning
-The mermaid SSR is a network call to kroki.io. If you're offline, the client
-will fall back to rendering mermaid in-browser, which loads a ~600KB chunk.
+Mermaid diagrams are drawn by kroki.io during the build. If the build was
+offline, the client falls back to rendering mermaid in the browser, which
+loads a ~600KB chunk.
 :::

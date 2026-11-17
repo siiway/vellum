@@ -42,7 +42,7 @@ dist/site/
   assets/                          the client bundle
 ```
 
-Each page's HTML is complete: server-rendered markup, styles, SEO head and
+Each page's HTML is complete: pre-rendered markup, styles, SEO head and
 the data the client hydrates from. Following a link inside the site fetches
 only the next page's JSON from `_vellum/pages/`.
 

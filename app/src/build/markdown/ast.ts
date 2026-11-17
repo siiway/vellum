@@ -8,6 +8,8 @@ import type MarkdownItDefault from "markdown-it";
 type Token = NonNullable<ReturnType<MarkdownItDefault["parse"]>[number]>;
 import type { Block, Inline, MarkdownAst } from "../../shared/markdown";
 import { highlightCode } from "./highlight";
+// The htmlparser2-based parser, as in src/web/htmlParser.ts.
+import htmlToDOM from "html-dom-parser/lib/server/html-to-dom";
 
 type CalloutKind = Extract<Block, { type: "callout" }>["kind"];
 const CALLOUT_KINDS = new Set<CalloutKind>([
@@ -27,7 +29,7 @@ export interface AstBuildOptions {
   // Hook for image src.
   rewriteImage?: (src: string) => string;
   // Optional async hook for rendering a mermaid diagram to themed SVGs
-  // (server-side via Kroki, etc.). Called once per mermaid block in parallel
+  // (via Kroki at build time, etc.). Called once per mermaid block in parallel
   // with code fences. Either palette may be null — the client falls back to
   // its own mermaid bundle for whichever palette is missing.
   renderDiagram?: (code: string) => Promise<{ light: string | null; dark: string | null }>;
@@ -795,7 +797,8 @@ function parseBlocks(
           continue;
         }
       }
-      blocks.push({ type: "html", value: tok.content });
+      const html = dropScripts(tok.content);
+      if (html.trim()) blocks.push({ type: "html", value: html });
       i++;
       continue;
     }
@@ -899,14 +902,11 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
       case "link_open": {
         const href = t.attrGet("href") ?? "";
         const title = t.attrGet("title") ?? undefined;
-        const external = /^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:");
-        const rewritten =
-          external || href.startsWith("#") || !opts.rewriteLink ? href : opts.rewriteLink(href);
         top.push({
           type: "link",
-          href: rewritten,
+          href: rewriteHref(href, opts),
           title,
-          external,
+          external: isExternal(href),
           children: [],
         });
         stack.push((top[top.length - 1] as Extract<Inline, { type: "link" }>).children);
@@ -931,6 +931,12 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
         // (open / text / close); we use the same children-stack the bold/em
         // handlers use to nest the text under the component.
         const content = t.content;
+        if (/^<script(?=[\s/>])/i.test(content)) {
+          // Dropped with its body, which markdown-it made into text tokens.
+          while (i + 1 < tokens.length && !isScriptClose(tokens[i + 1]!)) i++;
+          i++;
+          break;
+        }
         const selfClose = content.match(/^<([A-Z][A-Za-z0-9]*)\s*([^>]*?)\s*\/>\s*$/);
         if (selfClose) {
           top.push({
@@ -965,7 +971,33 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
             break;
           }
         }
-        top.push({ type: "html", value: content });
+        // A plain tag pair (`<kbd>Ctrl</kbd>`) becomes an element node. Kept
+        // as HTML, each tag would be its own empty element and the content
+        // would sit outside it.
+        const tagOpen = content.match(/^<([a-z][a-z0-9-]*)((?:\s[^>]*)?)>$/);
+        if (
+          tagOpen &&
+          !NOT_PAIRED.has(tagOpen[1]!) &&
+          !tagOpen[2]!.trimEnd().endsWith("/") &&
+          hasInlineClose(tokens, i, tagOpen[1]!)
+        ) {
+          const attrs = parseRawAttrs(content);
+          if (tagOpen[1] === "a" && attrs.href) attrs.href = rewriteHref(attrs.href, opts);
+          const node: Inline = { type: "element", tag: tagOpen[1]!, attrs, children: [] };
+          top.push(node);
+          stack.push(node.children);
+          break;
+        }
+        const tagClose = content.match(/^<\/([a-z][a-z0-9-]*)\s*>$/);
+        if (tagClose && stack.length > 1) {
+          const parent = parentOfTop(stack, out);
+          if (parent?.type === "element" && parent.tag === tagClose[1]) {
+            stack.pop();
+            break;
+          }
+        }
+        const html = dropScripts(content);
+        if (html) top.push({ type: "html", value: html });
         break;
       }
       case "ops_xref": {
@@ -1006,6 +1038,73 @@ function parentOfTop(stack: Inline[][], root: Inline[]): Inline | null {
   return null;
 }
 
+// In VitePress a `<script>` in markdown is part of the page's Vue component
+// (`<script setup>` importing a .vue file), never script for the browser.
+// Kept as HTML it would throw on a full load and not run at all after
+// client navigation, so it's dropped, as VitePress drops it.
+const SCRIPT_RE = /<script(?=[\s/>])[^>]*>[\s\S]*?(?:<\/script\s*>|$)|<\/script\s*>/gi;
+
+function dropScripts(html: string): string {
+  return html.replace(SCRIPT_RE, "");
+}
+
+function isScriptClose(t: Token): boolean {
+  return t.type === "html_inline" && /^<\/script\s*>$/i.test(t.content);
+}
+
+function isExternal(href: string): boolean {
+  return /^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:");
+}
+
+// A link's href as the page should use it: docs links become canonical
+// URLs in the page's locale; external and in-page links stay as written.
+function rewriteHref(href: string, opts: AstBuildOptions): string {
+  if (isExternal(href) || href.startsWith("#") || !opts.rewriteLink) return href;
+  return opts.rewriteLink(href);
+}
+
+// Tags never paired into an element node: void elements take no children,
+// `<script>` is dropped, and React can't render the others' content as given.
+const NOT_PAIRED = new Set(
+  "area base br col embed hr img input link meta source track wbr script style textarea".split(" "),
+);
+
+// Whether the inline tag opened at `openIdx` is closed later in the run at
+// the same markdown nesting, so pairing it can't unbalance the stack (as
+// `**a <kbd>b** c</kbd>` would).
+function hasInlineClose(tokens: Token[], openIdx: number, tag: string): boolean {
+  let nesting = 0;
+  let open = 0;
+  for (let k = openIdx + 1; k < tokens.length; k++) {
+    const t = tokens[k]!;
+    nesting += t.nesting;
+    if (nesting < 0) return false;
+    if (t.type !== "html_inline") continue;
+    const m = t.content.match(/^<(\/?)([a-z][a-z0-9-]*)[\s/>]/);
+    if (m?.[2] !== tag) continue;
+    if (!m[1]) open++;
+    else if (open) open--;
+    else return nesting === 0;
+  }
+  return false;
+}
+
+const ATTR_RE = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
+// Attributes of a plain inline open tag, with character references decoded
+// (`&amp;` is `&`). Event handlers are left out: React won't set a string
+// as one.
+function parseRawAttrs(tag: string): Record<string, string> {
+  const [el] = (
+    htmlToDOM as (html: string, opts?: unknown) => { attribs?: Record<string, string> }[]
+  )(tag, { lowerCaseAttributeNames: false });
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(el?.attribs ?? {})) {
+    if (!/^on/i.test(name)) out[name] = value;
+  }
+  return out;
+}
+
 // Parse attribute strings from HTML opening tags ("a=\"b\" c='d' bare"). Used
 // when folding inline `<Comp ...>` tags into structured reactComponent nodes.
 // Values that look numeric / boolean are coerced so authors can write
@@ -1013,9 +1112,7 @@ function parentOfTop(stack: Inline[][], root: Inline[]): Inline | null {
 // as numbers by FluentUI when appropriate).
 function parseHtmlAttrs(src: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const re = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
+  for (const m of src.matchAll(ATTR_RE)) {
     const key = m[1]!;
     const raw = m[2] ?? m[3] ?? m[4];
     const outKey = key === "class" ? "className" : key === "for" ? "htmlFor" : key;

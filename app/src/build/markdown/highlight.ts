@@ -399,7 +399,7 @@ function getHighlighter(): Promise<HighlighterCore> {
       // mostly indistinguishable in output.
       engine: createJavaScriptRegexEngine({ forgiving: true }),
     });
-    // A failed init shouldn't disable highlighting for the isolate's life.
+    // A failed init shouldn't disable highlighting for the rest of the build.
     highlighterPromise.catch(() => {
       highlighterPromise = null;
     });
@@ -410,7 +410,7 @@ function getHighlighter(): Promise<HighlighterCore> {
 const hasGrammar = (id: string) => Object.prototype.hasOwnProperty.call(GRAMMARS, id);
 
 // Shiki language id -> the ids its grammars embed by reference, once per
-// isolate. Concurrent code blocks share the load.
+// build. Concurrent code blocks share the load.
 const moduleLoads = new Map<string, Promise<string[]>>();
 
 function loadModule(hl: HighlighterCore, id: string): Promise<string[]> {
@@ -428,7 +428,7 @@ function loadModule(hl: HighlighterCore, id: string): Promise<string[]> {
 
 // Loads a language's grammar, then every grammar it embeds by reference
 // (HTML in Markdown, CSS in Vue) and theirs in turn. Embedded code then
-// highlights the same whatever else the isolate has rendered.
+// highlights the same whatever else the build has rendered.
 async function ensureLanguage(hl: HighlighterCore, id: string): Promise<void> {
   const seen = new Set<string>();
   let pending = [id];

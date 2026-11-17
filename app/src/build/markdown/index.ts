@@ -199,8 +199,8 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     return served(`${repoBase}${path}`);
   }
 
-  // Relative path — resolve against the current page's directory. The
-  // router strips trailing slashes from canonical URLs, so we have to
+  // Relative path — resolve against the current page's directory.
+  // Canonical URLs have no trailing slash, so we have to
   // figure out ourselves whether the URL points at a file or a directory:
   //   - Index page (URL like `/vl-handbook`)  → URL IS the directory.
   //   - Sub-page  (URL like `/vl-handbook/x`) → directory is the URL up

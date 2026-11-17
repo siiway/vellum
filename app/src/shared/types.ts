@@ -317,7 +317,7 @@ export interface BootstrapPayload {
   //   2. repo's VitePress themeConfig.socialLinks
   //   3. RepoConfig.socialLinks in vellum.config.json
   //   4. site.socialLinks  (site-wide fallback)
-  // The router resolves 1–3 and stuffs the result here; null means the NavBar
+  // The build resolves 1–3 and stuffs the result here; null means the NavBar
   // should fall back to site-level.
   repoSocialLinks?: SocialLink[] | null;
   // Vue components registered in the repo's `.vitepress/theme/index.ts`. The
