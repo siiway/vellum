@@ -363,7 +363,7 @@
         },
         "activeMatch": {
           "type": "string",
-          "description": "Regex (against the current page's repo-relative path) that marks this entry as active. Lets a nav entry stay highlighted across a whole section.",
+          "description": "Regex against the path of the current page in the docs, locale directory included (e.g. \"/zh/guide/intro\"), as in VitePress. Lets a nav entry stay highlighted across a whole section.",
           "format": "regex"
         }
       },

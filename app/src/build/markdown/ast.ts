@@ -8,6 +8,8 @@ import type MarkdownItDefault from "markdown-it";
 type Token = NonNullable<ReturnType<MarkdownItDefault["parse"]>[number]>;
 import type { Block, Inline, MarkdownAst } from "../../shared/markdown";
 import { highlightCode } from "./highlight";
+// The htmlparser2-based parser, as in src/web/htmlParser.ts.
+import htmlToDOM from "html-dom-parser/lib/server/html-to-dom";
 
 type CalloutKind = Extract<Block, { type: "callout" }>["kind"];
 const CALLOUT_KINDS = new Set<CalloutKind>([
@@ -900,14 +902,11 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
       case "link_open": {
         const href = t.attrGet("href") ?? "";
         const title = t.attrGet("title") ?? undefined;
-        const external = /^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:");
-        const rewritten =
-          external || href.startsWith("#") || !opts.rewriteLink ? href : opts.rewriteLink(href);
         top.push({
           type: "link",
-          href: rewritten,
+          href: rewriteHref(href, opts),
           title,
-          external,
+          external: isExternal(href),
           children: [],
         });
         stack.push((top[top.length - 1] as Extract<Inline, { type: "link" }>).children);
@@ -932,6 +931,12 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
         // (open / text / close); we use the same children-stack the bold/em
         // handlers use to nest the text under the component.
         const content = t.content;
+        if (/^<script(?=[\s/>])/i.test(content)) {
+          // Dropped with its body, which markdown-it made into text tokens.
+          while (i + 1 < tokens.length && !isScriptClose(tokens[i + 1]!)) i++;
+          i++;
+          break;
+        }
         const selfClose = content.match(/^<([A-Z][A-Za-z0-9]*)\s*([^>]*?)\s*\/>\s*$/);
         if (selfClose) {
           top.push({
@@ -976,12 +981,9 @@ function inlinesFromTokens(tokens: Token[], opts: AstBuildOptions): Inline[] {
           !tagOpen[2]!.trimEnd().endsWith("/") &&
           hasInlineClose(tokens, i, tagOpen[1]!)
         ) {
-          const node: Inline = {
-            type: "element",
-            tag: tagOpen[1]!,
-            attrs: parseRawAttrs(tagOpen[2]!),
-            children: [],
-          };
+          const attrs = parseRawAttrs(content);
+          if (tagOpen[1] === "a" && attrs.href) attrs.href = rewriteHref(attrs.href, opts);
+          const node: Inline = { type: "element", tag: tagOpen[1]!, attrs, children: [] };
           top.push(node);
           stack.push(node.children);
           break;
@@ -1046,6 +1048,21 @@ function dropScripts(html: string): string {
   return html.replace(SCRIPT_RE, "");
 }
 
+function isScriptClose(t: Token): boolean {
+  return t.type === "html_inline" && /^<\/script\s*>$/i.test(t.content);
+}
+
+function isExternal(href: string): boolean {
+  return /^[a-z]+:\/\//i.test(href) || href.startsWith("mailto:");
+}
+
+// A link's href as the page should use it: docs links become canonical
+// URLs in the page's locale; external and in-page links stay as written.
+function rewriteHref(href: string, opts: AstBuildOptions): string {
+  if (isExternal(href) || href.startsWith("#") || !opts.rewriteLink) return href;
+  return opts.rewriteLink(href);
+}
+
 // Tags never paired into an element node: void elements take no children,
 // `<script>` is dropped, and React can't render the others' content as given.
 const NOT_PAIRED = new Set(
@@ -1074,12 +1091,16 @@ function hasInlineClose(tokens: Token[], openIdx: number, tag: string): boolean 
 
 const ATTR_RE = /([a-zA-Z_:][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
-// Attributes of a plain inline tag, as written. Event handlers are left
-// out: React won't set a string as one.
-function parseRawAttrs(src: string): Record<string, string> {
+// Attributes of a plain inline open tag, with character references decoded
+// (`&amp;` is `&`). Event handlers are left out: React won't set a string
+// as one.
+function parseRawAttrs(tag: string): Record<string, string> {
+  const [el] = (
+    htmlToDOM as (html: string, opts?: unknown) => { attribs?: Record<string, string> }[]
+  )(tag, { lowerCaseAttributeNames: false });
   const out: Record<string, string> = {};
-  for (const m of src.matchAll(ATTR_RE)) {
-    if (!/^on/i.test(m[1]!)) out[m[1]!] = m[2] ?? m[3] ?? m[4] ?? "";
+  for (const [name, value] of Object.entries(el?.attribs ?? {})) {
+    if (!/^on/i.test(name)) out[name] = value;
   }
   return out;
 }

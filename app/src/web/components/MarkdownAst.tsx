@@ -741,27 +741,8 @@ function InlineNode({
       // are pre-merged into the `reactComponent` case below.
       return <span dangerouslySetInnerHTML={{ __html: node.value }} />;
     }
-    case "reactComponent": {
-      // The build already merged the open/close pair (or self-closing) into a
-      // single inline node. If the name is registered, mount the component;
-      // otherwise render the children as plain text so authors see their
-      // content even when they typoed the tag name.
-      const kids = node.children.map((c, i) => (
-        <Fragment key={i}>
-          <InlineNode node={c} styles={styles} />
-        </Fragment>
-      ));
-      if (isRegisteredReactComponent(node.name)) {
-        const Comp = REACT_COMPONENTS[node.name]!;
-        const element = createElement(Comp, node.props, kids.length ? kids : undefined);
-        // Wrap in Suspense so lazy-loaded primitives (Spinner, Tag, Switch …
-        // see reactComponents.ts) don't bubble a suspend up to renderToString
-        // — which would crash the page. Fallback is the children themselves
-        // so the text stays visible during the lazy chunk load.
-        return <Suspense fallback={<>{kids}</>}>{element}</Suspense>;
-      }
-      return <>{kids}</>;
-    }
+    case "reactComponent":
+      return <InlineComponent node={node} styles={styles} />;
     case "element":
       // A plain inline tag pair (`<kbd>Ctrl</kbd>`), paired up by the build.
       return createElement(
@@ -791,6 +772,48 @@ function InlineNode({
         </Text>
       );
   }
+}
+
+// An inline `<Name>` tag, its open/close pair (or self-closing form) merged
+// by the build. A Vue component the repo registered gets a placeholder that
+// VueIslands mounts, as in HTML blocks; a registered React component is
+// mounted; any other name renders its children as plain text, so authors
+// see their content even when they typoed the tag name.
+function InlineComponent({
+  node,
+  styles,
+}: {
+  node: Extract<Inline, { type: "reactComponent" }>;
+  styles: ReturnType<typeof useStyles>;
+}): ReactNode {
+  const { data } = useVellum();
+  if (data.repoComponents?.some((c) => c.name === node.name)) {
+    const props = Object.fromEntries(
+      Object.entries(node.props).map(([k, v]) => [k === "className" ? "class" : k, v]),
+    );
+    const json = Object.keys(props).length ? JSON.stringify(props) : null;
+    return (
+      <span
+        data-vue-island={node.name}
+        data-vue-props={json ? encodeURIComponent(json) : undefined}
+      />
+    );
+  }
+  const kids = node.children.map((c, i) => (
+    <Fragment key={i}>
+      <InlineNode node={c} styles={styles} />
+    </Fragment>
+  ));
+  if (isRegisteredReactComponent(node.name)) {
+    const Comp = REACT_COMPONENTS[node.name]!;
+    const element = createElement(Comp, node.props, kids.length ? kids : undefined);
+    // Wrap in Suspense so lazy-loaded primitives (Spinner, Tag, Switch …
+    // see reactComponents.ts) don't bubble a suspend up to renderToString
+    // — which would crash the page. Fallback is the children themselves
+    // so the text stays visible during the lazy chunk load.
+    return <Suspense fallback={<>{kids}</>}>{element}</Suspense>;
+  }
+  return <>{kids}</>;
 }
 
 function ListNode({

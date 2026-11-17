@@ -165,7 +165,7 @@ const OVERRIDES: Record<string, OverrideTable> = {
       link: "Destination URL or site-relative path. Omit when this item is a dropdown trigger (use `items`).",
       items: "Children — turns this nav entry into a dropdown menu.",
       activeMatch:
-        "Regex (against the current page's repo-relative path) that marks this entry as active. Lets a nav entry stay highlighted across a whole section.",
+        'Regex against the path of the current page in the docs, locale directory included (e.g. "/zh/guide/intro"), as in VitePress. Lets a nav entry stay highlighted across a whole section.',
     },
     propertyPatches: {
       activeMatch: { format: "regex" },
