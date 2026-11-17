@@ -3,7 +3,7 @@
 //   /.well-known/agent-skills/index.json      the skills index
 //     (https://github.com/cloudflare/agent-skills-discovery-rfc), listing
 //   /.well-known/agent-skills/{name}/SKILL.md one skill: what the site
-//     documents, in which languages, and how to find a page
+//     documents, in which languages, and how to find and read a page
 //   /.well-known/ard.json                     the ARD catalog
 //     (https://agenticresourcediscovery.org), listing the same skill
 //   /.well-known/ai-catalog.json              the same catalog at the path
@@ -107,8 +107,9 @@ function buildSkill(site: VellumConfig, origin: string, name: string) {
     "",
     `# ${title}`,
     "",
-    `${origin} is a static documentation site. Every page is server-rendered HTML:`,
-    "fetch its URL and read the `<main>` element.",
+    `${origin} is a static documentation site. Every page is also published as`,
+    "Markdown at its URL plus `.md` (`/guide/setup` → `/guide/setup.md`): fetch that",
+    "instead of the HTML. Its links to other pages point at their Markdown.",
   ];
   if (repos.length) {
     lines.push("", "## Docs", "");

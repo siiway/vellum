@@ -32,6 +32,7 @@ dist/site/
   404.html, {prefix}/404.html      各语言的 404 页面
   {prefix}/index.html              落地页（主页仓库）
   {prefix}/{repo}/…/index.html     每个页面一个
+  {prefix}.md, {prefix}/{repo}/….md   每个页面的 Markdown，见下文
   {prefix}/search/, languages/     搜索页和语言页
   _vellum/pages/{page}.json        每个页面的数据，供客户端导航使用
   _vellum/search/{locale}/{repo}.json   搜索索引
@@ -72,12 +73,16 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 
 站点只用静态文件告诉 AI 智能体它有哪些内容、可以如何使用：
 
+- 每个文档页面也以 Markdown 发布，地址是页面 URL 加上 `.md`：
+  `/en-US/glint/guide` 的位于 `/en-US/glint/guide.md`，落地页 `/en-US` 的位于
+  `/en-US.md`。页面的 head 会链接它（`<link rel="alternate" type="text/markdown">`），
+  把一个页面重定向到另一个页面的规则也会同样重定向它的 Markdown。
 - `robots.txt` 声明 [Content Signal](https://contentsignals.org)，即 AI 可以
   如何使用内容，取自 [`site.contentSignal`](./configuration#siteconfig)。
 - `/.well-known/agent-skills/index.json` 列出一个
   [agent skill](https://agentskills.io)，`{host}/SKILL.md`：站点有哪些文档、
-  有哪些语言、怎样找到一个页面。`{host}` 是站点的主机名，点换成连字符，例如
-  `docs-example-com`。
+  有哪些语言、怎样找到并阅读一个页面。`{host}` 是站点的主机名，点换成连字符，
+  例如 `docs-example-com`。
 - `/.well-known/ard.json` 是一个
   [ARD](https://agenticresourcediscovery.org) 目录，列出同一个 skill。
   它也位于 `/.well-known/ai-catalog.json`，即 ARD 前身的路径，较旧的读取方和
@@ -90,9 +95,15 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 `.well-known` 下的文件和 `Link` 头与 sitemap 一样需要 `site.url`。它们全部来自
 配置，所以 `bun run update` 不会改动它们。
 
+页面的 Markdown 就是它的源文件原样，只改了一处：指向其他页面的链接按 HTML 页面的
+方式解析，并指向那些页面的 Markdown（`./setup.md` → `/en-US/glint/guide/setup.md`）。
+这个文件发布的位置不是源文件所在的位置（`guide/index.md` 变成 `guide.md`），所以相对
+链接会落空。指向图片和其他文件的链接、代码里的内容、frontmatter 里的链接、include 和
+xref 都保持原样。
+
 智能体就绪检查还会查找对 `Accept: text/markdown` 返回的 markdown、API 与 OAuth
 元数据以及 MCP 服务器。这些需要按请求运行的代码，或站点并没有的 API，所以 Vellum
-站点都不提供。
+站点都不提供。它的 Markdown 改由 `.md` URL 提供。
 
 ## 部署
 

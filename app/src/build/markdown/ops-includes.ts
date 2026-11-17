@@ -19,6 +19,12 @@ const INCLUDE_RE = /^\[!INCLUDE\s+\[[^\]]*\]\(([^)]+)\)\]\s*$/i;
 // `[!code-<lang>[label](path)]` — lang ends up on the fence info string.
 const CODE_INCLUDE_RE = /^\[!code-([a-zA-Z0-9_+-]+)\[[^\]]*\]\(([^)]+)\)\]\s*$/;
 
+// Whether a source line is one of the two directives.
+export function isIncludeLine(line: string): boolean {
+  const text = line.trim();
+  return INCLUDE_RE.test(text) || CODE_INCLUDE_RE.test(text);
+}
+
 export interface CodeIncludeMeta {
   path: string;
   lang: string;

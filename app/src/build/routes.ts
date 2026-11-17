@@ -100,3 +100,10 @@ export function htmlFile(canonicalUrl: string): string {
   const path = canonicalUrl.replace(/^\/+|\/+$/g, "");
   return path ? `${path}/index.html` : "index.html";
 }
+
+// The URL of a page's Markdown: the page's URL plus `.md`, and `/index.md`
+// for a page at `/`.
+export function markdownUrl(canonicalUrl: string): string {
+  const path = canonicalUrl.replace(/^\/+|\/+$/g, "");
+  return `/${path || "index"}.md`;
+}

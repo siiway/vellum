@@ -21,7 +21,12 @@ export interface RenderOptions {
   origin: string | null;
 }
 
-export function renderPage(payload: BootstrapPayload, { assets, origin }: RenderOptions): string {
+// `markdownUrl` is where the page's Markdown is published, for a docs page.
+export function renderPage(
+  payload: BootstrapPayload,
+  { assets, origin }: RenderOptions,
+  markdownUrl: string | null = null,
+): string {
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -54,7 +59,7 @@ export function renderPage(payload: BootstrapPayload, { assets, origin }: Render
   const { site } = payload.config;
   const themeColor = site.themeColor ?? "#0078d4";
 
-  const seoHead = buildSeoHead(payload, origin);
+  const seoHead = buildSeoHead(payload, origin, markdownUrl);
 
   const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
 
@@ -200,7 +205,11 @@ ${seoHead}
 // Builds the title/description/canonical/OG/Twitter/JSON-LD bundle. Kept as
 // one function so all of the head's metadata reasoning lives in one place
 // instead of being scattered through template literal interpolations.
-function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): string {
+function buildSeoHead(
+  payload: BootstrapPayload,
+  siteOrigin: string | null,
+  markdownUrl: string | null,
+): string {
   const { config, route, page, error } = payload;
   const { site } = config;
   // Without `site.url` every URL below stays root-relative.
@@ -311,6 +320,12 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
   if (defaultLocaleConfig && !error) {
     const defaultHref = `${origin}${swapLocalePrefix(route.canonicalUrl, currentLocale!, defaultLocaleConfig)}`;
     lines.push(`  <link rel="alternate" hreflang="x-default" href="${escapeAttr(defaultHref)}">`);
+  }
+  // The same page as Markdown, for agents.
+  if (markdownUrl) {
+    lines.push(
+      `  <link rel="alternate" type="text/markdown" href="${escapeAttr(`${origin}${markdownUrl}`)}">`,
+    );
   }
 
   // Open Graph.

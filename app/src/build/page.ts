@@ -19,9 +19,17 @@ import type { LinkContext } from "./markdown/links";
 import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
+import { pageMarkdown } from "./page-markdown";
 
 export type PageBuild =
-  | { found: true; payload: BootstrapPayload; sourcePath: string; source: string }
+  | {
+      found: true;
+      payload: BootstrapPayload;
+      sourcePath: string;
+      source: string;
+      // The page's Markdown (page-markdown.ts).
+      markdown: string;
+    }
   // `candidates` are the source paths that were tried.
   | { found: false; candidates: string[] };
 
@@ -166,6 +174,7 @@ export async function buildPagePayload(
     found: true,
     sourcePath: matchedPath,
     source,
+    markdown: pageMarkdown(source, linkContext),
     payload: {
       config: site,
       route,
