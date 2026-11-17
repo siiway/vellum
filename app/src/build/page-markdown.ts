@@ -11,12 +11,18 @@
 // aren't pages). What's code is what the page's render parsed as code.
 
 import { normalizeInternal, type RenderOutput } from "./markdown/index";
-import { isIncludeLine } from "./markdown/ops-includes";
 import type { LinkContext } from "./markdown/links";
 import { markdownUrl } from "./routes";
 
 // Blocks whose lines are kept as written.
-const VERBATIM = new Set(["fence", "code_block", "math_block", "math_block_eqno"]);
+const VERBATIM = new Set([
+  "fence",
+  "code_block",
+  "math_block",
+  "math_block_eqno",
+  "ops_include",
+  "ops_code_include",
+]);
 
 // On one line: a code span (kept as is: it ends at a backtick run as long as
 // the one it starts with), an inline link's destination after `](`, or a link
@@ -44,7 +50,7 @@ export function pageMarkdown(
     body
       .split("\n")
       .map((line, i) =>
-        code.has(i) || isIncludeLine(line)
+        code.has(i)
           ? line
           : line.replace(
               LINK,
