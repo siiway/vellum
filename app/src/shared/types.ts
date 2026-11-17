@@ -314,7 +314,8 @@ export interface ErrorState {
   suggestions?: Array<{ text: string; link: string }>;
 }
 
-// Bootstrap payload serialized into the SSR HTML and read by the hydration entry.
+// Everything a page is rendered from. The build renders it to the page's HTML
+// and writes it next to it as JSON, which the client hydrates the page from.
 export interface BootstrapPayload {
   config: VellumConfig;
   route: RouteContext;
@@ -345,10 +346,4 @@ export interface BootstrapPayload {
   initialTheme: "light" | "dark";
   // When set, the shell renders an ErrorPage instead of the doc body.
   error?: ErrorState;
-}
-
-declare global {
-  interface Window {
-    __VELLUM__?: BootstrapPayload;
-  }
 }

@@ -1,5 +1,6 @@
 // The static site build. Renders every page of every repo to HTML (plus the
-// JSON payload client-side navigation swaps in, and the page's Markdown)
+// JSON payload the client hydrates it from and navigation swaps in, and the
+// page's Markdown)
 // under dist/site, next to a copy of the client bundle, ready for
 // `wrangler deploy` as static assets.
 //
@@ -14,7 +15,13 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import siteConfig from "../../vellum.config.json";
 import type { BootstrapPayload, LocaleConfig, RepoConfig, VellumConfig } from "../shared/types";
-import { payloadPath, searchIndexPath, vueComponentPath, vueDir } from "../shared/paths";
+import {
+  notFoundPayloadPath,
+  payloadPath,
+  searchIndexPath,
+  vueComponentPath,
+  vueDir,
+} from "../shared/paths";
 import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
@@ -269,8 +276,9 @@ async function writePage(
   markdown?: string,
 ): Promise<void> {
   const url = payload.route.canonicalUrl;
-  await writeOut(htmlFile(url), renderPage(payload, opts), root);
-  await writeJson(payloadPath(url), payload, root);
+  const data = payloadPath(url);
+  await writeOut(htmlFile(url), renderPage(payload, data, opts), root);
+  await writeJson(data, payload, root);
   const md = payload.page.meta.markdownUrl;
   if (md && markdown !== undefined) await writeOut(md, markdown, root);
 }
@@ -283,12 +291,12 @@ async function writeSiteFiles(opts: RenderOptions, repos: Record<string, RepoSta
     const base = localeBase(locale);
     await writePage(shellPayload(locale, "search", `${base}/search`), opts);
     await writePage(shellPayload(locale, "languages", `${base}/languages`), opts);
-    await writeOut(`${base.slice(1)}/404.html`, renderPage(notFoundPayload(locale), opts));
+    await writeNotFound(locale, `${base.slice(1)}/404.html`, opts);
   }
 
   // The 404 for URLs outside every locale, and `/` unless a locale lives there.
   const fallback = locales.find((l) => l.code === defaultLocale) ?? locales[0]!;
-  if (fallback.prefix) await writeOut("404.html", renderPage(notFoundPayload(fallback), opts));
+  if (fallback.prefix) await writeNotFound(fallback, "404.html", opts);
   if (locales.every((l) => l.prefix)) await writeOut("index.html", rootPage(SITE));
 
   await writeOut("_redirects", buildRedirects(SITE));
@@ -331,6 +339,14 @@ function shellPayload(
       meta: { title, description, frontmatter: { layout }, outline: [] },
     },
   };
+}
+
+// Writes the locale's 404 page to `file`, and its payload.
+async function writeNotFound(locale: LocaleConfig, file: string, opts: RenderOptions) {
+  const payload = notFoundPayload(locale);
+  const data = notFoundPayloadPath(locale.code);
+  await writeOut(file, renderPage(payload, data, opts));
+  await writeJson(data, payload);
 }
 
 // The localized 404, with links to the repos.

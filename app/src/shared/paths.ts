@@ -61,6 +61,16 @@ export function payloadPath(pathname: string): string {
   return `/_vellum/pages/${page}.json`;
 }
 
+// The 404 page's payload in one locale. It has a path of its own because the
+// page is served at every URL without a page.
+export function notFoundPayloadPath(localeCode: string): string {
+  return `/_vellum/404/${encodeURIComponent(localeCode)}.json`;
+}
+
+// The id of the link in a page's head to the payload the client hydrates the
+// page from.
+export const PAYLOAD_LINK_ID = "vellum-payload";
+
 // The search index of one repo in one locale.
 export function searchIndexPath(localeCode: string, repoSlug: string): string {
   return `/_vellum/search/${encodeURIComponent(localeCode)}/${encodeURIComponent(repoSlug)}.json`;

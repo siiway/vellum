@@ -1,48 +1,37 @@
-// Client-side entry: hydrate the pre-rendered shell with the bootstrap payload embedded in the page.
+// Client entry: hydrate the pre-rendered page. Its payload isn't in the HTML:
+// the build writes it next to the page as JSON, and the page's head preloads it.
 
-import { hydrateRoot, createRoot } from "react-dom/client";
+import { hydrateRoot } from "react-dom/client";
 import { RendererProvider, createDOMRenderer, SSRProvider } from "@fluentui/react-components";
 import { App } from "./App";
 import { registerTools } from "./webmcp";
+import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { BootstrapPayload } from "../shared/types";
 
-function bootstrap(): BootstrapPayload | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.__VELLUM__;
-  if (raw) return raw;
-  // Fallback: look for an embedded <script id="__VELLUM_DATA__"> tag.
-  const tag = document.getElementById("__VELLUM_DATA__");
-  if (tag?.textContent) {
-    try {
-      return JSON.parse(tag.textContent) as BootstrapPayload;
-    } catch (e) {
-      console.error("[vellum] failed to parse bootstrap payload", e);
-    }
-  }
-  return null;
+async function loadPayload(): Promise<BootstrapPayload> {
+  const link = document.getElementById(PAYLOAD_LINK_ID) as HTMLLinkElement | null;
+  if (!link) throw new Error("the page links no payload");
+  // The same request as the preload, so the browser answers it from there.
+  const res = await fetch(link.href);
+  if (!res.ok) throw new Error(`${link.href}: HTTP ${res.status}`);
+  return (await res.json()) as BootstrapPayload;
 }
 
-const data = bootstrap();
-const container = document.getElementById("vellum-root");
-
-if (data && container) {
-  const renderer = createDOMRenderer(document);
-  const tree = (
-    <RendererProvider renderer={renderer}>
+async function start(): Promise<void> {
+  const container = document.getElementById("vellum-root");
+  if (!container) return;
+  const data = await loadPayload();
+  hydrateRoot(
+    container,
+    <RendererProvider renderer={createDOMRenderer(document)}>
       <SSRProvider>
         <App data={data} />
       </SSRProvider>
-    </RendererProvider>
+    </RendererProvider>,
   );
-
-  // Use createRoot when no SSR content is present (e.g. dev mode), hydrateRoot otherwise.
-  if (container.childElementCount === 0) {
-    createRoot(container).render(tree);
-  } else {
-    hydrateRoot(container, tree);
-  }
   void registerTools(data.config);
-} else if (container) {
-  container.innerHTML =
-    '<p style="font-family: system-ui; padding: 2rem;">Bootstrap payload missing. Reload the page.</p>';
 }
+
+// Without its payload the page stays as the build rendered it: readable, with
+// links that load like on any static page.
+start().catch((e) => console.error("[vellum] could not load the page's payload", e));

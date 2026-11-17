@@ -1,5 +1,6 @@
-// SSR pipeline: render the React tree to a string, extract Griffel CSS, embed the bootstrap
-// payload, and return a complete HTML document with a full SEO + social-graph head.
+// SSR pipeline: render the React tree to a string, extract Griffel CSS, and return a complete
+// HTML document with a full SEO + social-graph head. The payload stays out of the page: the
+// head preloads it from its own JSON file, which the client hydrates from.
 
 import { renderToString } from "react-dom/server";
 import {
@@ -12,6 +13,7 @@ import {
 import { App } from "../web/App";
 import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
+import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { ClientAssets } from "./assets";
 
 export interface RenderOptions {
@@ -21,7 +23,12 @@ export interface RenderOptions {
   origin: string | null;
 }
 
-export function renderPage(payload: BootstrapPayload, { assets, origin }: RenderOptions): string {
+// `payloadUrl` is where the build writes `payload` as JSON.
+export function renderPage(
+  payload: BootstrapPayload,
+  payloadUrl: string,
+  { assets, origin }: RenderOptions,
+): string {
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -45,8 +52,11 @@ export function renderPage(payload: BootstrapPayload, { assets, origin }: Render
   const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
   // Module scripts never block parsing and run after it, so the entry goes in
   // <head> where the browser finds it first. The preloads fetch the chunks it
-  // imports in parallel with it rather than after it has been parsed.
+  // imports in parallel with it rather than after it has been parsed. The
+  // payload is preloaded the same way; `crossorigin` makes the preload the
+  // same request as the client's fetch(), so it reuses the response.
   const jsTags = [
+    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(payloadUrl)}" as="fetch" crossorigin>`,
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");
@@ -55,8 +65,6 @@ export function renderPage(payload: BootstrapPayload, { assets, origin }: Render
   const themeColor = site.themeColor ?? "#0078d4";
 
   const seoHead = buildSeoHead(payload, origin);
-
-  const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
 
   // Baseline reset + Shiki theme activation + print styles.
   // - Reset: kill browser default margins; pre-paint background so there's no flash.
@@ -190,7 +198,6 @@ ${seoHead}
 </head>
 <body>
   <div id="vellum-root">${html}</div>
-  <script id="__VELLUM_DATA__" type="application/json">${safePayload}</script>
 </body>
 </html>`;
 }

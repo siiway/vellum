@@ -35,7 +35,8 @@ dist/site/
   {prefix}/{repo}/…/index.html     one per page
   {prefix}.md, {prefix}/{repo}/….md   each page's Markdown, see below
   {prefix}/search/, languages/     search and language pages
-  _vellum/pages/{page}.json        each page's data, for client navigation
+  _vellum/pages/{page}.json        each page's data, see below
+  _vellum/404/{locale}.json        the 404 page's data
   _vellum/search/{locale}/{repo}.json   search indexes
   _vellum/vue/{repo}/{Name}.vue    Vue components the pages mount
   _redirects, _headers             applied by Cloudflare
@@ -44,9 +45,10 @@ dist/site/
   assets/                          the client bundle
 ```
 
-Each page's HTML is complete: pre-rendered markup, styles, SEO head and
-the data the client hydrates from. Following a link inside the site fetches
-only the next page's JSON from `_vellum/pages/`.
+Each page's HTML is complete: pre-rendered markup, styles and SEO head, readable
+without JavaScript. The data the client hydrates it from is not in the page but
+in its JSON under `_vellum/pages/`, which the page's head preloads. Following a
+link inside the site fetches only the next page's JSON.
 
 Pages are rendered in the light theme. A script in each page's head switches
 to dark before the first paint when the reader picked dark, or their system
