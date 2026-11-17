@@ -57,9 +57,29 @@ export function canonicalHref(href: string, config: VellumConfig, localeCode: st
 // A page's bootstrap payload, used for client-side navigation. `pathname` is
 // the page URL's path; trailing slashes don't matter.
 export function payloadPath(pathname: string): string {
-  const page = pathname.replace(/^\/+|\/+$/g, "") || "index";
-  return `/_vellum/pages/${page}.json`;
+  return `/_vellum/pages/${pageFile(pathname)}.json`;
 }
+
+// The payload the client hydrates a page from: the page's payload without
+// what its HTML already holds (leanAst).
+export function hydrationPath(pathname: string): string {
+  return `/_vellum/hydrate/${pageFile(pathname)}.json`;
+}
+
+// The file name a page's payloads take after: its path, `index` for `/`.
+function pageFile(pathname: string): string {
+  return pathname.replace(/^\/+|\/+$/g, "") || "index";
+}
+
+// The payload the client hydrates the 404 page from in one locale. It has a
+// path of its own because the page is served at every URL without a page.
+export function notFoundPayloadPath(localeCode: string): string {
+  return `/_vellum/404/${encodeURIComponent(localeCode)}.json`;
+}
+
+// The id of the link in a page's head to the payload the client hydrates the
+// page from.
+export const PAYLOAD_LINK_ID = "vellum-payload";
 
 // The search index of one repo in one locale.
 export function searchIndexPath(localeCode: string, repoSlug: string): string {

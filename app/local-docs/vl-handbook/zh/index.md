@@ -17,8 +17,9 @@ description: "Vellum 使用手册——一个预渲染并由 Cloudflare Workers 
 
 ::: tip 一段话理解架构
 构建时克隆每个 GitHub 仓库（或读取本地文件），把每个页面解析一次并写出 HTML。
-Cloudflare 以静态资源的形式提供构建结果，每个请求都不运行任何代码。每个页面的数据
-也会写成 JSON，让 React 客户端在 hydrate 时无需重新解析，并能无刷新切换页面。
+Cloudflare 以静态资源的形式提供构建结果，每个请求都不运行任何代码。React 客户端
+从一个小 JSON 文件 hydrate HTML，其中不含 HTML 已经显示的内容；切换页面时拉取
+下一个页面的 JSON，无需刷新。
 文档仓库有变更时，增量更新只重新渲染该仓库并重新部署。
 :::
 

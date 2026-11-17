@@ -1,5 +1,6 @@
-// SSR pipeline: render the React tree to a string, extract Griffel CSS, embed the bootstrap
-// payload, and return a complete HTML document with a full SEO + social-graph head.
+// SSR pipeline: render the React tree to a string, extract Griffel CSS, and return a complete
+// HTML document with a full SEO + social-graph head. The payload stays out of the page: the
+// head preloads the JSON the client hydrates from, which leaves out what the HTML holds.
 
 import { renderToString } from "react-dom/server";
 import {
@@ -12,6 +13,7 @@ import {
 import { App } from "../web/App";
 import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
+import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { ClientAssets } from "./assets";
 
 export interface RenderOptions {
@@ -21,7 +23,18 @@ export interface RenderOptions {
   origin: string | null;
 }
 
-export function renderPage(payload: BootstrapPayload, { assets, origin }: RenderOptions): string {
+// The payload the client hydrates a page from: where the build writes it
+// (hydrationPath), and the build it names (BootstrapPayload.build).
+export interface Hydration {
+  url: string;
+  build: string;
+}
+
+export function renderPage(
+  payload: BootstrapPayload,
+  hydration: Hydration,
+  { assets, origin }: RenderOptions,
+): string {
   const renderer = createDOMRenderer();
   const html = renderToString(
     <RendererProvider renderer={renderer}>
@@ -45,8 +58,11 @@ export function renderPage(payload: BootstrapPayload, { assets, origin }: Render
   const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
   // Module scripts never block parsing and run after it, so the entry goes in
   // <head> where the browser finds it first. The preloads fetch the chunks it
-  // imports in parallel with it rather than after it has been parsed.
+  // imports in parallel with it rather than after it has been parsed. The
+  // payload is preloaded the same way; `crossorigin` makes the preload the
+  // same request as the client's fetch(), so it reuses the response.
   const jsTags = [
+    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(hydration.url)}" as="fetch" crossorigin data-build="${escapeAttr(hydration.build)}">`,
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");
@@ -55,8 +71,6 @@ export function renderPage(payload: BootstrapPayload, { assets, origin }: Render
   const themeColor = site.themeColor ?? "#0078d4";
 
   const seoHead = buildSeoHead(payload, origin);
-
-  const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
 
   // Baseline reset + Shiki theme activation + print styles.
   // - Reset: kill browser default margins; pre-paint background so there's no flash.
@@ -82,6 +96,14 @@ body{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Bli
 #vellum-root{min-height:100vh;}
 img,svg{vertical-align:middle;}
 ::selection{background:color-mix(in srgb,var(--colorBrandBackground,#0078d4) 22%,transparent);}
+
+/* The wrapper of a run of static blocks, which the client adopts from this
+   HTML (MarkdownAst.tsx): the blocks lay out as if it weren't there. */
+.vellum-static{display:contents;}
+
+/* A diagram drawn in both palettes (MermaidBlock.tsx) shows the theme's. */
+.vellum-diagram-light,.vellum-diagram-dark{display:contents;}
+html[data-theme="dark"] .vellum-diagram-light,html:not([data-theme="dark"]) .vellum-diagram-dark{display:none;}
 
 /* Fluent Badge must never wrap its label or shrink inside flex rows: CJK
    text otherwise collapses onto two lines on narrow viewports. */
@@ -190,7 +212,6 @@ ${seoHead}
 </head>
 <body>
   <div id="vellum-root">${html}</div>
-  <script id="__VELLUM_DATA__" type="application/json">${safePayload}</script>
 </body>
 </html>`;
 }

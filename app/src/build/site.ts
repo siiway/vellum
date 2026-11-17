@@ -1,5 +1,6 @@
 // The static site build. Renders every page of every repo to HTML (plus the
-// JSON payload client-side navigation swaps in, and the page's Markdown)
+// JSON payload client-side navigation swaps in, a lean one the client
+// hydrates the HTML from, and the page's Markdown)
 // under dist/site, next to a copy of the client bundle, ready for
 // `wrangler deploy` as static assets.
 //
@@ -14,11 +15,19 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import siteConfig from "../../vellum.config.json";
 import type { BootstrapPayload, LocaleConfig, RepoConfig, VellumConfig } from "../shared/types";
-import { payloadPath, searchIndexPath, vueComponentPath, vueDir } from "../shared/paths";
+import { contentKey, leanAst } from "../shared/markdown";
+import {
+  hydrationPath,
+  notFoundPayloadPath,
+  payloadPath,
+  searchIndexPath,
+  vueComponentPath,
+  vueDir,
+} from "../shared/paths";
 import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
-import { renderPage, type RenderOptions } from "./ssr";
+import { renderPage, type Hydration, type RenderOptions } from "./ssr";
 import { htmlFile, listRepoPages, localeBase, markdownUrl, pageRoute, stubRoute } from "./routes";
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
@@ -253,7 +262,12 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
     removals.push(searchIndexPath(locale.code, repo.slug));
     for (const pagePath of last.pages[locale.code] ?? []) {
       const { canonicalUrl } = pageRoute(SITE, repo, locale, pagePath);
-      removals.push(htmlFile(canonicalUrl), markdownUrl(canonicalUrl), payloadPath(canonicalUrl));
+      removals.push(
+        htmlFile(canonicalUrl),
+        markdownUrl(canonicalUrl),
+        payloadPath(canonicalUrl),
+        hydrationPath(canonicalUrl),
+      );
     }
   }
   await Promise.all(removals.map((path) => rm(outPath(path), { recursive: true, force: true })));
@@ -269,8 +283,11 @@ async function writePage(
   markdown?: string,
 ): Promise<void> {
   const url = payload.route.canonicalUrl;
-  await writeOut(htmlFile(url), renderPage(payload, opts), root);
-  await writeJson(payloadPath(url), payload, root);
+  const json = JSON.stringify(payload);
+  const hydration = { url: hydrationPath(url), build: contentKey(json) };
+  await writeOut(htmlFile(url), renderPage(payload, hydration, opts), root);
+  await writeJson(hydration.url, leanPayload(payload, hydration), root);
+  await writeOut(payloadPath(url), json, root);
   const md = payload.page.meta.markdownUrl;
   if (md && markdown !== undefined) await writeOut(md, markdown, root);
 }
@@ -283,12 +300,12 @@ async function writeSiteFiles(opts: RenderOptions, repos: Record<string, RepoSta
     const base = localeBase(locale);
     await writePage(shellPayload(locale, "search", `${base}/search`), opts);
     await writePage(shellPayload(locale, "languages", `${base}/languages`), opts);
-    await writeOut(`${base.slice(1)}/404.html`, renderPage(notFoundPayload(locale), opts));
+    await writeNotFound(locale, `${base.slice(1)}/404.html`, opts);
   }
 
   // The 404 for URLs outside every locale, and `/` unless a locale lives there.
   const fallback = locales.find((l) => l.code === defaultLocale) ?? locales[0]!;
-  if (fallback.prefix) await writeOut("404.html", renderPage(notFoundPayload(fallback), opts));
+  if (fallback.prefix) await writeNotFound(fallback, "404.html", opts);
   if (locales.every((l) => l.prefix)) await writeOut("index.html", rootPage(SITE));
 
   await writeOut("_redirects", buildRedirects(SITE));
@@ -331,6 +348,23 @@ function shellPayload(
       meta: { title, description, frontmatter: { layout }, outline: [] },
     },
   };
+}
+
+// Writes the locale's 404 page to `file`, and its payload.
+async function writeNotFound(locale: LocaleConfig, file: string, opts: RenderOptions) {
+  const payload = notFoundPayload(locale);
+  const hydration = {
+    url: notFoundPayloadPath(locale.code),
+    build: contentKey(JSON.stringify(payload)),
+  };
+  await writeOut(file, renderPage(payload, hydration, opts));
+  await writeJson(hydration.url, leanPayload(payload, hydration));
+}
+
+// The payload the client hydrates a page's HTML from: everything but the
+// content the HTML already holds (leanAst), and the build it's from.
+function leanPayload(payload: BootstrapPayload, { build }: Hydration): BootstrapPayload {
+  return { ...payload, build, page: { ...payload.page, ast: leanAst(payload.page.ast) } };
 }
 
 // The localized 404, with links to the repos.

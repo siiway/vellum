@@ -65,6 +65,10 @@ async function fetchSvg(source: string): Promise<string | null> {
 // Either side may come back null (Kroki down, invalid diagram, etc.) — the
 // client falls back to its own mermaid render when both are missing for the
 // current theme.
+//
+// The page holds both palettes at once, and Kroki's ids repeat: every
+// diagram's root is `container`, and a diagram's two palettes share all of
+// theirs. Each palette gets a prefix of its own.
 export async function renderMermaidThemed(
   code: string,
 ): Promise<{ light: string | null; dark: string | null }> {
@@ -72,5 +76,34 @@ export async function renderMermaidThemed(
     renderMermaidSvg(code, "light"),
     renderMermaidSvg(code, "dark"),
   ]);
-  return { light, dark };
+  const id = `mermaid-${createHash("sha256").update(code.trim()).digest("hex").slice(0, 12)}`;
+  return {
+    light: light && scopeIds(light, `${id}-light`),
+    dark: dark && scopeIds(dark, `${id}-dark`),
+  };
+}
+
+// Prefixes every id in the SVG, and what refers to one: `url(#…)`,
+// `href="#…"`, ARIA id lists and the selectors in its `<style>`. Text that
+// merely holds `#…`, such as a label or a link, stays as it is.
+function scopeIds(svg: string, prefix: string): string {
+  const ids = new Set(Array.from(svg.matchAll(/\sid="([^"]+)"/g), (m) => m[1]!));
+  const scope = (id: string) => (ids.has(id) ? `${prefix}-${id}` : id);
+  return svg
+    .replace(/(\sid=")([^"]+)/g, (_, attr: string, id: string) => attr + scope(id))
+    .replace(/url\(#([^)]+)\)/g, (_, id: string) => `url(#${scope(id)})`)
+    .replace(/(\s(?:xlink:)?href="#)([^"]+)/g, (_, attr: string, id: string) => attr + scope(id))
+    .replace(
+      /(\saria-(?:labelledby|describedby)=")([^"]+)/g,
+      (_, attr: string, list: string) => attr + list.split(" ").map(scope).join(" "),
+    )
+    .replace(
+      /(<style[^>]*>)([\s\S]*?)(<\/style>)/g,
+      (_, open: string, css: string, close: string) =>
+        open +
+        css.replace(/#([A-Za-z_][\w-]*)/g, (sel, id: string) =>
+          ids.has(id) ? `#${scope(id)}` : sel,
+        ) +
+        close,
+    );
 }

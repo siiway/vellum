@@ -35,7 +35,9 @@ sequenceDiagram
     Build->>Build: parse + render HTML
     Build->>Cloudflare: deploy static assets
     Browser->>Cloudflare: GET /en-US/prism/page
-    Cloudflare-->>Browser: HTML + bootstrap payload
+    Cloudflare-->>Browser: HTML
+    Browser->>Cloudflare: GET the page's JSON
+    Cloudflare-->>Browser: page data
     Browser->>Browser: hydrate
 ```
 

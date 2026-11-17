@@ -77,6 +77,11 @@ const en: MessageMap = {
   "ui.returnToTop": "Return to top",
   "ui.skipToContent": "Skip to content",
 
+  "ui.mermaid.label": "Mermaid diagram",
+  "ui.mermaid.loading": "Mermaid diagram (loading)",
+  "ui.mermaid.error": "Mermaid diagram (error)",
+  "ui.mermaid.errorMessage": "Mermaid error: {message}",
+
   "ui.home.actions.getStarted": "Get started",
   "ui.home.features": "Features",
   "ui.home.learnMore": "Learn more",
@@ -152,6 +157,11 @@ const zh: MessageMap = {
   "ui.menu": "菜单",
   "ui.returnToTop": "返回顶部",
   "ui.skipToContent": "跳到内容",
+
+  "ui.mermaid.label": "Mermaid 图表",
+  "ui.mermaid.loading": "Mermaid 图表（加载中）",
+  "ui.mermaid.error": "Mermaid 图表（出错）",
+  "ui.mermaid.errorMessage": "Mermaid 错误：{message}",
 
   "ui.home.actions.getStarted": "开始使用",
   "ui.home.features": "功能",

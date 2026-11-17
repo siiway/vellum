@@ -1,13 +1,16 @@
-// Renders a fenced ```mermaid block as an SVG diagram on the client.
-// Mermaid is heavy (~600KB), so we dynamic-import it the first time a diagram
-// mounts — pages without diagrams pay nothing. SSR emits the raw code as a
-// preformatted block; once hydrated, the effect swaps in the rendered SVG.
-// Re-renders on theme change to keep the diagram's palette in sync.
+// Renders a fenced ```mermaid block as an SVG diagram. The build draws both
+// palettes when it can; the page then holds both and CSS shows the one for the
+// theme, with no JavaScript. Otherwise the client draws it: mermaid is heavy
+// (~600KB), so we dynamic-import it the first time such a diagram mounts —
+// pages without one pay nothing. SSR emits the raw code as a preformatted
+// block; once hydrated, the effect swaps in the rendered SVG. Re-renders on
+// theme change to keep the diagram's palette in sync.
 
 import { useEffect, useId, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { format } from "../../shared/i18n";
 
 const useStyles = makeStyles({
   root: {
@@ -44,17 +47,35 @@ const useStyles = makeStyles({
   },
 });
 
-export function MermaidBlock({
-  code,
-  svgLight,
-  svgDark,
-}: {
+interface Props {
   code: string;
   svgLight?: string;
   svgDark?: string;
-}) {
+}
+
+export function MermaidBlock(props: Props) {
+  return props.svgLight && props.svgDark ? (
+    <DrawnDiagram light={props.svgLight} dark={props.svgDark} />
+  ) : (
+    <ClientDiagram {...props} />
+  );
+}
+
+// Both palettes, for the CSS in ssr.tsx to pick from.
+function DrawnDiagram({ light, dark }: { light: string; dark: string }) {
   const styles = useStyles();
-  const { theme } = useVellum();
+  const { t } = useVellum();
+  return (
+    <div className={styles.root} role="img" aria-label={t("ui.mermaid.label")}>
+      <div className="vellum-diagram-light" dangerouslySetInnerHTML={{ __html: light }} />
+      <div className="vellum-diagram-dark" dangerouslySetInnerHTML={{ __html: dark }} />
+    </div>
+  );
+}
+
+function ClientDiagram({ code, svgLight, svgDark }: Props) {
+  const styles = useStyles();
+  const { theme, t } = useVellum();
   const reactId = useId();
   // Mermaid requires IDs valid as CSS selectors — useId() returns ":r0:" etc,
   // which breaks querySelector. Sanitize to alphanumeric.
@@ -110,9 +131,9 @@ export function MermaidBlock({
 
   if (error) {
     return (
-      <div className={styles.root} role="img" aria-label="Mermaid diagram (error)">
+      <div className={styles.root} role="img" aria-label={t("ui.mermaid.error")}>
         <pre className={styles.error}>
-          Mermaid error: {error}
+          {format(t("ui.mermaid.errorMessage"), { message: error })}
           {"\n\n"}
           {code}
         </pre>
@@ -125,7 +146,7 @@ export function MermaidBlock({
       <div
         className={styles.root}
         role="img"
-        aria-label="Mermaid diagram"
+        aria-label={t("ui.mermaid.label")}
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
@@ -134,7 +155,7 @@ export function MermaidBlock({
   // SSR / pre-hydration: show the source as a placeholder so the layout reserves
   // roughly the right amount of space and copy-paste still works.
   return (
-    <div className={styles.root} role="img" aria-label="Mermaid diagram (loading)">
+    <div className={styles.root} role="img" aria-label={t("ui.mermaid.loading")}>
       <pre className={styles.pending}>{code}</pre>
     </div>
   );
