@@ -10,9 +10,9 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
-import { CONTENT_KEY_ATTR, DIAGRAM_DARK, DIAGRAM_LIGHT } from "../prerendered";
+import { DIAGRAM_DARK, DIAGRAM_KEY_ATTR, DIAGRAM_LIGHT, paletteKey } from "../prerendered";
 import { format } from "../../shared/i18n";
-import { contentKey } from "../../shared/markdown";
+import { contentKey, type Block } from "../../shared/markdown";
 
 const useStyles = makeStyles({
   root: {
@@ -55,35 +55,35 @@ interface Props {
   svgDark?: string;
 }
 
-export function MermaidBlock(props: Props) {
-  return props.svgLight && props.svgDark ? (
-    <DrawnDiagram code={props.code} light={props.svgLight} dark={props.svgDark} />
+type Diagram = Extract<Block, { type: "mermaid" }>;
+
+export function MermaidBlock({ block }: { block: Diagram }) {
+  const { code, svgLight, svgDark } = block;
+  return svgLight && svgDark ? (
+    <DrawnDiagram block={block} light={svgLight} dark={svgDark} />
   ) : (
-    <ClientDiagram {...props} />
+    <ClientDiagram code={code} svgLight={svgLight} svgDark={svgDark} />
   );
 }
 
-// Both palettes, for the CSS in ssr.tsx to pick from. Marked so the client
-// can take them from the page when the payload leaves them out
+// Both palettes, for the CSS in ssr.tsx to pick from. Each is marked so the
+// client can take it from the page when the payload leaves it out
 // (fillFromPage); hydrating them, React keeps the page's.
-function DrawnDiagram({ code, light, dark }: { code: string; light: string; dark: string }) {
+function DrawnDiagram({ block, light, dark }: { block: Diagram; light: string; dark: string }) {
   const styles = useStyles();
   const { t } = useVellum();
-  const key = useMemo(() => contentKey(code), [code]);
+  const key = useMemo(() => block.key ?? contentKey(block.code), [block.key, block.code]);
   return (
-    <div
-      className={styles.root}
-      role="img"
-      aria-label={t("ui.mermaid.label")}
-      {...{ [CONTENT_KEY_ATTR]: key }}
-    >
+    <div className={styles.root} role="img" aria-label={t("ui.mermaid.label")}>
       <div
         className={DIAGRAM_LIGHT}
+        {...{ [DIAGRAM_KEY_ATTR]: paletteKey(key, "light") }}
         dangerouslySetInnerHTML={{ __html: light }}
         suppressHydrationWarning
       />
       <div
         className={DIAGRAM_DARK}
+        {...{ [DIAGRAM_KEY_ATTR]: paletteKey(key, "dark") }}
         dangerouslySetInnerHTML={{ __html: dark }}
         suppressHydrationWarning
       />

@@ -108,7 +108,7 @@ export type Block =
       svgLight?: string;
       svgDark?: string;
       // Only without the SVGs (leanAst): the `contentKey` of `code`, which
-      // the page marks the diagram with.
+      // the page marks its palettes with.
       key?: string;
     }
   // OPS / Microsoft Learn extensions.

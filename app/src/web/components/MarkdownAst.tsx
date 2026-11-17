@@ -63,7 +63,7 @@ import {
   type Inline,
   type MarkdownAst,
 } from "../../shared/markdown";
-import { CONTENT_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
+import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
 import { format } from "../../shared/i18n";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
@@ -585,7 +585,7 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
     case "table":
       return <TableNode block={block} styles={styles} />;
     case "mermaid":
-      return <MermaidBlock code={block.code} svgLight={block.svgLight} svgDark={block.svgDark} />;
+      return <MermaidBlock block={block} />;
     case "html":
       return <HtmlBlock value={block.value} />;
     case "opsImage":
@@ -1019,7 +1019,7 @@ function CodeNode({
     <div
       ref={bodyRef}
       className={styles.codeBody}
-      {...{ [CONTENT_KEY_ATTR]: key }}
+      {...{ [CODE_KEY_ATTR]: key }}
       dangerouslySetInnerHTML={{ __html: block.html }}
       suppressHydrationWarning
     />
