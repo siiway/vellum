@@ -53,7 +53,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { makeStyles } from "../css";
 import {
@@ -1014,16 +1016,7 @@ function CodeNode({
   block: Extract<Block, { type: "code" }>;
   styles: ReturnType<typeof useStyles>;
 }) {
-  const [copied, setCopied] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const onCopy = useCallback(() => {
-    // The code as shown, so without Shiki's `[!code]` annotations. The
-    // payload a page hydrates from has no `code` (leanAst).
-    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    });
-  }, []);
 
   // Only show the header bar when there's something to put in it; otherwise the
   // code sits in a clean card with a floating copy button that fades in on hover.
@@ -1042,27 +1035,13 @@ function CodeNode({
     />
   );
 
-  const { t } = useVellum();
-  const copyLabel = t(copied ? "ui.copied" : "ui.copyCode");
-  const copyIcon = copied ? (
-    <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
-  ) : (
-    <Copy24Regular />
-  );
-
   if (!hasHeader) {
     return (
       <Card className={mergeClasses(styles.codeCard, styles.codeCardHover)} appearance="outline">
-        <Tooltip content={copyLabel} relationship="label">
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={copyIcon}
-            onClick={onCopy}
-            className={mergeClasses(styles.copyFloating, "vellum-copy-floating")}
-            aria-label={copyLabel}
-          />
-        </Tooltip>
+        <CopyButton
+          source={bodyRef}
+          className={mergeClasses(styles.copyFloating, "vellum-copy-floating")}
+        />
         {body}
       </Card>
     );
@@ -1077,11 +1056,7 @@ function CodeNode({
           <div className={styles.codeFilename} />
         )}
         {block.lang && <Caption1 className={styles.codeLang}>{block.lang}</Caption1>}
-        <Tooltip content={copyLabel} relationship="label">
-          <Button appearance="subtle" size="small" icon={copyIcon} onClick={onCopy}>
-            {t(copied ? "ui.copied" : "ui.copy")}
-          </Button>
-        </Tooltip>
+        <CopyButton source={bodyRef} withText />
       </div>
       {body}
     </Card>
@@ -1096,24 +1071,8 @@ function CodeGroupNode({
   styles: ReturnType<typeof useStyles>;
 }) {
   const [active, setActive] = useState(0);
-  const [copied, setCopied] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const onCopy = useCallback(() => {
-    // The tab's code as shown, like a code block's (CodeNode).
-    navigator.clipboard?.writeText(bodyRef.current?.textContent ?? "").then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    });
-  }, []);
-
-  const { t } = useVellum();
-  const copyLabel = t(copied ? "ui.copied" : "ui.copyCode");
   const tab = block.tabs[active];
-  const copyIcon = copied ? (
-    <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
-  ) : (
-    <Copy24Regular />
-  );
   return (
     <Card className={styles.codeGroup} appearance="outline">
       <div className={styles.codeGroupTabs}>
@@ -1130,16 +1089,7 @@ function CodeGroupNode({
           ))}
         </TabList>
         <div style={{ flex: 1 }} />
-        <Tooltip content={copyLabel} relationship="label">
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={copyIcon}
-            onClick={onCopy}
-            style={{ marginRight: 8 }}
-            aria-label={copyLabel}
-          />
-        </Tooltip>
+        <CopyButton source={bodyRef} style={{ marginRight: 8 }} />
       </div>
       {tab && (
         <div
@@ -1149,6 +1099,54 @@ function CodeGroupNode({
         />
       )}
     </Card>
+  );
+}
+
+// Copies the code in `source` as shown, so without Shiki's `[!code]`
+// annotations: the payload a page hydrates from has no `code` (leanAst).
+// Says so for a moment after. `withText` puts what it does next to its icon.
+function CopyButton({
+  source,
+  withText = false,
+  className,
+  style,
+}: {
+  source: RefObject<HTMLElement>;
+  withText?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const { t } = useVellum();
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(() => {
+    navigator.clipboard?.writeText(source.current?.textContent ?? "").then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    });
+  }, [source]);
+  const label = t(copied ? "ui.copied" : "ui.copyCode");
+  return (
+    <Tooltip content={label} relationship="label">
+      <Button
+        appearance="subtle"
+        size="small"
+        icon={
+          copied ? (
+            <CheckmarkCircle24Filled primaryFill={tokens.colorPaletteGreenForeground1} />
+          ) : (
+            <Copy24Regular />
+          )
+        }
+        onClick={onCopy}
+        className={className}
+        style={style}
+        // With text, the Tooltip names it. An aria-label prop, even an
+        // undefined one, would override that.
+        {...(withText ? {} : { "aria-label": label })}
+      >
+        {withText ? t(copied ? "ui.copied" : "ui.copy") : undefined}
+      </Button>
+    </Tooltip>
   );
 }
 
