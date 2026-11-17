@@ -66,9 +66,9 @@ async function fetchSvg(source: string): Promise<string | null> {
 // client falls back to its own mermaid render when both are missing for the
 // current theme.
 //
-// The page holds both palettes at once, and Kroki gives every SVG the same
-// ids: its root is `container`, and the ids its styles and references use
-// start with that. Each palette gets a prefix of its own instead.
+// The page holds both palettes at once, and Kroki's ids repeat: every
+// diagram's root is `container`, and a diagram's two palettes share all of
+// theirs. Each palette gets a prefix of its own.
 export async function renderMermaidThemed(
   code: string,
 ): Promise<{ light: string | null; dark: string | null }> {
@@ -83,6 +83,27 @@ export async function renderMermaidThemed(
   };
 }
 
+// Prefixes every id in the SVG, and what refers to one: `url(#…)`,
+// `href="#…"`, ARIA id lists and the selectors in its `<style>`. Text that
+// merely holds `#…`, such as a label or a link, stays as it is.
 function scopeIds(svg: string, prefix: string): string {
-  return svg.replace(/(id="|#)container/g, `$1${prefix}`);
+  const ids = new Set(Array.from(svg.matchAll(/\sid="([^"]+)"/g), (m) => m[1]!));
+  const scope = (id: string) => (ids.has(id) ? `${prefix}-${id}` : id);
+  return svg
+    .replace(/(\sid=")([^"]+)/g, (_, attr: string, id: string) => attr + scope(id))
+    .replace(/url\(#([^)]+)\)/g, (_, id: string) => `url(#${scope(id)})`)
+    .replace(/(\s(?:xlink:)?href="#)([^"]+)/g, (_, attr: string, id: string) => attr + scope(id))
+    .replace(
+      /(\saria-(?:labelledby|describedby)=")([^"]+)/g,
+      (_, attr: string, list: string) => attr + list.split(" ").map(scope).join(" "),
+    )
+    .replace(
+      /(<style[^>]*>)([\s\S]*?)(<\/style>)/g,
+      (_, open: string, css: string, close: string) =>
+        open +
+        css.replace(/#([A-Za-z_][\w-]*)/g, (sel, id: string) =>
+          ids.has(id) ? `#${scope(id)}` : sel,
+        ) +
+        close,
+    );
 }
