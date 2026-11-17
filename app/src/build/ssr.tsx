@@ -11,6 +11,7 @@ import {
   renderToStyleElements,
 } from "@fluentui/react-components";
 import { App } from "../web/App";
+import { DIAGRAM_DARK, DIAGRAM_LIGHT, STATIC_RUN } from "../web/prerendered";
 import { createVellumTheme } from "../web/theme";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import { PAYLOAD_LINK_ID } from "../shared/paths";
@@ -99,11 +100,11 @@ img,svg{vertical-align:middle;}
 
 /* The wrapper of a run of static blocks, which the client adopts from this
    HTML (MarkdownAst.tsx): the blocks lay out as if it weren't there. */
-.vellum-static{display:contents;}
+.${STATIC_RUN}{display:contents;}
 
 /* A diagram drawn in both palettes (MermaidBlock.tsx) shows the theme's. */
-.vellum-diagram-light,.vellum-diagram-dark{display:contents;}
-html[data-theme="dark"] .vellum-diagram-light,html:not([data-theme="dark"]) .vellum-diagram-dark{display:none;}
+.${DIAGRAM_LIGHT},.${DIAGRAM_DARK}{display:contents;}
+html[data-theme="dark"] .${DIAGRAM_LIGHT},html:not([data-theme="dark"]) .${DIAGRAM_DARK}{display:none;}
 
 /* Fluent Badge must never wrap its label or shrink inside flex rows: CJK
    text otherwise collapses onto two lines on narrow viewports. */
