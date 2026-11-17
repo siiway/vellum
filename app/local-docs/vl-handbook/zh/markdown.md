@@ -173,8 +173,8 @@ print("py")
 
 `mermaid` 语言的围栏代码块会通过
 [Kroki](./build-and-deployment#外部服务) 在构建时 **同时**
-预渲染浅色和深色两个版本，所以切换主题是瞬时的，浏览器无需加载任何
-mermaid JS。
+预渲染浅色和深色两个版本。页面同时包含两者，由 CSS 显示当前主题对应的那个，
+所以图表不需要任何 JavaScript，切换主题也是瞬时的。
 
 ````md
 ```mermaid

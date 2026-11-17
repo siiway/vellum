@@ -179,8 +179,8 @@ Standard pipe tables with optional alignment:
 
 Fenced blocks with the `mermaid` language are pre-rendered at build time via
 [Kroki](./build-and-deployment#external-services) in **both** light and
-dark palettes, so theme switching is instant and doesn't need to load any
-mermaid JS in the browser.
+dark palettes. The page holds both and CSS shows the one for the theme, so
+a diagram needs no JavaScript and theme switching is instant.
 
 ````md
 ```mermaid

@@ -1,8 +1,10 @@
-// Renders a fenced ```mermaid block as an SVG diagram on the client.
-// Mermaid is heavy (~600KB), so we dynamic-import it the first time a diagram
-// mounts — pages without diagrams pay nothing. SSR emits the raw code as a
-// preformatted block; once hydrated, the effect swaps in the rendered SVG.
-// Re-renders on theme change to keep the diagram's palette in sync.
+// Renders a fenced ```mermaid block as an SVG diagram. The build draws both
+// palettes when it can; the page then holds both and CSS shows the one for the
+// theme, with no JavaScript. Otherwise the client draws it: mermaid is heavy
+// (~600KB), so we dynamic-import it the first time such a diagram mounts —
+// pages without one pay nothing. SSR emits the raw code as a preformatted
+// block; once hydrated, the effect swaps in the rendered SVG. Re-renders on
+// theme change to keep the diagram's palette in sync.
 
 import { useEffect, useId, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
@@ -44,15 +46,32 @@ const useStyles = makeStyles({
   },
 });
 
-export function MermaidBlock({
-  code,
-  svgLight,
-  svgDark,
-}: {
+interface Props {
   code: string;
   svgLight?: string;
   svgDark?: string;
-}) {
+}
+
+export function MermaidBlock(props: Props) {
+  return props.svgLight && props.svgDark ? (
+    <DrawnDiagram light={props.svgLight} dark={props.svgDark} />
+  ) : (
+    <ClientDiagram {...props} />
+  );
+}
+
+// Both palettes, for the CSS in ssr.tsx to pick from.
+function DrawnDiagram({ light, dark }: { light: string; dark: string }) {
+  const styles = useStyles();
+  return (
+    <div className={styles.root} role="img" aria-label="Mermaid diagram">
+      <div className="vellum-diagram-light" dangerouslySetInnerHTML={{ __html: light }} />
+      <div className="vellum-diagram-dark" dangerouslySetInnerHTML={{ __html: dark }} />
+    </div>
+  );
+}
+
+function ClientDiagram({ code, svgLight, svgDark }: Props) {
   const styles = useStyles();
   const { theme } = useVellum();
   const reactId = useId();

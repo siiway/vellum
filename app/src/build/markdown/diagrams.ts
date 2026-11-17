@@ -65,6 +65,10 @@ async function fetchSvg(source: string): Promise<string | null> {
 // Either side may come back null (Kroki down, invalid diagram, etc.) — the
 // client falls back to its own mermaid render when both are missing for the
 // current theme.
+//
+// The page holds both palettes at once, and Kroki gives every SVG the same
+// ids: its root is `container`, and the ids its styles and references use
+// start with that. Each palette gets a prefix of its own instead.
 export async function renderMermaidThemed(
   code: string,
 ): Promise<{ light: string | null; dark: string | null }> {
@@ -72,5 +76,13 @@ export async function renderMermaidThemed(
     renderMermaidSvg(code, "light"),
     renderMermaidSvg(code, "dark"),
   ]);
-  return { light, dark };
+  const id = `mermaid-${createHash("sha256").update(code.trim()).digest("hex").slice(0, 12)}`;
+  return {
+    light: light && scopeIds(light, `${id}-light`),
+    dark: dark && scopeIds(dark, `${id}-dark`),
+  };
+}
+
+function scopeIds(svg: string, prefix: string): string {
+  return svg.replace(/(id="|#)container/g, `$1${prefix}`);
 }

@@ -91,6 +91,10 @@ body{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Bli
 img,svg{vertical-align:middle;}
 ::selection{background:color-mix(in srgb,var(--colorBrandBackground,#0078d4) 22%,transparent);}
 
+/* A diagram drawn in both palettes (MermaidBlock.tsx) shows the theme's. */
+.vellum-diagram-light,.vellum-diagram-dark{display:contents;}
+html[data-theme="dark"] .vellum-diagram-light,html:not([data-theme="dark"]) .vellum-diagram-dark{display:none;}
+
 /* Fluent Badge must never wrap its label or shrink inside flex rows: CJK
    text otherwise collapses onto two lines on narrow viewports. */
 .fui-Badge{white-space:nowrap;flex-shrink:0;}
