@@ -500,7 +500,6 @@ export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
 // from the page. Their renderers below can't rely on state, effects or
 // handlers; one that needs them makes its block not static there first.
 function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof useStyles> }) {
-  const { t } = useVellum();
   switch (block.type) {
     case "prerendered":
       // The run's wrapper, with the run's markup as the page has it
@@ -549,16 +548,7 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
           {block.children.map((c, i) => (
             <InlineNode key={i} node={c} styles={styles} />
           ))}
-          {block.id && (
-            <Link
-              href={`#${block.id}`}
-              className={mergeClasses(styles.anchorMark, "vellum-anchor-mark")}
-              aria-label={t("ui.permalink")}
-              data-no-router="true"
-            >
-              #
-            </Link>
-          )}
+          {block.id && <Permalink id={block.id} styles={styles} />}
         </HeadingComp>
       );
     }
@@ -703,7 +693,6 @@ function InlineNode({
   node: Inline;
   styles: ReturnType<typeof useStyles>;
 }): ReactNode {
-  const { t } = useVellum();
   switch (node.type) {
     case "text":
       return node.value;
@@ -801,14 +790,42 @@ function InlineNode({
           </Link>
         );
       }
-      // Unresolved: render as monospace fallback. The dashed border makes it
-      // obvious to the author that the uid didn't land in any xrefmap.
-      return (
-        <Text className={styles.xrefUnresolved} as="span" title={t("ui.xref.unresolved")}>
-          {node.display ?? node.target}
-        </Text>
-      );
+      return <UnresolvedXref node={node} styles={styles} />;
   }
+}
+
+// The few nodes that need the UI's text read it themselves, so the many
+// other blocks and inlines don't render again whenever the context changes.
+
+function Permalink({ id, styles }: { id: string; styles: ReturnType<typeof useStyles> }) {
+  const { t } = useVellum();
+  return (
+    <Link
+      href={`#${id}`}
+      className={mergeClasses(styles.anchorMark, "vellum-anchor-mark")}
+      aria-label={t("ui.permalink")}
+      data-no-router="true"
+    >
+      #
+    </Link>
+  );
+}
+
+// Render as monospace fallback. The dashed border makes it obvious to the
+// author that the uid didn't land in any xrefmap.
+function UnresolvedXref({
+  node,
+  styles,
+}: {
+  node: Extract<Inline, { type: "xref" }>;
+  styles: ReturnType<typeof useStyles>;
+}) {
+  const { t } = useVellum();
+  return (
+    <Text className={styles.xrefUnresolved} as="span" title={t("ui.xref.unresolved")}>
+      {node.display ?? node.target}
+    </Text>
+  );
 }
 
 // An inline `<Name>` tag, its open/close pair (or self-closing form) merged
