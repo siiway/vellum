@@ -176,6 +176,11 @@ export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
 // page: no state, effects or handlers. The client can then adopt it from
 // the page's HTML. Errs on the side of false: a PascalCase tag may be a
 // React component.
+//
+// This states what the renderers in MarkdownAst.tsx do, and nothing checks
+// it: on a page's first load React never renders a static block, so a
+// handler or effect given to its renderer would only work after a
+// navigation. A renderer that gets one makes its block not static here.
 export function isStaticBlock(block: Block): boolean {
   switch (block.type) {
     case "paragraph":

@@ -495,6 +495,10 @@ export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
   );
 }
 
+// On a page's first load, React doesn't render the blocks isStaticBlock
+// (shared/markdown.ts) counts as static: the client adopts their markup
+// from the page. Their renderers below can't rely on state, effects or
+// handlers; one that needs them makes its block not static there first.
 function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof useStyles> }) {
   const { t } = useVellum();
   switch (block.type) {
