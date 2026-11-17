@@ -63,7 +63,7 @@ import {
   type Inline,
   type MarkdownAst,
 } from "../../shared/markdown";
-import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
+import { CONTENT_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
 import { format } from "../../shared/i18n";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
@@ -1015,7 +1015,7 @@ function CodeNode({
     <div
       ref={bodyRef}
       className={styles.codeBody}
-      {...{ [CODE_KEY_ATTR]: key }}
+      {...{ [CONTENT_KEY_ATTR]: key }}
       dangerouslySetInnerHTML={{ __html: block.html }}
       suppressHydrationWarning
     />

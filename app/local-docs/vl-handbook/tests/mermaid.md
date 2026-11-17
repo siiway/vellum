@@ -83,3 +83,18 @@ pie title Where the bytes come from
     "Local"  : 25
     "Cache"  : 15
 ```
+
+## Inside a block with code
+
+::: details A diagram next to a code block
+
+```sh
+bun run build
+```
+
+```mermaid
+flowchart LR
+  A[Markdown] --> B[HTML]
+```
+
+:::

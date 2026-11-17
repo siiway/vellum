@@ -6,11 +6,13 @@
 // block; once hydrated, the effect swaps in the rendered SVG. Re-renders on
 // theme change to keep the diagram's palette in sync.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { CONTENT_KEY_ATTR, DIAGRAM_DARK, DIAGRAM_LIGHT } from "../prerendered";
 import { format } from "../../shared/i18n";
+import { contentKey } from "../../shared/markdown";
 
 const useStyles = makeStyles({
   root: {
@@ -55,20 +57,36 @@ interface Props {
 
 export function MermaidBlock(props: Props) {
   return props.svgLight && props.svgDark ? (
-    <DrawnDiagram light={props.svgLight} dark={props.svgDark} />
+    <DrawnDiagram code={props.code} light={props.svgLight} dark={props.svgDark} />
   ) : (
     <ClientDiagram {...props} />
   );
 }
 
-// Both palettes, for the CSS in ssr.tsx to pick from.
-function DrawnDiagram({ light, dark }: { light: string; dark: string }) {
+// Both palettes, for the CSS in ssr.tsx to pick from. Marked so the client
+// can take them from the page when the payload leaves them out
+// (fillFromPage); hydrating them, React keeps the page's.
+function DrawnDiagram({ code, light, dark }: { code: string; light: string; dark: string }) {
   const styles = useStyles();
   const { t } = useVellum();
+  const key = useMemo(() => contentKey(code), [code]);
   return (
-    <div className={styles.root} role="img" aria-label={t("ui.mermaid.label")}>
-      <div className="vellum-diagram-light" dangerouslySetInnerHTML={{ __html: light }} />
-      <div className="vellum-diagram-dark" dangerouslySetInnerHTML={{ __html: dark }} />
+    <div
+      className={styles.root}
+      role="img"
+      aria-label={t("ui.mermaid.label")}
+      {...{ [CONTENT_KEY_ATTR]: key }}
+    >
+      <div
+        className={DIAGRAM_LIGHT}
+        dangerouslySetInnerHTML={{ __html: light }}
+        suppressHydrationWarning
+      />
+      <div
+        className={DIAGRAM_DARK}
+        dangerouslySetInnerHTML={{ __html: dark }}
+        suppressHydrationWarning
+      />
     </div>
   );
 }
