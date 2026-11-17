@@ -6,7 +6,7 @@
 // via a default import alias.
 import type MarkdownItDefault from "markdown-it";
 type Token = NonNullable<ReturnType<MarkdownItDefault["parse"]>[number]>;
-import type { Block, Inline, MarkdownAst } from "../../shared/markdown";
+import { walkBlocks, type Block, type Inline, type MarkdownAst } from "../../shared/markdown";
 import { highlightCode } from "./highlight";
 // The htmlparser2-based parser, as in src/web/htmlParser.ts.
 import htmlToDOM from "html-dom-parser/lib/server/html-to-dom";
@@ -1141,26 +1141,4 @@ function findMatchingClose(
     }
   }
   return end - 1;
-}
-
-function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
-  for (const b of blocks) {
-    fn(b);
-    if (b.type === "blockquote" || b.type === "callout") walkBlocks(b.children, fn);
-    else if (b.type === "list") b.items.forEach((it) => walkBlocks(it.children, fn));
-    // OPS containers: fences, mermaid, etc. living inside a row/column/zone/
-    // moniker/tabs need the same placeholder resolution treatment as anything
-    // at the top level. Without this, code blocks inside :::column::: render
-    // their __VELLUM_FENCE_N__ literal.
-    else if (
-      b.type === "opsRow" ||
-      b.type === "opsColumn" ||
-      b.type === "opsZone" ||
-      b.type === "opsMoniker"
-    ) {
-      walkBlocks(b.children, fn);
-    } else if (b.type === "opsTabs") {
-      b.tabs.forEach((t) => walkBlocks(t.children, fn));
-    }
-  }
 }

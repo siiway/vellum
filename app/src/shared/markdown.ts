@@ -145,6 +145,25 @@ export interface MarkdownAst {
   blocks: Block[];
 }
 
+// Calls `fn` on every block, its children after it, in document order.
+export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
+  for (const b of blocks) {
+    fn(b);
+    if (b.type === "blockquote" || b.type === "callout") walkBlocks(b.children, fn);
+    else if (b.type === "list") b.items.forEach((it) => walkBlocks(it.children, fn));
+    else if (
+      b.type === "opsRow" ||
+      b.type === "opsColumn" ||
+      b.type === "opsZone" ||
+      b.type === "opsMoniker"
+    ) {
+      walkBlocks(b.children, fn);
+    } else if (b.type === "opsTabs") {
+      b.tabs.forEach((t) => walkBlocks(t.children, fn));
+    }
+  }
+}
+
 // Whether a block renders to markup that needs no React once it's on the
 // page: no state, effects or handlers. The client can then adopt it from
 // the page's HTML. Errs on the side of false: a PascalCase tag may be a
