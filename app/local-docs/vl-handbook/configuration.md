@@ -51,10 +51,23 @@ top navigation (each repo can override it with `vellum.json#nav`).
 | `url`           |          | Public origin, e.g. `https://docs.example.com`. See below.                          |
 | `socialLinks`   |          | NavBar icon links, `[ { icon, link, ariaLabel? } ]`, as in VitePress.               |
 | `searchAliases` |          | Search synonyms, `{ term: [synonyms] }`. See [Search](./search#synonyms).           |
+| `contentSignal` |          | How AI may use the content, `{ search, "ai-input", "ai-train" }`. See below.        |
 
 `url` makes the canonical, Open Graph and hreflang URLs in each page's head
 absolute, and is what the sitemap needs. Without it those URLs stay
 root-relative, `og:url` is left out, and the build writes no `sitemap.xml`.
+
+`contentSignal` states how AI may use the site's content, as a
+[Content-Signal](https://contentsignals.org) line in `robots.txt`. Each of
+`search` (search engines), `ai-input` (as input to an AI's answer) and
+`ai-train` (training models) is `true` or `false`; one left out states no
+preference.
+
+```json
+"contentSignal": { "search": true, "ai-input": true, "ai-train": false }
+```
+
+writes `Content-Signal: search=yes, ai-input=yes, ai-train=no`.
 
 ::: tip One homepage, many sources
 Set `homepageRepo` to a local-source repo with `layout: ms-learn` if you want

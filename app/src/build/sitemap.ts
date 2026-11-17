@@ -6,7 +6,7 @@
 // translations of which others. It needs absolute URLs, so it's only written
 // when `site.url` is set.
 
-import type { VellumConfig } from "../shared/types";
+import type { ContentSignal, VellumConfig } from "../shared/types";
 import { landingPath } from "../shared/paths";
 import { localeBase, pageRoute } from "./routes";
 
@@ -19,10 +19,13 @@ interface SitemapUrl {
 }
 
 // Disallow the build's data files (page payloads, search indexes) and the
-// search page's query URLs, which have infinite crawl space.
-export function buildRobots(origin: string | null): string {
+// search page's query URLs, which have infinite crawl space. The site's
+// Content-Signal, when it sets one, applies to every crawler.
+export function buildRobots(site: VellumConfig, origin: string | null): string {
+  const signal = contentSignal(site.site.contentSignal);
   const lines = [
     "User-agent: *",
+    ...(signal ? [`Content-Signal: ${signal}`] : []),
     "Allow: /",
     "Disallow: /_vellum/",
     "Disallow: /search?",
@@ -30,6 +33,15 @@ export function buildRobots(origin: string | null): string {
   ];
   if (origin) lines.push("", `Sitemap: ${origin}/sitemap.xml`);
   return `${lines.join("\n")}\n`;
+}
+
+// "search=yes, ai-input=yes, ai-train=no", or null when no signal is set.
+function contentSignal(signal: ContentSignal | undefined): string | null {
+  const keys = ["search", "ai-input", "ai-train"] as const;
+  const parts = keys
+    .filter((key) => signal?.[key] !== undefined)
+    .map((key) => `${key}=${signal![key] ? "yes" : "no"}`);
+  return parts.length ? parts.join(", ") : null;
 }
 
 // `pages` holds each repo's page paths per locale code.

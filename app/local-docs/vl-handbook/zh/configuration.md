@@ -50,10 +50,22 @@ Vellum 的构建只读一个文件：`app/vellum.config.json`。它的形状
 | `url`           |      | 站点的公开源地址，例如 `https://docs.example.com`。见下文。                |
 | `socialLinks`   |      | NavBar 中的图标链接，`[ { icon, link, ariaLabel? } ]`，同 VitePress。      |
 | `searchAliases` |      | 搜索同义词，`{ 词: [同义词] }`。见 [搜索](./search#同义词)。               |
+| `contentSignal` |      | AI 可以如何使用内容，`{ search, "ai-input", "ai-train" }`。见下文。        |
 
 `url` 让每个页面 head 中的 canonical、Open Graph 和 hreflang URL 成为绝对地址，
 sitemap 也需要它。没有它时这些 URL 保持为以根开头的相对地址，`og:url` 会被省略，
 构建也不会写出 `sitemap.xml`。
+
+`contentSignal` 声明 AI 可以如何使用站点的内容，写入 `robots.txt` 中的一行
+[Content-Signal](https://contentsignals.org)。`search`（搜索引擎）、`ai-input`
+（作为 AI 回答问题的输入）和 `ai-train`（训练模型）各取 `true` 或 `false`；省略的
+一项表示不表态。
+
+```json
+"contentSignal": { "search": true, "ai-input": true, "ai-train": false }
+```
+
+会写出 `Content-Signal: search=yes, ai-input=yes, ai-train=no`。
 
 ::: tip 一个主页，多种来源
 把 `homepageRepo` 指向一个使用 `layout: ms-learn` 的本地源仓库，就能得到

@@ -81,6 +81,8 @@ const OVERRIDES: Record<string, OverrideTable> = {
         'Icon-only links rendered in the NavBar between the locale picker and theme toggle. Built-in icons cover github / gitlab / x / discord / slack / mastodon / bluesky / youtube / linkedin / instagram / facebook / npm / rss / stackoverflow / reddit / twitch / telegram; custom glyphs go via `{ svg: "<svg ...>" }`.',
       searchAliases:
         "Search synonyms. Each key is a term a reader might type; the value is the list of words the docs author probably used for the same concept. A reader searching for any of these terms also matches pages containing the others (alias hits score below primary hits). Merged on top of a built-in baseline (latex/math, auth/oauth, ws/websocket, …) so config only needs to spell out product-specific vocabulary.",
+      contentSignal:
+        'How AI may use the site\'s content, written to robots.txt as a Content-Signal line (https://contentsignals.org), e.g. { "search": true, "ai-input": true, "ai-train": false } → "Content-Signal: search=yes, ai-input=yes, ai-train=no". Signals left out state no preference.',
     },
     propertyPatches: {
       themeColor: {
@@ -89,6 +91,14 @@ const OVERRIDES: Record<string, OverrideTable> = {
       url: { pattern: "^https?://[^/]+$" },
       logo: { format: "uri-reference" },
       favicon: { format: "uri-reference" },
+    },
+  },
+  ContentSignal: {
+    descriptions: {
+      search: "Building a search index and linking to the content in results.",
+      "ai-input":
+        "Feeding the content to an AI model to answer a question (retrieval-augmented generation, grounding).",
+      "ai-train": "Training or fine-tuning AI models.",
     },
   },
   LocaleConfig: {

@@ -262,7 +262,7 @@ async function writeSiteFiles(opts: RenderOptions, repos: Record<string, RepoSta
   if (locales.every((l) => l.prefix)) await writeOut("index.html", rootPage(SITE));
 
   await writeOut("_redirects", buildRedirects(SITE));
-  await writeOut("robots.txt", buildRobots(opts.origin));
+  await writeOut("robots.txt", buildRobots(SITE, opts.origin));
   await writeSitemap(opts, repos);
 }
 
