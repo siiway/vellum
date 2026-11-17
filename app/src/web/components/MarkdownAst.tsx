@@ -63,7 +63,7 @@ import {
   type Inline,
   type MarkdownAst,
 } from "../../shared/markdown";
-import { CODE_KEY_ATTR, STATIC_RUN } from "../prerendered";
+import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
 import { MermaidBlock } from "./MermaidBlock";
 import { rewriteVueTags } from "./VueIslands";
 import { useVellum } from "../context";
@@ -477,7 +477,7 @@ const useStyles = makeStyles({
 export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
   const styles = useStyles();
   return (
-    <div className={styles.root}>
+    <div className={mergeClasses(styles.root, MARKDOWN_ROOT)}>
       {groupBlocks(ast.blocks).map((group, i) =>
         Array.isArray(group) ? (
           <div key={`run-${i}`} className={STATIC_RUN}>
