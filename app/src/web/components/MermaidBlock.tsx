@@ -10,6 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { format } from "../../shared/i18n";
 
 const useStyles = makeStyles({
   root: {
@@ -63,8 +64,9 @@ export function MermaidBlock(props: Props) {
 // Both palettes, for the CSS in ssr.tsx to pick from.
 function DrawnDiagram({ light, dark }: { light: string; dark: string }) {
   const styles = useStyles();
+  const { t } = useVellum();
   return (
-    <div className={styles.root} role="img" aria-label="Mermaid diagram">
+    <div className={styles.root} role="img" aria-label={t("ui.mermaid.label")}>
       <div className="vellum-diagram-light" dangerouslySetInnerHTML={{ __html: light }} />
       <div className="vellum-diagram-dark" dangerouslySetInnerHTML={{ __html: dark }} />
     </div>
@@ -73,7 +75,7 @@ function DrawnDiagram({ light, dark }: { light: string; dark: string }) {
 
 function ClientDiagram({ code, svgLight, svgDark }: Props) {
   const styles = useStyles();
-  const { theme } = useVellum();
+  const { theme, t } = useVellum();
   const reactId = useId();
   // Mermaid requires IDs valid as CSS selectors — useId() returns ":r0:" etc,
   // which breaks querySelector. Sanitize to alphanumeric.
@@ -129,9 +131,9 @@ function ClientDiagram({ code, svgLight, svgDark }: Props) {
 
   if (error) {
     return (
-      <div className={styles.root} role="img" aria-label="Mermaid diagram (error)">
+      <div className={styles.root} role="img" aria-label={t("ui.mermaid.error")}>
         <pre className={styles.error}>
-          Mermaid error: {error}
+          {format(t("ui.mermaid.errorMessage"), { message: error })}
           {"\n\n"}
           {code}
         </pre>
@@ -144,7 +146,7 @@ function ClientDiagram({ code, svgLight, svgDark }: Props) {
       <div
         className={styles.root}
         role="img"
-        aria-label="Mermaid diagram"
+        aria-label={t("ui.mermaid.label")}
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
@@ -153,7 +155,7 @@ function ClientDiagram({ code, svgLight, svgDark }: Props) {
   // SSR / pre-hydration: show the source as a placeholder so the layout reserves
   // roughly the right amount of space and copy-paste still works.
   return (
-    <div className={styles.root} role="img" aria-label="Mermaid diagram (loading)">
+    <div className={styles.root} role="img" aria-label={t("ui.mermaid.loading")}>
       <pre className={styles.pending}>{code}</pre>
     </div>
   );
