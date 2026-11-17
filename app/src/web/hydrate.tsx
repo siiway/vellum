@@ -37,14 +37,17 @@ async function start(): Promise<void> {
     return null;
   });
   if (payload && payload.build === link.dataset.build) {
-    fillFromPage(payload.page.ast);
-    hydrateRoot(container, app(payload));
-    void registerTools(payload.config);
-    return;
+    if (fillFromPage(payload.page.ast)) {
+      hydrateRoot(container, app(payload));
+      void registerTools(payload.config);
+      return;
+    }
+    console.warn("[vellum] the page lacks content its payload leaves out");
   }
   // The page is from another build than its payload (the browser kept it
-  // from before a deploy), or the payload didn't load. Render the page's
-  // full payload instead, which needs nothing from the page.
+  // from before a deploy), the payload didn't load, or the page lacks what
+  // the payload leaves out. Render the page's full payload instead, which
+  // needs nothing from the page.
   const full = await fetchPayload(payloadPath(location.pathname));
   createRoot(container).render(app(full));
   void registerTools(full.config);
