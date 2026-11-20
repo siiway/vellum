@@ -138,7 +138,9 @@ async function pageBuildDirs(): Promise<string[]> {
     logLevel: "silent",
     // Browser-only: client components load them from effects, which never
     // run while pages render. The client list has what ships of them.
-    external: ["mermaid", "vue", "vue3-sfc-loader"],
+    // esbuild bundles repos' React components, as Vite does the client: a
+    // tool, not a package that ships.
+    external: ["mermaid", "vue", "vue3-sfc-loader", "esbuild"],
     plugins: [skipMissing],
   });
   const dirs = new Set<string>();

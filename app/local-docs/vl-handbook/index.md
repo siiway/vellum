@@ -37,7 +37,7 @@ redeploys.
 | **i18n**                 | Site-wide locales with URL prefixes (e.g. `/zh-CN/...`). Site chrome is translated.                  |
 | **Search**               | Per-repo dialog (Ctrl K) and full-page cross-repo search, run in the browser.                        |
 | **Theming**              | Light / dark / system, remembered in a cookie.                                                       |
-| **Components in MD**     | FluentUI primitives (`<Button>`, `<Card>`, …) and a repo's VitePress Vue components.                 |
+| **Components in MD**     | FluentUI primitives (`<Button>`, `<Card>`, …), and a repo's own React and VitePress Vue components.  |
 | **Static output**        | Pre-rendered HTML on Workers static assets; incremental updates re-render only changed repos.        |
 | **SPA-style navigation** | Internal links use `history.pushState` and refetch only the JSON payload.                            |
 

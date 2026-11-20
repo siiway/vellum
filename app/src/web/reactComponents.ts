@@ -4,9 +4,14 @@
 //
 // Components already used by the Vellum chrome (Layout, MarkdownAst) are kept
 // in the registry as direct references because they cost nothing — they're
-// already in the main bundle. Anything new lives behind `React.lazy` so the
-// extra FluentUI surface only loads when a doc actually uses one. The HtmlBlock
-// wraps its output in a <Suspense> boundary so this works transparently.
+// already in the main bundle. Anything new is a `lazyComponent`, in a chunk of
+// its own that only loads when a doc actually uses one.
+//
+// A lazy component is still in the page's HTML: the build loads them all
+// before it renders a page, and the client loads the ones a page uses before
+// it hydrates it (preloadComponents). One that isn't loaded yet, after a
+// client-side navigation, suspends; the HtmlBlock and InlineComponent
+// Suspense boundaries show its children until it's in.
 //
 // Casing matters - registry keys are PascalCase to match how authors will type
 // the tag in markdown. The HTML parser preserves case, so `<Button>` and
@@ -22,21 +27,33 @@ import {
   TabList,
   Tooltip,
 } from "@fluentui/react-components";
-import { lazy, type ComponentType } from "react";
+import { createElement, lazy, useState, type ComponentType } from "react";
 
-// Helper: produce a lazy reference to a single named export of FluentUI.
-// All lazy-imports share the "@fluentui/react-components" chunk, so the
-// extra-FluentUI cost is paid once per page, not per component.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function lazyFluent<K extends string>(name: K): ComponentType<any> {
-  return lazy(async () => {
-    const mod = await import("@fluentui/react-components");
-    return { default: (mod as unknown as Record<string, ComponentType<unknown>>)[name]! };
-  });
+type AnyComponent = ComponentType<any>;
+
+// A component in a chunk of its own, which `load` imports.
+function lazyComponent(load: () => Promise<AnyComponent>): AnyComponent {
+  let loaded: AnyComponent | null = null;
+  let loading: Promise<AnyComponent> | null = null;
+  const preload = () => (loading ??= load().then((c) => (loaded = c)));
+  const Suspending = lazy(() => preload().then((c) => ({ default: c })));
+  function LazyComponent(props: object) {
+    // Picked once: one that started out suspending keeps the lazy type, as
+    // switching types would remount it.
+    const [type] = useState(() => loaded ?? Suspending);
+    return createElement(type, props);
+  }
+  return Object.assign(LazyComponent, { preload });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const REACT_COMPONENTS: Record<string, ComponentType<any>> = {
+// One of the FluentUI components in registryExtras.ts: they share its chunk,
+// so a page pays for them once.
+function lazyFluent(name: keyof typeof import("./registryExtras")): AnyComponent {
+  return lazyComponent(() => import("./registryExtras").then((m) => m[name] as AnyComponent));
+}
+
+export const REACT_COMPONENTS: Record<string, AnyComponent> = {
   // Already in the main bundle — zero incremental cost.
   Button,
   Card,
@@ -66,4 +83,16 @@ export const REACT_COMPONENTS: Record<string, ComponentType<any>> = {
 
 export function isRegisteredReactComponent(tagName: string): boolean {
   return Object.prototype.hasOwnProperty.call(REACT_COMPONENTS, tagName);
+}
+
+// Loads the lazy components among `names`, or all of them.
+export async function preloadComponents(names?: Iterable<string>): Promise<void> {
+  const list = names
+    ? [...names].filter(isRegisteredReactComponent)
+    : Object.keys(REACT_COMPONENTS);
+  await Promise.all(
+    list.map((name) =>
+      (REACT_COMPONENTS[name] as { preload?: () => Promise<unknown> }).preload?.(),
+    ),
+  );
 }

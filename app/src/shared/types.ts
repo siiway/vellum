@@ -174,6 +174,18 @@ export interface VueComponentRef {
   path: string;
 }
 
+// What a repo's React component loads.
+export interface ReactComponentFiles {
+  // Its module, then every chunk that imports, directly or not, and the
+  // files of the engine's modules those import that the page doesn't
+  // already load: their URLs.
+  js: string[];
+  // Those engine modules (scripts/vite-engine.ts), by specifier.
+  engine: string[];
+  // Its stylesheets' URLs, in the order they apply.
+  css: string[];
+}
+
 // Icon names with a built-in SVG. Authors can also pass `{ svg: "<svg...>" }`
 // for anything not in the table.
 export type SocialIconName =
@@ -341,6 +353,11 @@ export interface BootstrapPayload {
   // client uses this to (a) rewrite `<Name />` tags inside markdown HTML blocks
   // to mountable placeholders, and (b) lazy-load + mount the SFC at runtime.
   repoComponents?: VueComponentRef[];
+  // The React components of the repo's `vellum.json#components` that the
+  // page uses, by name, with the files each loads. The client renders a
+  // `<Name>` tag of one with them (RepoComponent.tsx), and the page's head
+  // preloads them.
+  reactComponents?: Record<string, ReactComponentFiles>;
   // The theme the page was rendered in. Pages are rendered light; the head
   // script and the client switch to the reader's theme.
   initialTheme: "light" | "dark";

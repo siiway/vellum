@@ -2,9 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 import { bundledPackagesPlugin } from "./scripts/vite-packages";
+import { enginePlugin } from "./scripts/vite-engine";
 
 export default defineConfig({
-  plugins: [react(), bundledPackagesPlugin()],
+  plugins: [react(), bundledPackagesPlugin(), enginePlugin()],
   resolve: {
     alias: {
       "@web": resolve(__dirname, "src/web"),

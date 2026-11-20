@@ -216,9 +216,10 @@ function patchTheme(theme: Theme, dark: boolean): Theme {
   };
 }
 
-// The config schema accepts #rgb, #rgba, #rrggbb and #rrggbbaa. Alpha has no
+// The site's accent (`site.themeColor`) as `#rrggbb`, or the default. The
+// config schema accepts #rgb, #rgba, #rrggbb and #rrggbbaa. Alpha has no
 // meaning for a brand ramp, so it is dropped.
-function normalizeHex(value: string | undefined): string {
+export function normalizeHex(value: string | undefined): string {
   if (!value) return DEFAULT_ACCENT;
   const m = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value);
   if (!m) return DEFAULT_ACCENT;

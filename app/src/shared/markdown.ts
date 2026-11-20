@@ -22,8 +22,9 @@ export type Inline =
   // Inline React component, produced when the AST builder spots a PascalCase
   // open/close pair (or self-closing) inside an inline run, e.g.
   // `<Button appearance="primary">Click me</Button>`. The renderer resolves
-  // `name` against the registered React-component table; when unregistered, it
-  // falls back to rendering `children` so the text isn't lost.
+  // `name` against the repo's own Vue and React components, then the
+  // registered React-component table; when it's none of them, it falls back
+  // to rendering `children` so the text isn't lost.
   | {
       type: "reactComponent";
       name: string;
@@ -170,6 +171,30 @@ export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
       b.tabs.forEach((t) => walkBlocks(t.children, fn));
     }
   }
+}
+
+// The names of the PascalCase tags in an AST, inline or in HTML blocks: the
+// components its page may render.
+export function componentNames(ast: MarkdownAst): Set<string> {
+  const names = new Set<string>();
+  const inline = (nodes: Inline[]) => {
+    for (const node of nodes) {
+      if (node.type === "reactComponent") names.add(node.name);
+      if ("children" in node) inline(node.children);
+    }
+  };
+  walkBlocks(ast.blocks, (b) => {
+    if (b.type === "html") {
+      for (const m of b.value.matchAll(/<([A-Z][A-Za-z0-9]*)/g)) names.add(m[1]!);
+    } else if (b.type === "paragraph" || b.type === "heading") {
+      inline(b.children);
+    } else if (b.type === "callout") {
+      inline(b.title ?? []);
+    } else if (b.type === "table") {
+      for (const row of [b.head, ...b.rows]) for (const cell of row) inline(cell.children);
+    }
+  });
+  return names;
 }
 
 // Whether a block renders to markup that needs no React once it's on the

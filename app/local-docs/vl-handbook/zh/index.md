@@ -34,7 +34,7 @@ Cloudflare 以静态资源的形式提供构建结果，每个请求都不运行
 | **i18n**               | 全站统一的语言 URL 前缀（例如 `/zh-CN/...`）。站点外壳已完成翻译。                                    |
 | **搜索**               | 单仓库对话框（Ctrl K）以及跨仓库的整页搜索，都在浏览器中运行。                                        |
 | **主题**               | 浅色 / 深色 / 跟随系统，用 cookie 记住选择。                                                          |
-| **在 MD 中使用组件**   | FluentUI 原语（`<Button>`、`<Card>` ……）和仓库 VitePress 主题中的 Vue 组件。                          |
+| **在 MD 中使用组件**   | FluentUI 原语（`<Button>`、`<Card>` ……），以及仓库自己的 React 组件和 VitePress Vue 组件。            |
 | **静态输出**           | 预渲染的 HTML 托管在 Workers 静态资源上；增量更新只重新渲染有变更的仓库。                             |
 | **SPA 式导航**         | 内部链接使用 `history.pushState` 并只重新拉取 JSON 数据。                                             |
 

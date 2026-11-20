@@ -40,10 +40,13 @@ dist/site/
   _vellum/404/{locale}.json        the 404 page's, likewise
   _vellum/search/{locale}/{repo}.json   search indexes
   _vellum/vue/{repo}/{Name}.vue    Vue components the pages mount
+  _vellum/react/{repo}/            React components the pages render, their
+                                   shared chunks and their stylesheets
   _redirects, _headers             applied by Cloudflare
   robots.txt, sitemap.xml
   .well-known/                     files for AI agents, see below
-  assets/                          the client bundle
+  assets/                          the client bundle, with the engine of
+                                   the React components
 ```
 
 Each page's HTML is complete: pre-rendered markup, styles and SEO head, readable

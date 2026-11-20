@@ -39,10 +39,11 @@ dist/site/
   _vellum/404/{locale}.json        404 页面的，同上
   _vellum/search/{locale}/{repo}.json   搜索索引
   _vellum/vue/{repo}/{Name}.vue    页面挂载的 Vue 组件
+  _vellum/react/{repo}/            页面渲染的 React 组件、它们共享的 chunk 和样式表
   _redirects, _headers             由 Cloudflare 应用
   robots.txt, sitemap.xml
   .well-known/                     给 AI 智能体的文件，见下文
-  assets/                          客户端 bundle
+  assets/                          客户端 bundle，以及 React 组件使用的引擎
 ```
 
 每个页面的 HTML 都是完整的：预渲染的标记、样式和 SEO head，不运行 JavaScript

@@ -13,9 +13,15 @@ import {
 import { App } from "../web/App";
 import { DIAGRAM_DARK, DIAGRAM_LIGHT, STATIC_RUN } from "../web/prerendered";
 import { createVellumTheme } from "../web/theme";
+import { preloadComponents } from "../web/reactComponents";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { ClientAssets } from "./assets";
+
+// The registry's lazy components, loaded before any page renders: pages then
+// have them rendered rather than suspended, which the client would have to
+// render again.
+await preloadComponents();
 
 export interface RenderOptions {
   assets: ClientAssets;
@@ -44,15 +50,28 @@ export function renderPage(
       </SSRProvider>
     </RendererProvider>,
   );
+  // A Suspense boundary React couldn't render, which it leaves to the
+  // browser: something in it threw, a repo's component say, or suspended.
+  // The page fails instead, like one whose Markdown doesn't render.
+  if (html.includes("<!--$!-->")) {
+    const message = /<!--\$!--><template[^>]* data-msg="([^"]*)"/.exec(html)?.[1];
+    throw new Error(
+      `Rendering ${payload.route.canonicalUrl} failed: ${message ? unescapeAttr(message) : "a component threw"}`,
+    );
+  }
 
-  const styleElements = renderToStyleElements(renderer);
-  const styleHtml = styleElements
+  // With all the attributes Griffel gives them (bucket, priority, media): the
+  // client's renderer reads the page's rules from them rather than adding
+  // each again (rehydrateRendererCache).
+  const styleHtml = renderToStyleElements(renderer)
     .map((el) => {
-      const props = el.props as Record<string, unknown>;
-      const id = props.id as string | undefined;
-      const media = props.media as string | undefined;
-      const css = (props.dangerouslySetInnerHTML as { __html: string } | undefined)?.__html ?? "";
-      return `<style${id ? ` data-make-styles-bucket="${id}"` : ""}${media ? ` media="${media}"` : ""}>${css}</style>`;
+      const { dangerouslySetInnerHTML, ...attrs } = el.props as Record<string, unknown>;
+      const css = (dangerouslySetInnerHTML as { __html: string } | undefined)?.__html ?? "";
+      const attributes = Object.entries(attrs)
+        .filter(([, value]) => value != null)
+        .map(([name, value]) => ` ${name}="${escapeAttr(String(value))}"`)
+        .join("");
+      return `<style${attributes}>${css}</style>`;
     })
     .join("");
 
@@ -67,6 +86,7 @@ export function renderPage(
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");
+  const react = reactHead(payload, assets);
 
   const { site } = payload.config;
   const themeColor = site.themeColor ?? "#0078d4";
@@ -208,13 +228,29 @@ ${seoHead}
   <style id="vellum-base">${baseCss}</style>
   ${styleHtml}
   <style id="vellum-theme-tokens">${themeTokenCss}</style>
-  ${cssLinks}
-  ${jsTags}
+  ${cssLinks}${react.css}
+  ${jsTags}${react.js}
 </head>
 <body>
   <div id="vellum-root">${html}</div>
 </body>
 </html>`;
+}
+
+// The head tags for the repo's React components the page uses
+// (RepoComponent.tsx): their stylesheets, which then apply from the first
+// paint, and preloads of their modules, the chunks those import and the
+// engine's modules those do, all fetched alongside the client's own.
+function reactHead(payload: BootstrapPayload, assets: ClientAssets): { css: string; js: string } {
+  const components = Object.values(payload.reactComponents ?? {});
+  if (!components.length) return { css: "", js: "" };
+  const unique = (urls: string[]) => [...new Set(urls)].map(escapeAttr);
+  const css = unique(components.flatMap((c) => c.css));
+  const js = unique([...components.flatMap((c) => c.js), ...assets.engine.loaders]);
+  return {
+    css: css.map((href) => `<link rel="stylesheet" href="${href}">`).join(""),
+    js: js.map((href) => `<link rel="modulepreload" href="${href}">`).join(""),
+  };
 }
 
 // --- SEO head -------------------------------------------------------------
@@ -631,4 +667,11 @@ function escapeHtml(s: string): string {
 }
 function escapeAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+// An attribute value React wrote, as text.
+function unescapeAttr(s: string): string {
+  return s.replace(/&(quot|#x27|#39|lt|gt|amp);/g, (_, e: string) =>
+    e === "quot" ? '"' : e === "lt" ? "<" : e === "gt" ? ">" : e === "amp" ? "&" : "'",
+  );
 }

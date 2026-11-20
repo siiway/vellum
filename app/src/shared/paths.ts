@@ -95,3 +95,15 @@ export function vueDir(repoSlug: string): string {
 export function vueComponentPath(repoSlug: string, name: string): string {
   return `${vueDir(repoSlug)}/${encodeURIComponent(name)}.vue`;
 }
+
+// The directory of a repo's published React components.
+export function reactDir(repoSlug: string): string {
+  return `/_vellum/react/${encodeURIComponent(repoSlug)}`;
+}
+
+// A file the build bundled a repo's React components into: a component's
+// module (`{Name}.js`), a chunk they share or a stylesheet
+// (ReactComponentFiles).
+export function reactFilePath(repoSlug: string, file: string): string {
+  return `${reactDir(repoSlug)}/${encodeURIComponent(file)}`;
+}

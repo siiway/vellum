@@ -90,6 +90,8 @@ const en: MessageMap = {
   "ui.mermaid.error": "Mermaid diagram (error)",
   "ui.mermaid.errorMessage": "Mermaid error: {message}",
 
+  "ui.component.error": "Couldn't show <{name} />: {message}",
+
   "ui.home.actions.getStarted": "Get started",
   "ui.home.features": "Features",
   "ui.home.learnMore": "Learn more",
@@ -178,6 +180,8 @@ const zh: MessageMap = {
   "ui.mermaid.loading": "Mermaid 图表（加载中）",
   "ui.mermaid.error": "Mermaid 图表（出错）",
   "ui.mermaid.errorMessage": "Mermaid 错误：{message}",
+
+  "ui.component.error": "无法显示 <{name} />：{message}",
 
   "ui.home.actions.getStarted": "开始使用",
   "ui.home.features": "功能",

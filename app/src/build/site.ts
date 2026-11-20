@@ -5,9 +5,9 @@
 // `wrangler deploy` as static assets.
 //
 // The work is per repo: `renderRepo` writes a repo's pages, its search
-// indexes and its Vue components, and records its commit and page list in
-// dist/state.json. Everything else depends only on the config and those
-// page lists, so `updateSite` can re-render just the repos whose commit
+// indexes and its Vue and React components, and records its commit and page
+// list in dist/state.json. Everything else depends only on the config and
+// those page lists, so `updateSite` can re-render just the repos whose commit
 // changed and keep the rest of the previous build.
 
 import { existsSync } from "node:fs";
@@ -21,6 +21,8 @@ import {
   notFoundPayloadPath,
   payloadPath,
   searchIndexPath,
+  reactDir,
+  reactFilePath,
   vueComponentPath,
   vueDir,
 } from "../shared/paths";
@@ -31,6 +33,7 @@ import { renderPage, type Hydration, type RenderOptions } from "./ssr";
 import { htmlFile, listRepoPages, localeBase, markdownUrl, pageRoute, stubRoute } from "./routes";
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
+import { bundleReactComponents, importReactComponents } from "./react";
 import { buildRedirects } from "./redirects";
 import { buildHeaders } from "./headers";
 import { buildAgentFiles } from "./agents";
@@ -216,6 +219,14 @@ async function renderRepo(
 ): Promise<RepoState> {
   const pages = await listRepoPages(SITE, repo);
   const rendered: Record<string, string[]> = {};
+  // First: the pages render the components, and the head of a page that
+  // uses one links its files. One that doesn't build fails the repo, like a
+  // page that doesn't render.
+  const react = await bundleReactComponents(repo, opts.assets);
+  for (const [file, content] of react.files) {
+    await writeOut(reactFilePath(repo.slug, file), content, root);
+  }
+  importReactComponents(repo, react);
 
   for (const locale of SITE.site.locales) {
     const done: string[] = [];
@@ -224,7 +235,7 @@ async function renderRepo(
       const route = pageRoute(SITE, repo, locale, pagePath);
       let build;
       try {
-        build = await buildPagePayload(SITE, route);
+        build = await buildPagePayload(SITE, route, react);
       } catch (e) {
         throw new Error(`Rendering ${route.canonicalUrl} failed: ${(e as Error).message}`, {
           cause: e,
@@ -257,7 +268,7 @@ async function renderRepo(
 
 // Deletes what `renderRepo` wrote for the repo last time.
 async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
-  const removals: string[] = [vueDir(repo.slug)];
+  const removals: string[] = [vueDir(repo.slug), reactDir(repo.slug)];
   for (const locale of SITE.site.locales) {
     removals.push(searchIndexPath(locale.code, repo.slug));
     for (const pagePath of last.pages[locale.code] ?? []) {

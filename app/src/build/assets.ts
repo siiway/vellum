@@ -1,9 +1,10 @@
 // Reads the Vite manifest of the client build to find the hashed bundle
-// filenames every page links.
+// filenames every page links, and the engine's (scripts/vite-engine.ts).
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { EngineManifest } from "../../scripts/vite-engine";
 
 interface ManifestEntry {
   file: string;
@@ -22,6 +23,10 @@ export interface ClientAssets {
   // them alongside the entry instead of after parsing it.
   preload: string[];
   css: string[];
+  // The engine, for the pages with a repo's React component: the files each
+  // of its modules loads, by specifier, and those its loaders do, without
+  // the files every page loads.
+  engine: EngineManifest;
   // Identifies the client build: pages rendered against another one link
   // bundles that aren't there.
   id: string;
@@ -29,18 +34,33 @@ export interface ClientAssets {
 
 // `clientDir` is the Vite output directory (dist/client).
 export async function readClientAssets(clientDir: string): Promise<ClientAssets> {
-  const path = join(clientDir, ".vite", "manifest.json");
   let text: string;
+  let engine: EngineManifest;
   try {
-    text = await readFile(path, "utf8");
+    text = await readFile(join(clientDir, ".vite", "manifest.json"), "utf8");
+    engine = JSON.parse(
+      await readFile(join(clientDir, ".vite", "engine.json"), "utf8"),
+    ) as EngineManifest;
   } catch {
     throw new Error(`No client build at ${clientDir}. Run \`bun run build:client\` first.`);
   }
   const id = createHash("sha256").update(text).digest("hex").slice(0, 16);
-  return { ...parseManifest(JSON.parse(text) as ViteManifest), id };
+  const assets = parseManifest(JSON.parse(text) as ViteManifest);
+  const loaded = new Set([...assets.js, ...assets.preload]);
+  const own = (files: string[]) => files.map((f) => `/${f}`).filter((f) => !loaded.has(f));
+  return {
+    ...assets,
+    engine: {
+      modules: Object.fromEntries(
+        Object.entries(engine.modules).map(([spec, files]) => [spec, own(files)]),
+      ),
+      loaders: own(engine.loaders),
+    },
+    id,
+  };
 }
 
-function parseManifest(manifest: ViteManifest): Omit<ClientAssets, "id"> {
+function parseManifest(manifest: ViteManifest): Omit<ClientAssets, "id" | "engine"> {
   const js: string[] = [];
   const css: string[] = [];
   const preload = new Set<string>();
