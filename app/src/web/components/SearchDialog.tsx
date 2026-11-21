@@ -327,6 +327,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   useEffect(() => {
     if (!q.trim()) {
       setHits([]);
+      // A search still pending was cancelled, and its finally skips this.
+      setLoading(false);
       return;
     }
     let cancelled = false;

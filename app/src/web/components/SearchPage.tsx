@@ -639,6 +639,8 @@ export function SearchPage() {
     if (!q.trim()) {
       setHits([]);
       setActiveIdx(0);
+      // A search still pending was cancelled, and its finally skips this.
+      setLoading(false);
       return;
     }
     let cancelled = false;
