@@ -92,10 +92,14 @@ Authors can link to a pre-populated query:
 
 Behaviour:
 
+- Until the reader types, the page shows a start screen: their recent
+  searches, a card per repo (except those with `excludeFromSearch`) that
+  scopes the search to it, and the query syntax.
 - `?q=…` populates the input on load.
 - `?repo=<slug>` scopes results to a single repo; omit (or set `*`) for
   cross-repo.
-- Repo filter chips below the input toggle the scope.
+- Once there's a query or a scope, repo tabs below the input switch the
+  scope.
 - URL stays in sync via `history.replaceState` so refresh / share keeps
   the query.
 - Recent searches are shared with the dialog.

@@ -384,10 +384,10 @@ function shellPayload(
   layout: "search" | "languages",
   canonicalUrl: string,
 ): BootstrapPayload {
-  const title = t(locale.code, layout === "search" ? "ui.search.allRepos" : "ui.languages.title");
+  const title = t(locale.code, layout === "search" ? "ui.search" : "ui.languages.title");
   const description = t(
     locale.code,
-    layout === "search" ? "ui.search.start" : "ui.languages.subtitle",
+    layout === "search" ? "ui.search.fullPageSubtitle" : "ui.languages.subtitle",
   );
   return {
     config: SITE,
