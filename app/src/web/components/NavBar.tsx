@@ -544,21 +544,25 @@ function LocalePicker() {
   if (data.config.site.locales.length <= 1) return null;
 
   const currentLocale = data.route.localeCode;
-  const repoSlug = data.route.repoSlug;
-  const pagePath = data.route.pagePath;
+  const { repoSlug, pagePath } = data.route;
+  // The page's URL after the locale prefix, in its canonical short form:
+  //   - homepageRepo's index → "" (no slug, no "index" segment)
+  //   - any other repo's index → `/{slug}` (no trailing "index")
+  //   - a page of no repo → `/search`, `/languages`, or "" for the 404
+  // Without these the link would be `/zh/homepage/index`, which is the
+  // long form and immediately bounces through two redirects before
+  // landing at `/zh`.
+  const page =
+    pagePath === "index"
+      ? repoSlug && repoSlug !== data.config.site.homepageRepo
+        ? `/${repoSlug}`
+        : ""
+      : `${repoSlug ? `/${repoSlug}` : ""}/${pagePath}`;
 
   function linkFor(localeCode: string): string {
     const locale = data.config.site.locales.find((l) => l.code === localeCode)!;
     const prefix = locale.prefix ? `/${locale.prefix}` : "";
-    // Special cases for the canonical short forms:
-    //   - homepageRepo's index → `/{prefix}` (no slug, no "index" segment)
-    //   - any other repo's index → `/{prefix}/{slug}` (no trailing "index")
-    // Without these the link would be `/zh/homepage/index`, which is the
-    // long form and immediately bounces through two redirects before
-    // landing at `/zh`.
-    if (pagePath === "index" && repoSlug === data.config.site.homepageRepo) return prefix || "/";
-    if (pagePath === "index") return `${prefix}/${repoSlug}`;
-    return `${prefix}/${repoSlug}/${pagePath}`.replace(/\/+/g, "/").replace(/\/$/, "");
+    return `${prefix}${page}` || "/";
   }
 
   // Link to /{currentPrefix}/languages, threading the current page through
@@ -567,9 +571,7 @@ function LocalePicker() {
   function languagesPageUrl(): string {
     const prefix = data.config.site.locales.find((l) => l.code === currentLocale)?.prefix;
     const base = prefix ? `/${prefix}/languages` : "/languages";
-    const target = pagePath === "index" ? `/${repoSlug}` : `/${repoSlug}/${pagePath}`;
-    const cleaned = target.replace(/\/+/g, "/");
-    return `${base}?page=${encodeURIComponent(cleaned)}`;
+    return `${base}?page=${encodeURIComponent(page || "/")}`;
   }
 
   function chooseLocale(localeCode: string) {

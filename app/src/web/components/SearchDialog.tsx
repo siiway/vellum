@@ -335,7 +335,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         const { search } = await import("../../shared/search");
         const found = await search(data.config, {
           q,
-          repo: data.route.repoSlug,
+          // A page of no repo (search, languages) searches every repo.
+          repo: data.route.repoSlug ?? "*",
           locale: data.route.localeCode,
         });
         if (!cancelled) {

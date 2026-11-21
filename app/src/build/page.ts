@@ -11,7 +11,7 @@ import type {
   BootstrapPayload,
   ReactComponentFiles,
   RepoConfig,
-  RouteContext,
+  RepoRoute,
   VellumConfig,
 } from "../shared/types";
 import { localeSourcePrefix } from "../shared/types";
@@ -47,7 +47,7 @@ export type PageBuild =
 // route locale's chrome, and its links stay in the route's locale.
 export async function buildPagePayload(
   site: VellumConfig,
-  route: RouteContext,
+  route: RepoRoute,
   react: ReactBundle,
   sourceLocale?: string,
 ): Promise<PageBuild> {
@@ -301,7 +301,7 @@ function rewriteFrontmatterLinks(front: Record<string, unknown>, ctx: LinkContex
 // guard would require threading a depth counter through the renderMarkdown
 // API, which is overkill for a feature that authors rarely abuse.
 async function resolveInclude(
-  route: RouteContext,
+  route: RepoRoute,
   baseDir: string,
   relPath: string,
   linkContext: LinkContext,
@@ -325,7 +325,7 @@ async function resolveInclude(
 // OPS [!code-lang]: fetch the source file, slice per the directive, syntax-
 // highlight, and return a code block ready to splice into the parent AST.
 async function resolveCodeInclude(
-  route: RouteContext,
+  route: RepoRoute,
   baseDir: string,
   meta: CodeIncludeMeta,
 ): Promise<Extract<Block, { type: "code" }> | null> {

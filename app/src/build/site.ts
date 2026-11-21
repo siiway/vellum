@@ -391,7 +391,7 @@ function shellPayload(
   );
   return {
     config: SITE,
-    route: stubRoute(SITE, locale, layout, canonicalUrl),
+    route: stubRoute(locale, layout, canonicalUrl),
     sidebar: [],
     initialTheme: "light",
     page: {
@@ -425,7 +425,7 @@ function notFoundPayload(locale: LocaleConfig): BootstrapPayload {
   const message = t(locale.code, "ui.notFound.message");
   return {
     config: SITE,
-    route: stubRoute(SITE, locale, "index", localeBase(locale) || "/"),
+    route: stubRoute(locale, "index", localeBase(locale) || "/"),
     sidebar: [],
     initialTheme: "light",
     error: {
