@@ -51,6 +51,8 @@ import { useCallback, useState, type ComponentType, type ReactNode } from "react
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
+import { FallbackNotice } from "./FallbackNotice";
+import { canonicalLocaleCode } from "../../shared/types";
 
 // --- Types ---------------------------------------------------------------
 
@@ -109,6 +111,14 @@ const useStyles = makeStyles({
     minHeight: "calc(100vh - 52px)",
     paddingBottom: tokens.spacingVerticalXXXL,
     color: tokens.colorNeutralForeground1,
+  },
+  // FallbackNotice, inset like the hero's content.
+  notice: {
+    maxWidth: "880px",
+    marginInline: "auto",
+    paddingTop: "24px",
+    paddingInline: "40px",
+    "@media (max-width: 720px)": { paddingInline: "16px" },
   },
 
   // Flat hero on the canvas, separated from the sections by a hairline —
@@ -398,9 +408,19 @@ export function MSLearnHome() {
   // registered React component (`<Button>`, `<Card>`, …) the author drops in
   // is mounted as the real FluentUI primitive — same registry as docs pages.
   const hasBody = data.page.ast.blocks.length > 0;
+  // Set when the page shows another locale's page (FallbackNotice).
+  const { fallbackLocale } = data.page.meta;
 
   return (
-    <main className={styles.root}>
+    <main
+      className={styles.root}
+      lang={fallbackLocale ? canonicalLocaleCode(fallbackLocale) : undefined}
+    >
+      {fallbackLocale && (
+        <div className={styles.notice}>
+          <FallbackNotice />
+        </div>
+      )}
       <HeroSection hero={front.hero} styles={styles} />
       {hasItems(front.getStarted) && (
         <CardGridSection section={front.getStarted} variant="iconChip" styles={styles} />
@@ -551,7 +571,12 @@ function ItemCard({
   variant: "iconChip" | "logo";
   styles: ReturnType<typeof useStyles>;
 }) {
-  const { t } = useVellum();
+  const { data, t } = useVellum();
+  // Inside a page shown from another locale's, Vellum's own text is still
+  // in the reader's language.
+  const uiLang = data.page.meta.fallbackLocale
+    ? canonicalLocaleCode(data.route.localeCode)
+    : undefined;
   const isExternal = /^[a-z]+:\/\//i.test(item.link);
   // Title / description / linkText are pre-rendered HTML from the build
   // (processHomeFrontmatter). Inline markdown (`code`, **bold**, links) is
@@ -582,7 +607,7 @@ function ItemCard({
           {item.linkText ? (
             <span dangerouslySetInnerHTML={{ __html: item.linkText }} />
           ) : (
-            t("ui.home.learnMore")
+            <span lang={uiLang}>{t("ui.home.learnMore")}</span>
           )}
           {isExternal ? <Open24Regular /> : <ArrowRight24Regular />}
         </span>

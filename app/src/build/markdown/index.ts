@@ -182,18 +182,34 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     if (path === repoBase || path.startsWith(`${repoBase}/`)) {
       return served(path);
     }
+    // Into a locale's source directory, the VitePress form (`/zh/guide`):
+    // that locale's page, and the page's own locale for the directory the
+    // page was read from, even when it's another locale's page. The deepest
+    // directory wins: with `localeDirs` one can hold another (`en/v0.4`).
+    const inDir = (dir: string) => !!dir && (path === `/${dir}` || path.startsWith(`/${dir}/`));
+    const dirs = [
+      { srcDir: c.localeSrcDir ?? "", repoUrlBase: repoBase },
+      ...(c.otherLocales ?? []),
+    ];
+    let into: (typeof dirs)[number] | undefined;
+    for (const dir of dirs) {
+      if (inDir(dir.srcDir) && (!into || dir.srcDir.length > into.srcDir.length)) into = dir;
+    }
+    if (into) {
+      const rest = path.slice(into.srcDir.length + 1);
+      // A locale root's README is its index page.
+      return served(`${into.repoUrlBase}${rest === "/README" ? "" : rest}`);
+    }
     // Locale-prefixed absolute path on a page whose repoBase already encodes
-    // the same locale (e.g. /zh/getting-started written in docs/zh/index.md).
-    // Strip the leading /<locale> so we don't end up with /zh/zh/repo/...
+    // the same locale (e.g. /zh-CN/getting-started on a zh-CN page). Strip
+    // the leading /<locale> so we don't end up with /zh-CN/zh-CN/repo/...
     // With the locale-first URL shape, repoBase STARTS with `/{localePrefix}/`,
-    // so author-written `/zh/foo` should resolve under the same repo by
-    // dropping the leading `/zh` and prepending repoBase.
+    // so author-written `/zh-CN/foo` should resolve under the same repo by
+    // dropping the leading `/zh-CN` and prepending repoBase.
     // Check both the URL prefix (e.g. "zh-CN") and the locale code (e.g.
-    // "zh") — authors in source files use the code in docs-root-relative
-    // links because source directories are named by code, not by URL prefix.
-    // The page's source directory goes first: with `localeDirs` it can be
-    // deeper than the code (`en/v0.4`), and the longer match must win.
-    const localeCandidates = [c.localeSrcDir ?? "", localePrefix, c.localeCode ?? ""];
+    // "zh"), which names the source directory unless `localeDirs` says
+    // otherwise.
+    const localeCandidates = [localePrefix, c.localeCode ?? ""];
     for (const lp of localeCandidates) {
       if (
         lp &&

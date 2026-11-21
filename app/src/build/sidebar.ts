@@ -19,6 +19,7 @@ import type {
 import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchFirstSourceFile, readSourceFile, listSourceFiles, docsRootPrefix } from "./sources";
 import { memo } from "./memo";
+import { isPagePath } from "./routes";
 import { isRecord, readVitePressConfig, themeConfigField } from "./vitepress-config";
 
 // Bundles the URL-side prefix and source-side prefix for a locale into one
@@ -239,14 +240,26 @@ async function buildFromTree(
   const tree = await listSourceFiles(repo);
   const prefix = docsRootPrefix(repo.docsRoot);
 
-  // This locale's pages, as paths inside its source directory, without `.md`.
-  const files = tree
+  // The pages, as paths inside a locale's source directory, without `.md`:
+  // every locale's, as a locale shows another's page where it has no
+  // translation of its own (site.ts). This locale's go first, so where
+  // another lays out the same page differently (`x.md`, `x/index.md`),
+  // this locale's file places it.
+  const owned = tree
     .filter((path) => path.startsWith(prefix) && path.endsWith(".md"))
     .flatMap((path) => {
       const rel = path.slice(prefix.length).replace(/\.md$/, "");
-      const owner = sourceLocale(rel, locales, defaultLocaleCode, repo);
-      return owner?.code === resolved.code ? [owner.path] : [];
+      const owner = isPagePath(rel) && sourceLocale(rel, locales, defaultLocaleCode, repo);
+      return owner ? [owner] : [];
     });
+  const files = [
+    ...new Set(
+      [
+        ...owned.filter((o) => o.code === resolved.code),
+        ...owned.filter((o) => o.code !== resolved.code),
+      ].map((o) => o.path),
+    ),
+  ];
 
   // Build a directory-aware tree. Files at the docs root land in the "root"
   // group (titled with the repo name); files nested under a subdirectory land
@@ -275,8 +288,14 @@ async function buildFromTree(
 
   // A locale root's README is its index page, unless there's an index.md.
   const hasIndex = files.includes("index");
+  // One item per page: `x.md` in one locale and `x/index.md` in another
+  // are the same page.
+  const linked = new Set<string>();
   for (const name of files) {
     if (name === "README" && hasIndex) continue;
+    const link = urlFor(name);
+    if (linked.has(link)) continue;
+    linked.add(link);
     const parts = name.split("/");
 
     if (parts.length === 1) {

@@ -38,6 +38,7 @@ const en: MessageMap = {
   "ui.locale.label": "Language",
   "ui.locale.allLanguages": "All languages",
   "ui.locale.moreLanguages": "More languages…",
+  "ui.fallback": "This page isn't available in {locale} yet. It's shown in {source}.",
 
   "ui.languages.title": "All languages",
   "ui.languages.subtitle": "Pick a language to view this site in.",
@@ -129,6 +130,7 @@ const zh: MessageMap = {
   "ui.locale.label": "语言",
   "ui.locale.allLanguages": "全部语言",
   "ui.locale.moreLanguages": "更多语言…",
+  "ui.fallback": "此页面尚无{locale}版本，以下为 {source} 版本。",
 
   "ui.languages.title": "全部语言",
   "ui.languages.subtitle": "选择一种语言来查看本站。",

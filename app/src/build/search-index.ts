@@ -15,11 +15,15 @@ export interface IndexPage {
   // Its source path, used for a title of last resort.
   path: string;
   raw: string;
+  // Shows another locale's page, as the locale has no translation of it.
+  fallback?: boolean;
 }
 
 export function buildSearchIndex(pages: IndexPage[], repoDisplayName: string): SearchIndex {
+  // The locale's own pages first, so the cap leaves out those it shows from
+  // another locale before its translations.
   const docs: IndexedDoc[] = [...pages]
-    .sort((a, b) => a.url.localeCompare(b.url))
+    .sort((a, b) => Number(!!a.fallback) - Number(!!b.fallback) || a.url.localeCompare(b.url))
     .slice(0, MAX_DOCS)
     .map((page) => {
       const built = extractIndexableContent(page.raw, page.path, repoDisplayName);
