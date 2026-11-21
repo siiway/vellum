@@ -169,7 +169,7 @@ export default function Counter({ start = 0, children }: { start?: number; child
 
 ### 引擎
 
-React、Griffel 和每个 Fluent UI v9 包都来自 Vellum 的客户端构建，即它的引擎，而不是来自各仓库的 bundle。引擎把每个包做成一个独立的模块，带有它的全部导出；模块里只有页面自己的 bundle 所缺少的代码，其余部分从那里获取。因此组件使用的 Fluent 就是页面的 Fluent：它跟随页面的主题，它的工具提示和弹出框在页面的 portal 中打开并带有该主题，它的样式和页面自己的样式合在一起，每条规则只有一份，站点上也没有重复的代码。组件按通常的名字导入它们，不需要 `package.json`：
+React、Griffel 和每个 Fluent UI v9 包都来自 Vellum 的客户端构建，即它的引擎，而不是来自各仓库的 bundle。引擎把每个包做成一个独立的模块，带有它的全部导出；页面已有的代码，引擎就用页面的。因此组件使用的 Fluent 就是页面的 Fluent：它跟随页面的主题，它的工具提示和弹出框在页面的 portal 中打开并带有该主题，它的样式和页面自己的样式合在一起，每条规则只有一份。页面没有的代码是引擎自己的，只在有组件的页面上加载：页面的 bundle 和没有引擎时一样，只多了引擎从中导入的名字。对于页面只用到一部分的模块，如果它不含状态（例如 Fluent 的 tokens 这样的数据、样式 hook、图标），引擎有它自己的一份，页面就不必保留其余部分。组件按通常的名字导入它们，不需要 `package.json`：
 
 - `react`、`react/jsx-runtime`、`react-dom`
 - `@fluentui/react-components`、组成它的各个 `@fluentui/react-*` 包、`@griffel/react` 和 `@griffel/core`

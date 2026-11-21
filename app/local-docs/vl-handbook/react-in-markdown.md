@@ -206,12 +206,17 @@ work in its styles.
 
 React, Griffel and every Fluent UI v9 package come from Vellum's client
 build, its engine, rather than from each repo's bundle. The engine has each
-as a module of its own with all its exports, holding only the code the
-page's own bundle lacks and taking the rest from there. So a component's
-Fluent is the page's: it follows the page's theme, its tooltips and popovers
-open in the page's portal with that theme, its styles join the page's own,
-each rule once, and no code is on the site twice. A component imports them
-by their usual names, without a `package.json`:
+as a module of its own with all its exports, and uses the page's code where
+the page has it. So a component's Fluent is the page's: it follows the
+page's theme, its tooltips and popovers open in the page's portal with that
+theme, and its styles join the page's own, each rule once. The code the page
+doesn't have is the engine's own and loads only on a page with a component:
+the page's bundle stays as it would be without the engine, but for the names
+the engine imports from it. Of a module the page uses only part of, the
+engine has a copy of its own if the module holds no state (data such as
+Fluent's tokens, style hooks, icons), so the page needn't keep the rest of
+it. A component imports them by their usual names, without a
+`package.json`:
 
 - `react`, `react/jsx-runtime`, `react-dom`
 - `@fluentui/react-components`, the `@fluentui/react-*` packages it's made
