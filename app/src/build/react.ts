@@ -637,8 +637,12 @@ function checkManifest(text: string, path: string): void {
   }
   collect(manifest.overrides);
   collect(manifest.resolutions);
+  // What `catalog:` dependencies resolve to.
+  collect(manifest.catalog);
+  collect(manifest.catalogs);
+  // `file:` also after a protocol it qualifies (`git+file:`).
   const local = specs.find((s) =>
-    /^(file|link|workspace|portal):|^\.{0,2}[/\\]|^~[/\\]|^[a-z]:[/\\]/i.test(s),
+    /(^|\+)(file|link|workspace|portal):|^\.{0,2}[/\\]|^~[/\\]|^[a-z]:[/\\]/i.test(s),
   );
   if (local) {
     throw new Error(`${path}: "${local}" is a local path; packages come from a registry or a URL`);
