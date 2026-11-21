@@ -9,7 +9,8 @@ Vellum has two search surfaces, both running the same search in the
 reader's browser:
 
 1. A **command-palette dialog** (Ctrl K / Cmd K / `/`) scoped to the
-   current repo.
+   current repo. On the search and languages pages, which belong to no
+   repo, it searches every repo, except those with `excludeFromSearch`.
 2. A **full-page search** at `/{prefix}/search` that fans out across every
    repo in the site, except those with `excludeFromSearch`.
 
@@ -46,9 +47,19 @@ the code bigger.
 | `title:foo`    | pages whose title contains `foo`                |
 | `repo:slug`    | only that repo (useful in the full-page search) |
 
+`title:` and `-` take a quoted phrase too: `title:"getting started"`,
+`-"beta feature"`.
+
 A word in the title scores 5 and in the body 1; a phrase scores 8 and 3; a
 `title:` term scores 10. Results are sorted by score: the dialog shows the
 top 10, the full-page search the top 30.
+
+The full-page search completes qualifiers as you type. A word that starts
+to spell one (`ti`, `re`) offers `title:` or `repo:`, and after `repo:` it
+offers the slugs of the repos a cross-repo search covers. Tab takes the
+suggestion, ↓ then Enter picks another, and Esc hides them. A qualifier
+with nothing after it is ignored, so the rest of the query keeps its
+results while you finish typing.
 
 ## Synonyms
 
@@ -75,7 +86,8 @@ Features:
 
 - Debounced (180 ms): the search runs when typing pauses.
 - Keyboard navigation (↑ / ↓ / Enter / Esc).
-- Recent searches persisted in localStorage.
+- Recent searches persisted in localStorage, up to 8. Clear empties the
+  list, and × removes one.
 - "Search all repos for …" escalation link to the full-page search.
 
 ## The full-page search
@@ -92,13 +104,18 @@ Authors can link to a pre-populated query:
 
 Behaviour:
 
+- Until the reader types, the page shows a start screen: their recent
+  searches, a card per repo (except those with `excludeFromSearch`) that
+  scopes the search to it, and the query syntax.
 - `?q=…` populates the input on load.
 - `?repo=<slug>` scopes results to a single repo; omit (or set `*`) for
   cross-repo.
-- Repo filter chips below the input toggle the scope.
+- Once there's a query or a scope, repo tabs below the input switch the
+  scope.
 - URL stays in sync via `history.replaceState` so refresh / share keeps
   the query.
-- Recent searches are shared with the dialog.
+- Recent searches are shared with the dialog, and cleared or removed the
+  same way.
 
 ## Index files
 
@@ -129,8 +146,9 @@ either:
   treats those as partials: it neither renders nor indexes them.
 
 To leave a whole repo out of cross-repo search, set `excludeFromSearch` on
-it, as the bundled config does for the homepage repo. A real
-`frontmatter.noindex: true` flag for single pages is on the roadmap.
+it, as the bundled config does for the homepage repo. The search page then
+offers no card or tab for it, though `?repo=<slug>` still searches it. A
+real `frontmatter.noindex: true` flag for single pages is on the roadmap.
 
 ## Tuning
 

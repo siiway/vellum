@@ -9,7 +9,6 @@ import {
   Button,
   Caption1,
   Image,
-  Input,
   mergeClasses,
   Spinner,
   Tab,
@@ -26,11 +25,21 @@ import {
   Dismiss20Regular,
   Document24Regular,
   Search24Regular,
-  History24Regular,
+  History16Regular,
+  Dismiss12Regular,
 } from "@fluentui/react-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { isComposing } from "../keys";
+import { SearchField } from "./SearchField";
+import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
+import {
+  endsInBareQualifier,
+  suggestQuery,
+  type Qualifier,
+  type QuerySuggestion,
+} from "../querySuggestions";
 
 interface ExcerptOut {
   html: string;
@@ -57,9 +66,6 @@ interface SearchHit {
   repoDisplayName?: string;
 }
 
-const RECENT_KEY = "vellum.search.recent";
-const RECENT_MAX = 8;
-
 const useStyles = makeStyles({
   root: {
     minHeight: "calc(100vh - 52px)",
@@ -85,42 +91,62 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalS,
     color: tokens.colorNeutralForeground2,
   },
-  searchBar: {
-    position: "relative",
+  fieldWrap: { position: "relative" },
+  // The suggestions float over the page below the field, so the results
+  // don't shift as they come and go.
+  suggest: {
+    position: "absolute",
+    top: "calc(100% + 6px)",
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    display: "flex",
+    flexDirection: "column",
+    padding: "4px",
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    boxShadow: tokens.shadow16,
+  },
+  suggestRow: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusLarge,
-    paddingInline: "12px",
-    paddingBlock: "4px",
-    transition: "border-color 120ms ease",
+    gap: "12px",
+    minHeight: "34px",
+    paddingLeft: "10px",
+    paddingRight: "10px",
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground2,
+    cursor: "pointer",
+    // Hover only highlights: what Enter takes is the keyboard's pick.
     "&:hover": {
-      borderTopColor: tokens.colorNeutralStroke1Hover,
-      borderRightColor: tokens.colorNeutralStroke1Hover,
-      borderBottomColor: tokens.colorNeutralStroke1Hover,
-      borderLeftColor: tokens.colorNeutralStroke1Hover,
-    },
-    "&:focus-within": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: "1px",
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      color: tokens.colorNeutralForeground1,
     },
   },
-  searchIcon: {
-    color: tokens.colorNeutralForeground3,
+  suggestRowActive: {
+    backgroundColor: tokens.colorNeutralBackground1Hover,
+    color: tokens.colorNeutralForeground1,
+  },
+  suggestLabel: {
     flexShrink: 0,
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: "0.92em",
+    padding: "1px 6px",
+    borderRadius: tokens.borderRadiusSmall,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground1,
   },
-  input: {
+  // A touch screen has no Tab key.
+  suggestKbd: { "@media (hover: none)": { display: "none" } },
+  suggestDetail: {
     flex: 1,
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    borderTop: "0 !important" as any,
-    borderLeft: "0 !important" as any,
-    borderRight: "0 !important" as any,
-    borderBottom: "0 !important" as any,
-    backgroundColor: "transparent !important" as any,
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    "& input": { fontSize: tokens.fontSizeBase400 },
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: tokens.colorNeutralForeground3,
   },
   filters: {
     display: "flex",
@@ -306,23 +332,151 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     textAlign: "center",
   },
-  recentList: {
+  // The start screen, shown until the reader types: recent searches, a card
+  // per repo to scope the search, and the query syntax.
+  start: {
     display: "flex",
     flexDirection: "column",
-    gap: tokens.spacingVerticalXS,
-    marginTop: tokens.spacingVerticalM,
+    gap: "28px",
+    marginTop: "28px",
   },
-  recentRow: {
+  section: { display: "flex", flexDirection: "column", gap: "10px" },
+  sectionHeader: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    paddingInline: tokens.spacingHorizontalM,
-    paddingBlock: tokens.spacingVerticalS,
-    borderRadius: tokens.borderRadiusMedium,
-    cursor: "pointer",
+    justifyContent: "space-between",
+    gap: "8px",
+    minHeight: "24px",
+  },
+  sectionLabel: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground3,
+  },
+  chips: { display: "flex", flexWrap: "wrap", gap: "8px" },
+  // A recent search: the query, which searches it again, and a button that
+  // removes it.
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    maxWidth: "100%",
+    height: "30px",
+    boxSizing: "border-box",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: tokens.colorNeutralBackground1,
+    "&:hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
+  chipMain: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+    height: "100%",
+    paddingLeft: "10px",
+    paddingRight: "4px",
+    border: 0,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: "transparent",
     color: tokens.colorNeutralForeground2,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeBase300,
+    cursor: "pointer",
+    "& svg": { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+    "&:hover": { color: tokens.colorNeutralForeground1 },
+    "&:focus-visible": { outline: `2px solid ${tokens.colorStrokeFocus2}` },
+  },
+  chipRemove: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    width: "22px",
+    height: "22px",
+    marginRight: "4px",
+    padding: 0,
+    border: 0,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: "transparent",
+    color: tokens.colorNeutralForeground3,
+    cursor: "pointer",
     "&:hover": {
-      backgroundColor: tokens.colorSubtleBackgroundHover,
+      backgroundColor: tokens.colorNeutralBackground3Hover,
+      color: tokens.colorNeutralForeground1,
+    },
+    "&:focus-visible": { outline: `2px solid ${tokens.colorStrokeFocus2}` },
+  },
+  chipText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  repoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+    gap: "8px",
+  },
+  repoCard: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "12px 14px",
+    textAlign: "start",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground1,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    transition: "background-color 80ms ease, border-color 80ms ease",
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      borderTopColor: tokens.colorNeutralStroke1Hover,
+      borderRightColor: tokens.colorNeutralStroke1Hover,
+      borderBottomColor: tokens.colorNeutralStroke1Hover,
+      borderLeftColor: tokens.colorNeutralStroke1Hover,
+    },
+    "&:focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
+    },
+  },
+  repoLogo: {
+    width: "24px",
+    height: "24px",
+    objectFit: "contain",
+    flexShrink: 0,
+  },
+  repoIcon: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+  repoText: { display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 },
+  repoName: {
+    fontSize: tokens.fontSizeBase300,
+    lineHeight: tokens.lineHeightBase300,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  repoDesc: {
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+    color: tokens.colorNeutralForeground3,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  },
+  tips: {
+    display: "grid",
+    gridTemplateColumns: "max-content 1fr",
+    alignItems: "baseline",
+    columnGap: "16px",
+    rowGap: "8px",
+    margin: 0,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground2,
+    "& dd": { margin: 0 },
+    "& code": {
+      fontFamily: tokens.fontFamilyMonospace,
+      fontSize: "0.92em",
+      padding: "1px 6px",
+      borderRadius: tokens.borderRadiusSmall,
+      backgroundColor: tokens.colorNeutralBackground3,
       color: tokens.colorNeutralForeground1,
     },
   },
@@ -360,7 +514,7 @@ const useStyles = makeStyles({
 
 export function SearchPage() {
   const styles = useStyles();
-  const { data, navigate, t } = useVellum();
+  const { data, navigate, navigations, t } = useVellum();
   const repos = data.config.repos;
 
   // Initial state is intentionally empty so SSR and the first client render
@@ -384,21 +538,101 @@ export function SearchPage() {
   // partially-offscreen cards into full view.
   const keyboardNavRef = useRef(false);
 
-  // After mount: pull ?q= and ?repo= out of the URL, then load recent searches
-  // and focus the input. Runs once.
+  // Whether the reader has started a search; until then the page shows the
+  // start screen.
+  const started = q.trim() !== "";
+  // The repos a cross-repo search covers, offered as scopes on the start
+  // screen.
+  const searchable = useMemo(() => repos.filter((r) => !r.excludeFromSearch), [repos]);
+  const word = t("ui.search.tip.word");
+  const tips: [string, string][] = [
+    [t("ui.search.tip.phraseExample"), t("ui.search.tip.phrase")],
+    [`-${word}`, t("ui.search.tip.exclude")],
+    [`title:${word}`, t("ui.search.tip.title")],
+    [
+      `repo:${(searchable[0] ?? repos[0])?.slug ?? t("ui.search.tip.slug")}`,
+      t("ui.search.tip.repo"),
+    ],
+  ];
+
+  // Completions for the word at the caret (querySuggestions.ts), shown under
+  // the field while it has focus. `repo:` only narrows a cross-repo search,
+  // so a scoped one isn't offered it.
+  const suggestId = useId();
+  const [caret, setCaret] = useState<number | null>(null);
+  const [focused, setFocused] = useState(false);
+  // Escape hides the suggestions until the query is edited.
+  const [dismissed, setDismissed] = useState(false);
+  // While an input method composes (pinyin `ti` on its way to 题), the text
+  // isn't the reader's word yet.
+  const [composing, setComposing] = useState(false);
+  // -1 while none is picked: Enter then still opens the top result.
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const suggestions = useMemo(() => {
+    if (!focused || dismissed || composing) return [];
+    const qualifiers: Qualifier[] = [{ key: "title", detail: t("ui.search.tip.title") }];
+    if (!scope) qualifiers.push({ key: "repo", detail: t("ui.search.tip.repo") });
+    return suggestQuery(q, caret ?? q.length, qualifiers, scope ? [] : searchable);
+  }, [focused, q, dismissed, composing, caret, scope, searchable, t]);
+  useEffect(() => setActiveSuggestion(-1), [q, caret]);
+
+  // Sets the query from code (the URL, a recent search, the clear button):
+  // the caret goes to its end, and Esc's dismissal ends.
+  const setQuery = useCallback((next: string) => {
+    setQ(next);
+    setCaret(null);
+    setDismissed(false);
+  }, []);
+
+  const acceptSuggestion = useCallback((s: QuerySuggestion) => {
+    setQ(s.query);
+    setCaret(s.caret);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(s.caret, s.caret);
+    });
+  }, []);
+
+  // Tab takes the picked suggestion, or the first; ↑/↓ pick one and Enter
+  // takes it; Escape hides them. With none shown, keys go on to the page's
+  // result navigation below.
+  const onFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length === 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isComposing(e.nativeEvent)) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActiveSuggestion((i) => Math.max(-1, Math.min(suggestions.length - 1, i + step)));
+    } else if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      acceptSuggestion(suggestions[Math.max(0, activeSuggestion)]!);
+    } else if (e.key === "Enter" && activeSuggestion >= 0) {
+      e.preventDefault();
+      acceptSuggestion(suggestions[activeSuggestion]!);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setDismissed(true);
+    }
+  };
+
+  // Pull ?q= and ?repo= out of the URL: after mount, and again when a
+  // navigation lands here with another query (the dialog's "Search all repos
+  // for …" on this page), which keeps this component mounted.
   useEffect(() => {
-    const initialQ = readQueryParam();
-    const initialScope = readScopeParam(repos.map((r) => r.slug));
-    if (initialQ) setQ(initialQ);
-    if (initialScope) setScope(initialScope);
+    setQuery(readQueryParam());
+    setScope(readScopeParam(repos.map((r) => r.slug)));
     setUrlHydrated(true);
-    inputRef.current?.focus();
-    try {
-      const stored = localStorage.getItem(RECENT_KEY);
-      if (stored) setRecent(JSON.parse(stored));
-    } catch {}
-    // Effect intentionally runs only once. repos is stable for a given config.
+    // repos is stable for a given config.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigations]);
+
+  // After mount: load recent searches and focus the input. Runs once.
+  useEffect(() => {
+    inputRef.current?.focus();
+    // A reader who clicked into the field before the page hydrated focused it
+    // already; focus() then fires no focus event.
+    setFocused(document.activeElement === inputRef.current);
+    setRecent(loadRecent());
   }, []);
 
   // Debounced search. The same search that powers the dialog, but with
@@ -408,6 +642,8 @@ export function SearchPage() {
     if (!q.trim()) {
       setHits([]);
       setActiveIdx(0);
+      // A search still pending was cancelled, and its finally skips this.
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -482,17 +718,19 @@ export function SearchPage() {
   // Flat list mirrors the visual order so arrow-key navigation matches what the user sees.
   const flat = useMemo(() => grouped.flatMap(([, g]) => g.hits), [grouped]);
 
-  const persistRecent = useCallback(
-    (query: string) => {
-      if (!query.trim()) return;
-      try {
-        const next = [query, ...recent.filter((r) => r !== query)].slice(0, RECENT_MAX);
-        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-        setRecent(next);
-      } catch {}
-    },
-    [recent],
-  );
+  const persistRecent = useCallback((query: string) => setRecent(addRecent(query)), []);
+
+  // Removing a recent search unmounts the focused ×, so focus moves on to
+  // the next one (the previous, after the last), or to the field when none
+  // is left.
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const removeRecentAt = useCallback((query: string, index: number) => {
+    setRecent(removeRecent(query));
+    requestAnimationFrame(() => {
+      const left = chipsRef.current?.querySelectorAll<HTMLElement>("[data-remove-recent]") ?? [];
+      (left[Math.min(index, left.length - 1)] ?? inputRef.current)?.focus();
+    });
+  }, []);
 
   // Navigate to a hit, optionally jumping to a specific section anchor inside
   // the page. Passing `sectionSlug` lets each excerpt link to the exact
@@ -512,7 +750,8 @@ export function SearchPage() {
   // to be the sole "carrier" of keyboard navigation on a full-page list.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Taken already, e.g. by the field's suggestions, or an input method's.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isComposing(e)) return;
       // Don't fight global shortcuts the Layout owns (Ctrl/Cmd+K, "/").
       if (e.key === "ArrowDown") {
         if (flat.length === 0) return;
@@ -561,107 +800,240 @@ export function SearchPage() {
     <main className={styles.root}>
       <header className={styles.header}>
         <Title2 as="h1" className={styles.title}>
-          {t("ui.search.allRepos")}
+          {t("ui.search")}
         </Title2>
         <Body1 as="p" className={styles.subtitle}>
           {t("ui.search.fullPageSubtitle")}
         </Body1>
       </header>
 
-      <div className={styles.searchBar}>
-        <Search24Regular className={styles.searchIcon} />
-        <Input
+      <div className={styles.fieldWrap}>
+        <SearchField
           ref={inputRef}
-          className={styles.input}
           size="large"
-          appearance="filled-lighter"
           placeholder={t("ui.search.placeholder")}
           value={q}
-          onChange={(_, d) => setQ(d.value)}
+          onChange={(e, d) => {
+            setQ(d.value);
+            setCaret(e.target.selectionStart);
+            setDismissed(false);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={onFieldKeyDown}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggestions.length > 0}
+          aria-controls={suggestions.length > 0 ? suggestId : undefined}
+          aria-activedescendant={
+            activeSuggestion >= 0 ? `${suggestId}-${activeSuggestion}` : undefined
+          }
           aria-label={t("ui.search")}
           autoComplete="off"
           spellCheck={false}
-        />
-        {loading && <Spinner size="extra-tiny" />}
-        {q && (
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={<Dismiss20Regular />}
-            onClick={() => {
-              setQ("");
-              inputRef.current?.focus();
-            }}
-            aria-label={t("ui.search.clear")}
-            className={styles.clearBtn}
-          />
-        )}
-      </div>
+        >
+          {loading && <Spinner size="extra-tiny" />}
+          {q && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<Dismiss20Regular />}
+              onClick={() => {
+                setQuery("");
+                inputRef.current?.focus();
+              }}
+              aria-label={t("ui.search.clear")}
+              className={styles.clearBtn}
+            />
+          )}
+        </SearchField>
 
-      {/* FluentUI TabList for the repo scope filter. Tab values are strings
-          (FluentUI's TabValue is `string | number`), so we map the null
-          "all repos" sentinel to a literal "__all__" at the boundary. */}
-      <TabList
-        className={styles.filters}
-        selectedValue={scope ?? "__all__"}
-        onTabSelect={(_, d) => setScope(d.value === "__all__" ? null : (d.value as string))}
-        aria-label={t("ui.search.scope")}
-        appearance="subtle"
-        size="medium"
-      >
-        <Tab value="__all__">{t("ui.search.allRepos")}</Tab>
-        {repos.map((r) => (
-          <Tab
-            key={r.slug}
-            value={r.slug}
-            icon={
-              r.logo ? <Image src={r.logo} alt="" className={styles.filterChipIcon} /> : undefined
-            }
+        {suggestions.length > 0 && (
+          <div
+            id={suggestId}
+            role="listbox"
+            aria-label={t("ui.search.suggestions")}
+            className={styles.suggest}
+            // Keep focus in the field when a suggestion is clicked.
+            onMouseDown={(e) => e.preventDefault()}
           >
-            {r.displayName}
-          </Tab>
-        ))}
-      </TabList>
-
-      <div className={styles.statusRow}>
-        <span>
-          {loading
-            ? `${t("ui.search.searching")}…`
-            : q.trim()
-              ? hits.length === 0
-                ? ""
-                : `${hits.length} ${hits.length === 1 ? t("ui.search.result") : t("ui.search.results")}`
-              : ""}
-        </span>
-      </div>
-
-      <div ref={listRef} className={styles.results}>
-        {!q && recent.length > 0 && (
-          <section className={styles.group}>
-            <div className={styles.groupHeader}>
-              <History24Regular className={styles.hitIcon} />
-              <Text className={styles.groupTitle}>{t("ui.search.recent")}</Text>
-            </div>
-            <div className={styles.recentList}>
-              {recent.map((r, i) => (
-                <div key={i} className={styles.recentRow} onClick={() => setQ(r)}>
-                  <History24Regular />
-                  <Text>{r}</Text>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {!q && recent.length === 0 && (
-          <div className={styles.empty}>
-            <Search24Regular fontSize={48} />
-            <Body1Strong>{t("ui.search.start")}</Body1Strong>
-            <Caption1>{t("ui.search.crossRepoHint")}</Caption1>
+            {suggestions.map((s, i) => (
+              <div
+                key={s.label}
+                id={`${suggestId}-${i}`}
+                role="option"
+                aria-selected={i === activeSuggestion}
+                className={mergeClasses(
+                  styles.suggestRow,
+                  i === activeSuggestion && styles.suggestRowActive,
+                )}
+                onClick={() => acceptSuggestion(s)}
+              >
+                <code className={styles.suggestLabel}>{s.label}</code>
+                <span className={styles.suggestDetail}>{s.detail}</span>
+                {i === Math.max(0, activeSuggestion) && (
+                  <span className={mergeClasses(styles.kbd, styles.suggestKbd)} aria-hidden="true">
+                    {t("ui.search.tabKey")}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         )}
+      </div>
 
-        {q && !loading && hits.length === 0 && (
+      {/* FluentUI TabList for the repo scope filter, once there's a query or
+          a scope: the start screen's repo cards stand in for it before.
+          Tab values are strings (FluentUI's TabValue is `string | number`),
+          so we map the null "all repos" sentinel to a literal "__all__" at
+          the boundary. */}
+      {(started || scope) && (
+        <TabList
+          className={styles.filters}
+          selectedValue={scope ?? "__all__"}
+          onTabSelect={(_, d) => setScope(d.value === "__all__" ? null : (d.value as string))}
+          aria-label={t("ui.search.scope")}
+          appearance="subtle"
+          size="medium"
+        >
+          <Tab value="__all__">{t("ui.search.allRepos")}</Tab>
+          {/* The repos a cross-repo search covers, and an excluded one
+              when the URL scopes the search to it (?repo=). */}
+          {repos
+            .filter((r) => !r.excludeFromSearch || r.slug === scope)
+            .map((r) => (
+              <Tab
+                key={r.slug}
+                value={r.slug}
+                icon={
+                  r.logo ? (
+                    <Image src={r.logo} alt="" className={styles.filterChipIcon} />
+                  ) : undefined
+                }
+              >
+                {r.displayName}
+              </Tab>
+            ))}
+        </TabList>
+      )}
+
+      {!started && (
+        <div className={styles.start}>
+          {recent.length > 0 && (
+            <section className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionLabel}>{t("ui.search.recent")}</h2>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  onClick={() => {
+                    setRecent(clearRecent());
+                    inputRef.current?.focus();
+                  }}
+                  aria-label={t("ui.search.clearRecent")}
+                >
+                  {t("ui.search.clear")}
+                </Button>
+              </div>
+              <div ref={chipsRef} className={styles.chips}>
+                {recent.map((r, i) => (
+                  <span key={r} className={styles.chip}>
+                    <button
+                      type="button"
+                      className={styles.chipMain}
+                      onClick={() => {
+                        setQuery(r);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      <History16Regular />
+                      <span className={styles.chipText}>{r}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.chipRemove}
+                      data-remove-recent
+                      onClick={() => removeRecentAt(r, i)}
+                      aria-label={`${t("ui.search.removeRecent")}: ${r}`}
+                    >
+                      <Dismiss12Regular />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Scoping only means something with more than one repo. Once a
+              scope is picked, the tabs show it instead. */}
+          {!scope && searchable.length > 1 && (
+            <section className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionLabel}>{t("ui.search.inRepo")}</h2>
+              </div>
+              <div className={styles.repoGrid}>
+                {searchable.map((r) => (
+                  <button
+                    key={r.slug}
+                    type="button"
+                    className={styles.repoCard}
+                    onClick={() => {
+                      setScope(r.slug);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {r.logo ? (
+                      <Image src={r.logo} alt="" className={styles.repoLogo} />
+                    ) : (
+                      <Document24Regular className={styles.repoIcon} />
+                    )}
+                    <span className={styles.repoText}>
+                      <span className={styles.repoName}>{r.displayName}</span>
+                      {r.description && <span className={styles.repoDesc}>{r.description}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionLabel}>{t("ui.search.tips")}</h2>
+            </div>
+            <dl className={styles.tips}>
+              {tips.map(([example, text]) => (
+                <Fragment key={example}>
+                  <dt>
+                    <code>{example}</code>
+                  </dt>
+                  <dd>{text}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          </section>
+        </div>
+      )}
+
+      {started && (
+        <div className={styles.statusRow}>
+          <span>
+            {loading
+              ? `${t("ui.search.searching")}…`
+              : hits.length > 0
+                ? `${hits.length} ${hits.length === 1 ? t("ui.search.result") : t("ui.search.results")}`
+                : ""}
+          </span>
+        </div>
+      )}
+
+      <div ref={listRef} className={styles.results}>
+        {/* Not while the query ends in a bare `repo:`: the reader is
+            mid-word. */}
+        {started && !loading && hits.length === 0 && !endsInBareQualifier(q) && (
           <div className={styles.empty}>
             <Search24Regular fontSize={48} />
             <Body1Strong>
@@ -758,23 +1130,25 @@ export function SearchPage() {
         })}
       </div>
 
-      <div className={styles.hintBar}>
-        <span className={styles.hintRow}>
-          <span className={styles.kbd}>
-            <ArrowUp16Regular />
+      {flat.length > 0 && (
+        <div className={styles.hintBar}>
+          <span className={styles.hintRow}>
+            <span className={styles.kbd}>
+              <ArrowUp16Regular />
+            </span>
+            <span className={styles.kbd}>
+              <ArrowDown16Regular />
+            </span>
+            {t("ui.search.navigate")}
           </span>
-          <span className={styles.kbd}>
-            <ArrowDown16Regular />
+          <span className={styles.hintRow}>
+            <span className={styles.kbd}>
+              <ArrowEnterLeft24Regular style={{ width: 12, height: 12 }} />
+            </span>
+            {t("ui.search.openHint")}
           </span>
-          {t("ui.search.navigate")}
-        </span>
-        <span className={styles.hintRow}>
-          <span className={styles.kbd}>
-            <ArrowEnterLeft24Regular style={{ width: 12, height: 12 }} />
-          </span>
-          {t("ui.search.openHint")}
-        </span>
-      </div>
+        </div>
+      )}
     </main>
   );
 }

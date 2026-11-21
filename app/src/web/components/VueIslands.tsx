@@ -25,8 +25,8 @@ export function VueIslands() {
   const locale = data.route.localeCode;
 
   useEffect(() => {
-    // Nothing to do if the page can't have islands.
-    if (components.length === 0) return;
+    // Nothing to do if the page can't have islands: they're a repo's.
+    if (components.length === 0 || !repoSlug) return;
 
     let cancelled = false;
 

@@ -22,6 +22,7 @@ import {
   ArrowEnterLeft24Regular,
   ArrowUp16Regular,
   ArrowDown16Regular,
+  Dismiss16Regular,
   Dismiss20Regular,
   History24Regular,
   Globe24Regular,
@@ -30,6 +31,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { isComposing } from "../keys";
+import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
 
 interface ExcerptOut {
   html: string;
@@ -49,9 +52,6 @@ interface SearchHit {
   url: string;
   repo: string;
 }
-
-const RECENT_KEY = "vellum.search.recent";
-const RECENT_MAX = 6;
 
 const useStyles = makeStyles({
   // Command-palette surface, as in Prism: pinned near the top rather than
@@ -247,6 +247,19 @@ const useStyles = makeStyles({
     fontSize: "11px",
     lineHeight: 1,
   },
+  recentHeader: {
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    paddingRight: "6px",
+  },
+  recentText: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   recentRow: {
     display: "flex",
     alignItems: "center",
@@ -307,16 +320,15 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       return;
     }
     setTimeout(() => inputRef.current?.focus(), 50);
-    try {
-      const stored = localStorage.getItem(RECENT_KEY);
-      if (stored) setRecent(JSON.parse(stored));
-    } catch {}
+    setRecent(loadRecent());
   }, [open]);
 
   // Debounced search.
   useEffect(() => {
     if (!q.trim()) {
       setHits([]);
+      // A search still pending was cancelled, and its finally skips this.
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -326,7 +338,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         const { search } = await import("../../shared/search");
         const found = await search(data.config, {
           q,
-          repo: data.route.repoSlug,
+          // A page of no repo (search, languages) searches every repo.
+          repo: data.route.repoSlug ?? "*",
+          limit: 10,
           locale: data.route.localeCode,
         });
         if (!cancelled) {
@@ -359,17 +373,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   // Flat list for keyboard navigation that preserves visual order.
   const flat = useMemo(() => grouped.flatMap(([, h]) => h), [grouped]);
 
-  const persistRecent = useCallback(
-    (query: string) => {
-      if (!query.trim()) return;
-      try {
-        const next = [query, ...recent.filter((r) => r !== query)].slice(0, RECENT_MAX);
-        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-        setRecent(next);
-      } catch {}
-    },
-    [recent],
-  );
+  const persistRecent = useCallback((query: string) => setRecent(addRecent(query)), []);
 
   const goToHit = useCallback(
     (hit: SearchHit) => {
@@ -394,6 +398,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   // Keyboard navigation.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // An input method's keys: Enter commits its text, not a result.
+      if (isComposing(e.nativeEvent)) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setActiveIdx((i) => Math.min(flat.length - 1, i + 1));
@@ -452,11 +458,36 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
             <div ref={listRef} className={styles.results}>
               {!q && recent.length > 0 && (
                 <div className={styles.group}>
-                  <Caption1 className={styles.groupHeader}>{t("ui.search.recent")}</Caption1>
-                  {recent.map((r, i) => (
-                    <div key={i} className={styles.recentRow} onClick={() => setQ(r)}>
+                  <div className={styles.recentHeader}>
+                    <Caption1 className={styles.groupHeader}>{t("ui.search.recent")}</Caption1>
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      onClick={() => {
+                        setRecent(clearRecent());
+                        inputRef.current?.focus();
+                      }}
+                      aria-label={t("ui.search.clearRecent")}
+                    >
+                      {t("ui.search.clear")}
+                    </Button>
+                  </div>
+                  {recent.map((r) => (
+                    <div key={r} className={styles.recentRow} onClick={() => setQ(r)}>
                       <History24Regular />
-                      <Text>{r}</Text>
+                      <Text className={styles.recentText}>{r}</Text>
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<Dismiss16Regular />}
+                        onClick={(e) => {
+                          // The row searches the query again; this only removes it.
+                          e.stopPropagation();
+                          setRecent(removeRecent(r));
+                          inputRef.current?.focus();
+                        }}
+                        aria-label={`${t("ui.search.removeRecent")}: ${r}`}
+                      />
                     </div>
                   ))}
                 </div>

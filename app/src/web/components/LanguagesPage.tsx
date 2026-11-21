@@ -194,16 +194,16 @@ type Bucket = (typeof CONTINENT_ORDER)[number];
 
 export function LanguagesPage() {
   const styles = useStyles();
-  const { data, navigate, t } = useVellum();
+  const { data, navigate, navigations, t } = useVellum();
   const locales = data.config.site.locales;
   const defaultLocale = data.config.site.defaultLocale;
 
-  const [target, setTarget] = useState<string>(() => readTargetFromUrl());
-  useEffect(() => {
-    const onPop = () => setTarget(readTargetFromUrl());
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  // Read after mount, as the build rendered the page without a target:
+  // reading the URL during the first render would differ from that HTML,
+  // and hydration keeps the HTML's links. Read again when a navigation
+  // (back and forward among them) lands here.
+  const [target, setTarget] = useState("");
+  useEffect(() => setTarget(readTargetFromUrl()), [navigations]);
 
   const [filter, setFilter] = useState("");
 
@@ -240,8 +240,10 @@ export function LanguagesPage() {
 
   function urlFor(locale: LocaleConfig): string {
     const prefix = locale.prefix ? `/${locale.prefix}` : "";
-    if (!target || target === "/") return prefix || "/";
-    return `${prefix}${target}`.replace(/\/+/g, "/").replace(/\/$/, "") || prefix || "/";
+    // The page's query (the search page's ?q=) is kept as it is.
+    const { path, query } = splitTarget(target);
+    if (!path || path === "/") return (prefix || "/") + query;
+    return (`${prefix}${path}`.replace(/\/+/g, "/").replace(/\/$/, "") || prefix || "/") + query;
   }
 
   function onChoose(e: React.MouseEvent<HTMLAnchorElement>, locale: LocaleConfig) {
@@ -362,7 +364,15 @@ function readTargetFromUrl(): string {
   const raw = params.get("page") ?? "";
   if (!raw) return "";
   if (!raw.startsWith("/")) return "";
-  if (raw.includes("..")) return "";
+  if (splitTarget(raw).path.includes("..")) return "";
   if (/^\/\//.test(raw)) return "";
   return raw;
+}
+
+// A target page's path, and its query from the `?` on.
+function splitTarget(target: string): { path: string; query: string } {
+  const cut = target.indexOf("?");
+  return cut < 0
+    ? { path: target, query: "" }
+    : { path: target.slice(0, cut), query: target.slice(cut) };
 }
