@@ -88,14 +88,24 @@ jobs:
         env:
           VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
 
-      # The site, and the build and the docs repo clones for update-content.yml.
+      # The docs repo clones, for update-content.yml to fetch into rather
+      # than clone again. From here, as git wrote them: an artifact would
+      # lose what git needs (empty directories), and a public repository's
+      # artifacts are anyone's to download.
+      - name: Save the clones
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/.sources
+          key: sources-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # The output, for the deploy job: the site, and the build that
+      # update-content.yml updates.
       - name: Upload the build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build
-          path: |
-            app/dist
-            app/.sources
+          path: app/dist
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
@@ -143,24 +153,21 @@ jobs:
             echo "::error::The build has symbolic links."
             exit 1
           fi
-          rm -rf dist .sources
-          mv "$BUILD/dist" dist
-          mv "$BUILD/.sources" .sources
+          rm -rf dist
+          mv "$BUILD" dist
 
       - name: Deploy
         run: bunx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      # The build and the docs repo clones, for update-content.yml to update.
-      # Production runs this commit now, so a failed save mustn't fail the
-      # run: Update content goes by the last successful Deploy, and without a
-      # cached build of it, builds everything from that commit.
+      # The build, for update-content.yml to update. Production runs this
+      # commit now, so a failed save mustn't fail the run: Update content
+      # goes by the last successful Deploy, and without a cached build of it,
+      # builds everything from that commit.
       - name: Save the build
         continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            app/dist
-            app/.sources
+          path: app/dist
           key: site-${{ github.run_id }}-${{ github.run_attempt }}

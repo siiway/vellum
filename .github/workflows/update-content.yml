@@ -87,11 +87,18 @@ jobs:
         if: steps.deploy.outputs.skip != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            app/dist
-            app/.sources
+          path: app/dist
           key: site-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: site-
+
+      # Any clones will do: the update fetches what it renders.
+      - name: Restore the clones
+        if: steps.deploy.outputs.skip != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/.sources
+          key: sources-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sources-
 
       - name: Check out the deployed app
         if: steps.deploy.outputs.skip != 'true'
@@ -135,14 +142,21 @@ jobs:
         env:
           VELLUM_GITHUB_TOKEN: ${{ secrets.VELLUM_GITHUB_TOKEN }}
 
+      # As in deploy.yml, from here.
+      - name: Save the clones
+        if: steps.update.outputs.changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/.sources
+          key: sources-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Upload the build
         if: steps.update.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build
-          path: |
-            app/dist
-            app/.sources
+          path: app/dist
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
@@ -214,9 +228,8 @@ jobs:
             echo "::error::The build has symbolic links."
             exit 1
           fi
-          rm -rf dist .sources
-          mv "$BUILD/dist" dist
-          mv "$BUILD/.sources" .sources
+          rm -rf dist
+          mv "$BUILD" dist
 
       - name: Deploy
         if: steps.again.outputs.skip != 'true'
@@ -228,7 +241,5 @@ jobs:
         if: steps.again.outputs.skip != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            app/dist
-            app/.sources
+          path: app/dist
           key: site-${{ github.run_id }}-${{ github.run_attempt }}
