@@ -557,12 +557,12 @@ export function SearchPage() {
   const suggestId = useId();
   const [caret, setCaret] = useState<number | null>(null);
   const [focused, setFocused] = useState(false);
-  // The query Escape hid the suggestions for; they come back when it changes.
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  // Escape hides the suggestions until the query is edited.
+  const [dismissed, setDismissed] = useState(false);
   // -1 while none is picked: Enter then still opens the top result.
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const suggestions = useMemo(() => {
-    if (!focused || q === dismissed) return [];
+    if (!focused || dismissed) return [];
     const qualifiers: Qualifier[] = [{ key: "title", detail: t("ui.search.tip.title") }];
     if (!scope) qualifiers.push({ key: "repo", detail: t("ui.search.tip.repo") });
     return suggestQuery(q, caret ?? q.length, qualifiers, scope ? [] : searchable);
@@ -595,7 +595,7 @@ export function SearchPage() {
       acceptSuggestion(suggestions[activeSuggestion]!);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      setDismissed(q);
+      setDismissed(true);
     }
   };
 
@@ -780,6 +780,7 @@ export function SearchPage() {
           onChange={(e, d) => {
             setQ(d.value);
             setCaret(e.target.selectionStart);
+            setDismissed(false);
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onFocus={() => setFocused(true)}
