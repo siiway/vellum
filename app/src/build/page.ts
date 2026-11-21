@@ -7,9 +7,15 @@
 // render. The loaders are memoized per repo, so every page after the first
 // gets them for free.
 
-import type { BootstrapPayload, RepoConfig, RouteContext, VellumConfig } from "../shared/types";
+import type {
+  BootstrapPayload,
+  ReactComponentFiles,
+  RepoConfig,
+  RouteContext,
+  VellumConfig,
+} from "../shared/types";
 import { localeSourcePrefix } from "../shared/types";
-import type { Block } from "../shared/markdown";
+import { componentNames, type Block } from "../shared/markdown";
 import { docsRootPrefix, fetchFirstSourceFile, readSourceFile, lastCommit } from "./sources";
 import { normalizeInternal, renderMarkdown, splitHref } from "./markdown/index";
 import { renderMermaidThemed } from "./markdown/diagrams";
@@ -19,6 +25,7 @@ import type { LinkContext } from "./markdown/links";
 import { loadXrefMap, type XrefMap } from "./xrefmap";
 import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./sidebar";
 import { loadVueComponents } from "./vue";
+import type { ReactBundle } from "./react";
 import { pageMarkdown } from "./page-markdown";
 import { markdownUrl } from "./routes";
 
@@ -34,9 +41,11 @@ export type PageBuild =
   // `candidates` are the source paths that were tried.
   | { found: false; candidates: string[] };
 
+// `react`: the repo's React components (react.ts).
 export async function buildPagePayload(
   site: VellumConfig,
   route: RouteContext,
+  react: ReactBundle,
 ): Promise<PageBuild> {
   const defaultLocale = site.site.defaultLocale;
 
@@ -136,6 +145,16 @@ export async function buildPagePayload(
     [chromeP, lastUpdatedP],
   );
 
+  // The repo's React components the page uses. A name its VitePress theme
+  // registers too stays the Vue component.
+  const used = componentNames(rendered.ast);
+  const reactComponents: Record<string, ReactComponentFiles> = {};
+  for (const [name, files] of Object.entries(react.components)) {
+    if (used.has(name) && !repoComponents.some((c) => c.name === name)) {
+      reactComponents[name] = files;
+    }
+  }
+
   // Social-link resolution: prefer what we extracted from the repo's own
   // vellum.json / VitePress config; fall back to the per-repo config in
   // vellum.config.json (RepoConfig.socialLinks). The site-level fallback is
@@ -182,6 +201,7 @@ export async function buildPagePayload(
       repoNav,
       repoSocialLinks,
       repoComponents,
+      reactComponents: Object.keys(reactComponents).length ? reactComponents : undefined,
       // Pages are rendered light; the head script switches before first paint.
       initialTheme: "light",
       page: {

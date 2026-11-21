@@ -9,12 +9,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
+import { COPY } from "./vite-engine";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 /** The package directory a module id belongs to, relative to the app, or
- *  null for app code and virtual modules. */
+ *  null for app code and virtual modules. The engine's copy of a module
+ *  (scripts/vite-engine.ts) belongs to the module's. */
 export function packageDir(id: string, root = ROOT): string | null {
+  if (id.startsWith(COPY)) id = id.slice(COPY.length);
   if (id.startsWith("\0")) return null;
   const file = path.resolve(root, id.split("?")[0]!).replaceAll("\\", "/");
   const at = file.lastIndexOf("/node_modules/");

@@ -1,4 +1,8 @@
 {
+  "components": {
+    "Counter": "_components/Counter.tsx",
+    "Feedback": "_components/Feedback.tsx"
+  },
   "locales": {
     "root": {
       "groups": [

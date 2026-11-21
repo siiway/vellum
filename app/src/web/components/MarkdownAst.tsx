@@ -68,6 +68,7 @@ import {
 import { CODE_KEY_ATTR, MARKDOWN_ROOT, STATIC_RUN } from "../prerendered";
 import { format } from "../../shared/i18n";
 import { MermaidBlock } from "./MermaidBlock";
+import { RepoComponent } from "./RepoComponent";
 import { rewriteVueTags } from "./VueIslands";
 import { useVellum } from "../context";
 import {
@@ -605,44 +606,67 @@ function BlockNode({ block, styles }: { block: Block; styles: ReturnType<typeof 
   }
 }
 
-// Renders inline HTML from markdown, with two extensions on top of plain
+// Renders inline HTML from markdown, with three extensions on top of plain
 // dangerouslySetInnerHTML:
 //   1. Author-written Vue tags (registered via the repo's VitePress theme) are
 //      swapped for placeholder divs that VueIslands hydrates after mount.
-//   2. Registered React components used in markdown — e.g. `<Button>` — are
+//   2. The repo's own React components (vellum.json#components) render with
+//      the module the build bundled each into (RepoComponent).
+//   3. Registered React components used in markdown — e.g. `<Button>` — are
 //      mounted as actual React elements (FluentUI primitives, etc.).
 // The HTML parser is configured to preserve tag casing so `<Button>` (React
 // component) is distinguishable from `<button>` (plain HTML element).
 function HtmlBlock({ value }: { value: string }) {
   const { data } = useVellum();
-  const rewritten = rewriteVueTags(value, data.repoComponents ?? []);
-  // Suspense boundary so the lazy FluentUI components in the registry resolve
-  // without taking down the rest of the page while loading.
+  const rewritten = closeComponentTags(rewriteVueTags(value, data.repoComponents ?? []));
+  const options = useMemo(
+    () => parserOptions(Object.keys(data.reactComponents ?? {})),
+    [data.reactComponents],
+  );
+  // Suspense boundary so a lazy component of the registry that isn't loaded
+  // yet (after a client-side navigation) suspends only this block.
   return (
     <Suspense fallback={<div dangerouslySetInnerHTML={{ __html: rewritten }} />}>
-      <div>{parseHtmlToReact(rewritten)}</div>
+      <div>{parseHtml(rewritten, options)}</div>
     </Suspense>
   );
 }
 
-const parserOptions: HTMLReactParserOptions = {
-  // htmlparser2 lowercases tags by default; we need the original casing to
-  // tell `<Button>` (React) from `<button>` (HTML).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  htmlparser2: { lowerCaseTags: false, lowerCaseAttributeNames: false } as any,
-  replace(node) {
-    if (!(node instanceof DomElement)) return undefined;
-    const name = node.name;
-    if (!isRegisteredReactComponent(name)) return undefined;
-    const Comp = REACT_COMPONENTS[name]!;
-    const props = mapAttribsToProps(node.attribs);
-    const children = domToReact(node.children as DOMNode[], parserOptions);
-    return createElement(Comp, props, children);
-  },
-};
+// `<Name />` closes the component, as in JSX. Parsed as HTML it would stay
+// open, and what follows it in the block would become its children.
+// Attribute values may hold `>` and `/>`: `<Counter label="x > y" />`.
+function closeComponentTags(html: string): string {
+  return html.replace(
+    /<([A-Z][A-Za-z0-9]*)(\s(?:[^<>"']|"[^"]*"|'[^']*')*?)?\s*\/>/g,
+    "<$1$2></$1>",
+  );
+}
 
-function parseHtmlToReact(html: string) {
-  return parseHtml(html, parserOptions);
+// `repoComponents`: the names of the repo's own React components on the page.
+function parserOptions(repoComponents: readonly string[]): HTMLReactParserOptions {
+  const options: HTMLReactParserOptions = {
+    // htmlparser2 lowercases tags by default; we need the original casing to
+    // tell `<Button>` (React) from `<button>` (HTML).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    htmlparser2: { lowerCaseTags: false, lowerCaseAttributeNames: false } as any,
+    replace(node) {
+      if (!(node instanceof DomElement)) return undefined;
+      const name = node.name;
+      const own = repoComponents.includes(name);
+      if (!own && !isRegisteredReactComponent(name)) return undefined;
+      const props = mapAttribsToProps(node.attribs);
+      const children = domToReact(node.children as DOMNode[], options);
+      if (own) {
+        return (
+          <RepoComponent name={name} props={props}>
+            {children}
+          </RepoComponent>
+        );
+      }
+      return createElement(REACT_COMPONENTS[name]!, props, children);
+    },
+  };
+  return options;
 }
 
 // Maps raw HTML attributes onto React prop names + coerces obvious value types.
@@ -832,9 +856,9 @@ function UnresolvedXref({
 
 // An inline `<Name>` tag, its open/close pair (or self-closing form) merged
 // by the build. A Vue component the repo registered gets a placeholder that
-// VueIslands mounts, as in HTML blocks; a registered React component is
-// mounted; any other name renders its children as plain text, so authors
-// see their content even when they typoed the tag name.
+// VueIslands mounts, as in HTML blocks; a React component of the repo's own
+// or the registry is mounted; any other name renders its children as plain
+// text, so authors see their content even when they typoed the tag name.
 function InlineComponent({
   node,
   styles,
@@ -860,13 +884,20 @@ function InlineComponent({
       <InlineNode node={c} styles={styles} />
     </Fragment>
   ));
+  if (data.reactComponents && Object.hasOwn(data.reactComponents, node.name)) {
+    return (
+      <RepoComponent name={node.name} props={node.props}>
+        {kids}
+      </RepoComponent>
+    );
+  }
   if (isRegisteredReactComponent(node.name)) {
     const Comp = REACT_COMPONENTS[node.name]!;
     const element = createElement(Comp, node.props, kids.length ? kids : undefined);
-    // Wrap in Suspense so lazy-loaded primitives (Spinner, Tag, Switch …
-    // see reactComponents.ts) don't bubble a suspend up to renderToString
-    // — which would crash the page. Fallback is the children themselves
-    // so the text stays visible during the lazy chunk load.
+    // A lazy primitive (Spinner, Tag, Switch … see reactComponents.ts) that
+    // isn't loaded yet, after a client-side navigation, suspends only
+    // itself. Fallback is the children themselves so the text stays
+    // visible during the lazy chunk load.
     return <Suspense fallback={<>{kids}</>}>{element}</Suspense>;
   }
   return <>{kids}</>;

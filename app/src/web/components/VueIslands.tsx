@@ -10,6 +10,7 @@
 import { useEffect, useRef } from "react";
 import { useVellum } from "../context";
 import { vueComponentPath } from "../../shared/paths";
+import { format } from "../../shared/i18n";
 
 interface MountedIsland {
   el: HTMLElement;
@@ -17,7 +18,7 @@ interface MountedIsland {
 }
 
 export function VueIslands() {
-  const { data, theme } = useVellum();
+  const { data, theme, t } = useVellum();
   const mountedRef = useRef<MountedIsland[]>([]);
   const components = data.repoComponents ?? [];
   const repoSlug = data.route.repoSlug;
@@ -116,7 +117,11 @@ export function VueIslands() {
             return app;
           } catch (e) {
             console.error(`[vellum] Failed to mount Vue component <${name} />`, e);
-            el.innerHTML = `<div style="padding:12px;border:1px solid #c50;border-radius:6px;color:#c50;font-family:monospace;font-size:12px">Failed to load Vue component &lt;${name} /&gt;: ${escape((e as Error).message ?? String(e))}</div>`;
+            const message = format(t("ui.component.error"), {
+              name,
+              message: (e as Error).message ?? String(e),
+            });
+            el.innerHTML = `<div style="padding:12px;border:1px solid #c50;border-radius:6px;color:#c50;font-family:monospace;font-size:12px">${escape(message)}</div>`;
             return null;
           }
         })();

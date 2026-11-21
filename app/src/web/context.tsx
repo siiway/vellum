@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { BootstrapPayload } from "../shared/types";
-import { canonicalHref, payloadPath } from "../shared/paths";
+import { PAYLOAD_LINK_ID, canonicalHref, payloadPath } from "../shared/paths";
 import { t as translate, type MessageKey } from "../shared/i18n";
 
 // useLayoutEffect on the server logs a warning and runs nothing. We need its sync
@@ -227,6 +227,14 @@ export function VellumProvider({
           window.location.href = url.toString();
           return;
         }
+        // A page of another client build: this tab is from before a deploy.
+        // Its components, and the engine they import, are the newer build's,
+        // which this app can't run with its own. Load the page anew.
+        const running = runningClient();
+        if (payload.client && running && payload.client !== running) {
+          window.location.href = url.toString();
+          return;
+        }
         // Keep current theme so the user's toggle survives navigation.
         payload.initialTheme = theme;
         // popstate already changed the URL for us - don't touch history there.
@@ -301,7 +309,7 @@ export function VellumProvider({
     let frame = 0;
     const maxFrames = 12;
     const tick = () => {
-      const el = document.getElementById(slug);
+      const el = fragmentTarget(slug);
       if (el) {
         // Instant (not smooth): a cross-page jump should behave like the browser's
         // native hash navigation. Smooth scroll also locks its target Y at start,
@@ -417,10 +425,29 @@ function routableLink(target: EventTarget | null): URL | null {
   return url;
 }
 
-function scrollToHash(slug: string) {
-  const target = document.getElementById(slug);
+// The client build running in this tab, as the page it loaded with names it.
+function runningClient(): string | undefined {
+  return document.getElementById(PAYLOAD_LINK_ID)?.dataset.client;
+}
+
+function scrollToHash(fragment: string) {
+  const target = fragmentTarget(fragment);
   if (target) {
     target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+// The element a URL's fragment points to, found as the browser finds it: by
+// the fragment as written, then decoded. URL.hash keeps anything but ASCII
+// encoded, so the heading `安全` is `#%E5%AE%89%E5%85%A8` there.
+function fragmentTarget(fragment: string): HTMLElement | null {
+  const target = document.getElementById(fragment);
+  if (target) return target;
+  try {
+    return document.getElementById(decodeURIComponent(fragment));
+  } catch {
+    // Not valid percent-encoding.
+    return null;
   }
 }
 

@@ -24,7 +24,7 @@ bun run update
    built from, and for each repo the commit and the pages it rendered.
 2. Asks GitHub for each repo's current commit (`git ls-remote`, no clone).
 3. For each repo whose commit moved: fetches it, deletes its old pages,
-   search indexes and Vue components, and renders it again.
+   search indexes and Vue and React components, and renders it again.
 4. Rewrites `sitemap.xml` and the state.
 
 Unchanged repos aren't fetched or rendered, so an update with nothing to do

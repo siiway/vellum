@@ -21,7 +21,7 @@
     "format:check": "cd .. && prettier --check . --config app/.prettierrc.json --ignore-path .gitignore --ignore-path app/.prettierignore",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"scripts/**/*.ts\"",
     "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"scripts/**/*.ts\"",
-    "clean": "rm -rf dist .sources .wrangler/tmp"
+    "clean": "rm -rf dist .sources .cache .wrangler/tmp"
   },
   "dependencies": {
     "@babel/parser": "^8.1.0",

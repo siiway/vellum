@@ -2,9 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 import { bundledPackagesPlugin } from "./scripts/vite-packages";
+import { enginePlugin } from "./scripts/vite-engine";
+import { bindingExportsPlugin } from "./scripts/vite-exports";
 
 export default defineConfig({
-  plugins: [react(), bundledPackagesPlugin()],
+  plugins: [react(), bundledPackagesPlugin(), enginePlugin(), bindingExportsPlugin()],
   resolve: {
     alias: {
       "@web": resolve(__dirname, "src/web"),
@@ -22,13 +24,12 @@ export default defineConfig({
         entryFileNames: "assets/vellum.[hash].js",
         chunkFileNames: "assets/[name].[hash].js",
         assetFileNames: "assets/[name].[hash][extname]",
-        // Split React + the FluentUI icon set into stable vendor chunks so
-        // they cache independently of app code. We deliberately *don't* split
-        // @fluentui/react-components — doing so defeats tree-shaking and the
-        // lazy() loads in reactComponents.ts (the bundler would pre-eagerly
-        // include every FluentUI component into one giant chunk).
+        // Split React into a stable vendor chunk so it caches independently
+        // of app code. We deliberately *don't* split FluentUI: a manual chunk
+        // takes the modules it imports too, and every page would load the
+        // ones only the lazy() loads in reactComponents.ts or the engine
+        // (scripts/vite-engine.ts) use.
         manualChunks(id) {
-          if (id.includes("node_modules/@fluentui/react-icons")) return "fluentui-icons";
           if (
             id.includes("node_modules/react-dom/") ||
             id.includes("node_modules/react/") ||
