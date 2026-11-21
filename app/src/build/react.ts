@@ -148,6 +148,18 @@ function loadReactComponents(repo: RepoConfig): Promise<ReactComponentRef[]> {
       const path = posix.join(root, file.replace(/^\/+/, ""));
       if (!outsideRepo(path)) components.push({ name, path });
     }
+    // A component's module is `{Name}.js`: two names that differ only in
+    // case would be one file on Windows and macOS.
+    const byCase = new Map<string, string>();
+    for (const { name } of components) {
+      const other = byCase.get(name.toLowerCase());
+      if (other) {
+        throw new Error(
+          `${root}vellum.json of ${repo.slug} lists components ${other} and ${name}, whose files would clash where case doesn't count: rename one`,
+        );
+      }
+      byCase.set(name.toLowerCase(), name);
+    }
     return components.sort((a, b) => (a.name < b.name ? -1 : 1));
   });
 }
@@ -220,8 +232,8 @@ export function bundleReactComponents(
       const css = await run(repo, {
         entryPoints: sheets.map((sheet) => {
           let name = posix.basename(sheet, ".css").replace(/[^\w-]/g, "_") || "style";
-          while (names.has(name)) name += "_";
-          names.add(name);
+          while (names.has(name.toLowerCase())) name += "_";
+          names.add(name.toLowerCase());
           return { in: sheet, out: name };
         }),
         entryNames: "[name]-[hash]",
