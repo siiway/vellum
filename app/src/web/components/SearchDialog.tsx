@@ -338,6 +338,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           q,
           // A page of no repo (search, languages) searches every repo.
           repo: data.route.repoSlug ?? "*",
+          limit: 10,
           locale: data.route.localeCode,
         });
         if (!cancelled) {

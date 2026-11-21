@@ -9,7 +9,8 @@ Vellum has two search surfaces, both running the same search in the
 reader's browser:
 
 1. A **command-palette dialog** (Ctrl K / Cmd K / `/`) scoped to the
-   current repo.
+   current repo. On the search and languages pages, which belong to no
+   repo, it searches every repo, except those with `excludeFromSearch`.
 2. A **full-page search** at `/{prefix}/search` that fans out across every
    repo in the site, except those with `excludeFromSearch`.
 

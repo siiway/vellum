@@ -289,6 +289,7 @@ export interface SearchParams {
   // A repo slug, or "*" for every repo that isn't excluded from search.
   repo: string;
   locale: string;
+  // The most hits to return: by default 30 across every repo, 10 in one.
   limit?: number;
   // Wider excerpt windows, more excerpts per hit and a longer no-match
   // intro. The full-page search opts in; the compact dialog stays narrow.
@@ -318,7 +319,8 @@ function loadIndex(locale: string, repo: string): Promise<IndexedDoc[]> {
 export async function search(config: VellumConfig, params: SearchParams): Promise<SearchHit[]> {
   const q = params.q.trim();
   if (!q) return [];
-  const limit = Math.max(1, Math.min(50, Math.trunc(params.limit ?? 10)));
+  const wantAll = params.repo === "*";
+  const limit = Math.max(1, Math.min(50, Math.trunc(params.limit ?? (wantAll ? 30 : 10))));
   const excerptOpts = params.verbose ? VERBOSE_EXCERPT_OPTS : COMPACT_EXCERPT_OPTS;
 
   // The site-level parse only decides the target list (it honours the
@@ -328,7 +330,6 @@ export async function search(config: VellumConfig, params: SearchParams): Promis
 
   // `excludeFromSearch` is honoured for cross-repo search, where the reader
   // didn't name a repo. A search scoped to an excluded repo still runs.
-  const wantAll = params.repo === "*";
   let targets = wantAll
     ? config.repos.filter((r) => !r.excludeFromSearch)
     : config.repos.filter((r) => r.slug === params.repo);
@@ -337,22 +338,16 @@ export async function search(config: VellumConfig, params: SearchParams): Promis
   }
   if (targets.length === 0) return [];
 
-  const perRepoLimit = wantAll ? Math.max(limit, 10) : limit;
   const repoHits = await Promise.all(
     targets.map(async (repo) => {
       const repoParsed = parseQuery(q, resolveAliasMap(config.site, repo));
       const docs = await loadIndex(params.locale, repo.slug);
-      return score(docs, repoParsed, repo.slug, repo.displayName, excerptOpts).slice(
-        0,
-        perRepoLimit,
-      );
+      return score(docs, repoParsed, repo.slug, repo.displayName, excerptOpts).slice(0, limit);
     }),
   );
 
   const merged = repoHits.flat().sort((a, b) => b.score - a.score);
-  return (wantAll ? merged.slice(0, Math.max(limit, 30)) : merged.slice(0, limit)).map(
-    ({ score: _s, ...rest }) => rest,
-  );
+  return merged.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
 // Render the small slice of inline markdown that survives stripMarkdown into
