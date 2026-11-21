@@ -41,8 +41,11 @@ export function loadComponent(files: ReactComponentFiles): LoadingComponent {
       if (!mod.default) throw new Error(`${url} exports no component`);
       return (entry.loaded = mod.default as ComponentType<Props>);
     })();
-    // Rendering it shows a failure; loading it ahead doesn't.
-    entry.loading.catch(() => {});
+    // Rendering it shows a failure; loading it ahead doesn't. The next page
+    // that shows it tries again: a network error mustn't last till a reload.
+    entry.loading.catch(() => {
+      if (components.get(url) === entry) components.delete(url);
+    });
     entry.lazy = lazy(() => entry.loading.then((c) => ({ default: c })));
     components.set(url, (component = entry));
   }
