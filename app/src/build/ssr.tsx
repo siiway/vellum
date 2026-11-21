@@ -17,6 +17,7 @@ import { preloadComponents } from "../web/reactComponents";
 import type { BootstrapPayload, LocaleConfig, SocialLink, VellumConfig } from "../shared/types";
 import { PAYLOAD_LINK_ID } from "../shared/paths";
 import type { ClientAssets } from "./assets";
+import { orderStyleRules } from "./style-order";
 
 // The registry's lazy components, loaded before any page renders: pages then
 // have them rendered rather than suspended, which the client would have to
@@ -60,9 +61,11 @@ export function renderPage(
     );
   }
 
-  // With all the attributes Griffel gives them (bucket, priority, media): the
-  // client's renderer reads the page's rules from them rather than adding
-  // each again (rehydrateRendererCache).
+  // In the order the client would have added them (style-order.ts), with all
+  // the attributes Griffel gives them (bucket, priority, media): the client's
+  // renderer reads the page's rules from them rather than adding each again
+  // (rehydrateRendererCache).
+  orderStyleRules(renderer, html);
   const styleHtml = renderToStyleElements(renderer)
     .map((el) => {
       const { dangerouslySetInnerHTML, ...attrs } = el.props as Record<string, unknown>;
