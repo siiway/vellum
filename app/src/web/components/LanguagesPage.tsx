@@ -194,16 +194,16 @@ type Bucket = (typeof CONTINENT_ORDER)[number];
 
 export function LanguagesPage() {
   const styles = useStyles();
-  const { data, navigate, t } = useVellum();
+  const { data, navigate, navigations, t } = useVellum();
   const locales = data.config.site.locales;
   const defaultLocale = data.config.site.defaultLocale;
 
-  const [target, setTarget] = useState<string>(() => readTargetFromUrl());
-  useEffect(() => {
-    const onPop = () => setTarget(readTargetFromUrl());
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  // Read after mount, as the build rendered the page without a target:
+  // reading the URL during the first render would differ from that HTML,
+  // and hydration keeps the HTML's links. Read again when a navigation
+  // (back and forward among them) lands here.
+  const [target, setTarget] = useState("");
+  useEffect(() => setTarget(readTargetFromUrl()), [navigations]);
 
   const [filter, setFilter] = useState("");
 
