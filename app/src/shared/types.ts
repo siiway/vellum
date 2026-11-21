@@ -367,4 +367,9 @@ export interface BootstrapPayload {
   // is from, as a key of its full payload. The page's HTML names it too;
   // when the two differ, the browser kept the page from before a deploy.
   build?: string;
+  // The client build the page's files are for (ClientAssets.id), which its
+  // HTML names too. A client of another build, in a tab kept from before a
+  // deploy, loads the page anew rather than run the page's components and
+  // the engine they import, which are the newer build's.
+  client?: string;
 }

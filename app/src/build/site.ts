@@ -293,6 +293,7 @@ async function writePage(
   root = SITE_DIR,
   markdown?: string,
 ): Promise<void> {
+  payload = { ...payload, client: opts.assets.id };
   const url = payload.route.canonicalUrl;
   const json = JSON.stringify(payload);
   const hydration = { url: hydrationPath(url), build: contentKey(json) };
@@ -363,7 +364,7 @@ function shellPayload(
 
 // Writes the locale's 404 page to `file`, and its payload.
 async function writeNotFound(locale: LocaleConfig, file: string, opts: RenderOptions) {
-  const payload = notFoundPayload(locale);
+  const payload: BootstrapPayload = { ...notFoundPayload(locale), client: opts.assets.id };
   const hydration = {
     url: notFoundPayloadPath(locale.code),
     build: contentKey(JSON.stringify(payload)),

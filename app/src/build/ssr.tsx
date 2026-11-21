@@ -85,7 +85,7 @@ export function renderPage(
   // payload is preloaded the same way; `crossorigin` makes the preload the
   // same request as the client's fetch(), so it reuses the response.
   const jsTags = [
-    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(hydration.url)}" as="fetch" crossorigin data-build="${escapeAttr(hydration.build)}">`,
+    `<link rel="preload" id="${PAYLOAD_LINK_ID}" href="${escapeAttr(hydration.url)}" as="fetch" crossorigin data-build="${escapeAttr(hydration.build)}" data-client="${escapeAttr(assets.id)}">`,
     ...assets.preload.map((href) => `<link rel="modulepreload" href="${href}">`),
     ...assets.js.map((src) => `<script type="module" src="${src}"></script>`),
   ].join("");

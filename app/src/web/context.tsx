@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { BootstrapPayload } from "../shared/types";
-import { canonicalHref, payloadPath } from "../shared/paths";
+import { PAYLOAD_LINK_ID, canonicalHref, payloadPath } from "../shared/paths";
 import { t as translate, type MessageKey } from "../shared/i18n";
 
 // useLayoutEffect on the server logs a warning and runs nothing. We need its sync
@@ -227,6 +227,14 @@ export function VellumProvider({
           window.location.href = url.toString();
           return;
         }
+        // A page of another client build: this tab is from before a deploy.
+        // Its components, and the engine they import, are the newer build's,
+        // which this app can't run with its own. Load the page anew.
+        const running = runningClient();
+        if (payload.client && running && payload.client !== running) {
+          window.location.href = url.toString();
+          return;
+        }
         // Keep current theme so the user's toggle survives navigation.
         payload.initialTheme = theme;
         // popstate already changed the URL for us - don't touch history there.
@@ -415,6 +423,11 @@ function routableLink(target: EventTarget | null): URL | null {
   // Skip build output that isn't a page.
   if (url.pathname.startsWith("/_vellum/") || url.pathname.startsWith("/assets/")) return null;
   return url;
+}
+
+// The client build running in this tab, as the page it loaded with names it.
+function runningClient(): string | undefined {
+  return document.getElementById(PAYLOAD_LINK_ID)?.dataset.client;
 }
 
 function scrollToHash(fragment: string) {

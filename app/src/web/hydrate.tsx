@@ -73,4 +73,13 @@ async function start(): Promise<void> {
 
 // Without a payload the page stays as the build rendered it: readable, with
 // links that load like on any static page.
-start().catch((e) => console.error("[vellum] could not load the page's payload", e));
+//
+// Once a window. A newer build's engine, which a tab kept from before a
+// deploy can still load for a page it renders, imports this module too, its
+// own copy: that one mustn't start a second app over this one.
+const STARTED = Symbol.for("vellum.started");
+const started = window as unknown as Record<symbol, boolean>;
+if (!started[STARTED]) {
+  started[STARTED] = true;
+  start().catch((e) => console.error("[vellum] could not load the page's payload", e));
+}
