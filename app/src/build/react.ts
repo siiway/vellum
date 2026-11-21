@@ -379,6 +379,9 @@ function repoModules(
         if (namespace === "server") {
           return { path: path.slice("component:".length), namespace: "component" };
         }
+        // The component's module, from its entry: a path in the repo, even
+        // one that starts like an engine package's name (`react/Card.tsx`).
+        if (namespace === "component") return repoFile(path, path);
         // An engine module's URL, which an engine-require module imports.
         if (engineUrls.has(path)) return { path, external: true, sideEffects: false };
 
@@ -410,8 +413,6 @@ function repoModules(
           };
         }
 
-        // The component's module, from its entry.
-        if (namespace === "component") return repoFile(path, path);
         if (namespace === "file") return installed(args, args.resolveDir);
         if (/^\.\.?\//.test(path)) return repoFile(posix.join(posix.dirname(importer), path), path);
         if (packages && /^[@\w]/.test(path)) return installed(args, packages.dir);
