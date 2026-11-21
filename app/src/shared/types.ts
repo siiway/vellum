@@ -72,9 +72,9 @@ export function continentName(code: ContinentCode | "OTHER"): string {
 export function localeSourcePrefix(
   locale: Pick<LocaleConfig, "code">,
   defaultLocaleCode: string,
-  repo: Pick<RepoConfig, "localeDirs">,
+  repo: Pick<RepoConfig, "localeDirs"> | undefined,
 ): string {
-  const dir = repo.localeDirs?.[locale.code];
+  const dir = repo?.localeDirs?.[locale.code];
   if (dir !== undefined) return dir.replace(/^\/+|\/+$/g, "");
   return locale.code === defaultLocaleCode ? "" : locale.code;
 }
@@ -310,15 +310,24 @@ export interface PageMeta {
 // Forward declaration so types.ts doesn't have to import the markdown module.
 export type { MarkdownAst } from "./markdown";
 
+// Where a page is. A page that belongs to no repo (search, languages, 404)
+// has no repo, slug or version.
 export interface RouteContext {
-  repoSlug: string;
-  repo: RepoConfig;
-  version: RepoVersion;
+  repoSlug?: string;
+  repo?: RepoConfig;
+  version?: RepoVersion;
   localeCode: string;
   // path relative to docsRoot (without locale prefix), no leading slash, no trailing .md
   pagePath: string;
   // canonical URL path inside the site, with leading slash and no trailing slash
   canonicalUrl: string;
+}
+
+// The route of a repo's page.
+export interface RepoRoute extends RouteContext {
+  repoSlug: string;
+  repo: RepoConfig;
+  version: RepoVersion;
 }
 
 export interface ErrorState {

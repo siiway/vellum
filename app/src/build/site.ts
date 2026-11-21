@@ -384,14 +384,14 @@ function shellPayload(
   layout: "search" | "languages",
   canonicalUrl: string,
 ): BootstrapPayload {
-  const title = t(locale.code, layout === "search" ? "ui.search.allRepos" : "ui.languages.title");
+  const title = t(locale.code, layout === "search" ? "ui.search" : "ui.languages.title");
   const description = t(
     locale.code,
-    layout === "search" ? "ui.search.start" : "ui.languages.subtitle",
+    layout === "search" ? "ui.search.fullPageSubtitle" : "ui.languages.subtitle",
   );
   return {
     config: SITE,
-    route: stubRoute(SITE, locale, layout, canonicalUrl),
+    route: stubRoute(locale, layout, canonicalUrl),
     sidebar: [],
     initialTheme: "light",
     page: {
@@ -425,7 +425,7 @@ function notFoundPayload(locale: LocaleConfig): BootstrapPayload {
   const message = t(locale.code, "ui.notFound.message");
   return {
     config: SITE,
-    route: stubRoute(SITE, locale, "index", localeBase(locale) || "/"),
+    route: stubRoute(locale, "index", localeBase(locale) || "/"),
     sidebar: [],
     initialTheme: "light",
     error: {

@@ -4,7 +4,13 @@
 // URLs are locale-first: `/{localePrefix}/{repoSlug}/{page}`. The homepage
 // repo's index is the landing page at `/{localePrefix}`.
 
-import type { LocaleConfig, RepoConfig, RouteContext, VellumConfig } from "../shared/types";
+import type {
+  LocaleConfig,
+  RepoConfig,
+  RepoRoute,
+  RouteContext,
+  VellumConfig,
+} from "../shared/types";
 import { sourceLocale } from "../shared/types";
 import { landingPath } from "../shared/paths";
 import { defaultVersion, docsRootPrefix, listSourceFiles } from "./sources";
@@ -21,7 +27,7 @@ export function pageRoute(
   repo: RepoConfig,
   locale: LocaleConfig,
   pagePath: string,
-): RouteContext {
+): RepoRoute {
   const base = localeBase(locale);
   const canonicalUrl =
     repo.slug === site.site.homepageRepo && pagePath === "index"
@@ -37,23 +43,13 @@ export function pageRoute(
   };
 }
 
-// A route for pages that belong to no repo (search, languages, 404): the
-// shell needs one to render against.
+// The route of a page that belongs to no repo (search, languages, 404).
 export function stubRoute(
-  site: VellumConfig,
   locale: LocaleConfig,
   pagePath: string,
   canonicalUrl: string,
 ): RouteContext {
-  const repo = site.repos[0]!;
-  return {
-    repoSlug: repo.slug,
-    repo,
-    version: defaultVersion(repo),
-    localeCode: locale.code,
-    pagePath,
-    canonicalUrl,
-  };
+  return { localeCode: locale.code, pagePath, canonicalUrl };
 }
 
 // The repo's pages, as sorted page paths per locale code, from the files

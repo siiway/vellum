@@ -11,6 +11,7 @@ import {
 } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { canonicalHref } from "../../shared/paths";
 import type { ErrorState } from "../../shared/types";
 
 const useStyles = makeStyles({
@@ -115,6 +116,12 @@ export function ErrorPage({ error }: { error: ErrorState }) {
   const styles = useStyles();
   const { data, t } = useVellum();
   const site = data.config.site;
+  // Both stay in the reader's locale. A 404 belongs to no repo, so search
+  // goes to the locale's cross-repo page.
+  const localePrefix = site.locales.find((l) => l.code === data.route.localeCode)?.prefix;
+  const base = localePrefix ? `/${localePrefix}` : "";
+  const homeUrl = canonicalHref(base || "/", data.config, data.route.localeCode);
+  const searchUrl = `${base}/search`;
 
   return (
     <main className={styles.root}>
@@ -140,15 +147,10 @@ export function ErrorPage({ error }: { error: ErrorState }) {
           <Button icon={<ArrowLeft20Regular />} onClick={() => window.history.back()}>
             {t("ui.notFound.back")}
           </Button>
-          <Button
-            icon={<Search20Regular />}
-            onClick={() =>
-              window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))
-            }
-          >
+          <Button icon={<Search20Regular />} as="a" href={searchUrl}>
             {t("ui.notFound.search")}
           </Button>
-          <Button appearance="primary" icon={<Home20Regular />} as="a" href="/">
+          <Button appearance="primary" icon={<Home20Regular />} as="a" href={homeUrl}>
             {t("ui.notFound.home")}
           </Button>
         </div>
