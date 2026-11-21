@@ -178,7 +178,7 @@ export async function syncRepo(repo: RepoConfig): Promise<void> {
   if (!isGitHub(repo)) return;
   const dir = repoDir(repo);
   const ref = repoRef(repo, defaultVersion(repo));
-  if (await isClone(dir)) {
+  if (await hasClone(repo)) {
     await git(["fetch", "--quiet", "--filter=blob:none", "origin", ref], dir);
     await git(["reset", "--quiet", "--hard", "FETCH_HEAD"], dir);
   } else {
@@ -196,14 +196,19 @@ export async function syncRepo(repo: RepoConfig): Promise<void> {
   }
 }
 
-// Whether `dir` holds a clone git can use. A broken one (its refs lost, say)
-// isn't one to git, which would take the repository above it, Vellum's, for
-// it instead.
-async function isClone(dir: string): Promise<boolean> {
+// Whether the repo's directory holds a clone git can use, of the repository
+// the config names. A broken one (its refs lost, say) isn't one to git, which
+// would take the repository above it, Vellum's, for it instead. One of
+// another repository is what's left after `owner` or `repo` changed: fetching
+// its origin would build the old repository's files.
+export async function hasClone(repo: RepoConfig): Promise<boolean> {
+  const dir = repoDir(repo);
   if (!existsSync(join(dir, ".git"))) return false;
   try {
     const top = (await git(["rev-parse", "--show-toplevel"], dir)).trim();
-    return (await realpath(top)) === (await realpath(dir));
+    if ((await realpath(top)) !== (await realpath(dir))) return false;
+    const origin = (await git(["remote", "get-url", "origin"], dir)).trim();
+    return origin === remoteUrl(repo);
   } catch {
     return false;
   }

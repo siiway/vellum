@@ -52,7 +52,8 @@ terminal while `wrangler dev` keeps serving:
 | Nothing; you want new docs repo commits | `bun run update`                 |
 
 `--no-fetch` reuses the repos already cloned under `.sources/` instead of
-fetching them again.
+fetching them again. A repo with no clone there yet, or with a clone of another
+repository because you changed its `owner` or `repo`, is still cloned.
 
 ## 3. Configure your repos
 

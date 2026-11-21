@@ -17,7 +17,9 @@ xref, and the OPS extensions all work identically for either source.
 The default. The build clones the repo into `app/.sources/{slug}` at
 `branch` (or the default entry of `versions`), and later builds update that
 clone. It's a partial clone (`--filter=blob:none`): the full history, which
-"last updated" needs, but only the files of the current commit.
+"last updated" needs, but only the files of the current commit. When the clone
+there is of another repository (you changed `owner` or `repo`), the build
+clones the new one in its place, `--no-fetch` included.
 
 ```json
 {
