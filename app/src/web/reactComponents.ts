@@ -27,7 +27,7 @@ import {
   TabList,
   Tooltip,
 } from "@fluentui/react-components";
-import { createElement, lazy, useState, type ComponentType } from "react";
+import { createElement, forwardRef, lazy, useState, type ComponentType } from "react";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyComponent = ComponentType<any>;
@@ -38,12 +38,14 @@ function lazyComponent(load: () => Promise<AnyComponent>): AnyComponent {
   let loading: Promise<AnyComponent> | null = null;
   const preload = () => (loading ??= load().then((c) => (loaded = c)));
   const Suspending = lazy(() => preload().then((c) => ({ default: c })));
-  function LazyComponent(props: object) {
+  // With the ref it's given: a Tooltip or Popover positions itself by its
+  // child's.
+  const LazyComponent = forwardRef<unknown, object>(function LazyComponent(props, ref) {
     // Picked once: one that started out suspending keeps the lazy type, as
     // switching types would remount it.
     const [type] = useState(() => loaded ?? Suspending);
-    return createElement(type, props);
-  }
+    return createElement(type, { ...props, ref });
+  });
   return Object.assign(LazyComponent, { preload });
 }
 

@@ -6,7 +6,16 @@
 // The build renders it into the page's HTML, and hydrate.tsx loads the
 // page's components before it hydrates, so the page hydrates as rendered.
 
-import { Children, Component, Suspense, createElement, useState, type ReactNode } from "react";
+import {
+  Children,
+  Component,
+  Suspense,
+  createElement,
+  forwardRef,
+  useState,
+  type ForwardedRef,
+  type ReactNode,
+} from "react";
 import { tokens } from "@fluentui/react-components";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
@@ -15,15 +24,20 @@ import { format } from "../../shared/i18n";
 
 type Props = Record<string, unknown>;
 
-export function RepoComponent({
-  name,
-  props,
-  children,
-}: {
-  name: string;
-  props: Props;
-  children?: ReactNode;
-}) {
+// With the ref it's given, which the component gets: a Tooltip or Popover
+// around the tag positions itself by it.
+export const RepoComponent = forwardRef(function RepoComponent(
+  {
+    name,
+    props,
+    children,
+  }: {
+    name: string;
+    props: Props;
+    children?: ReactNode;
+  },
+  ref: ForwardedRef<unknown>,
+) {
   const { data } = useVellum();
   const files = data.reactComponents?.[name];
   if (!files) return <>{children}</>;
@@ -31,20 +45,22 @@ export function RepoComponent({
   // next page.
   return (
     <Boundary key={data.route.canonicalUrl} name={name}>
-      <Instance component={loadComponent(files)} props={props}>
+      <Instance component={loadComponent(files)} props={props} innerRef={ref}>
         {children}
       </Instance>
     </Boundary>
   );
-}
+});
 
 function Instance({
   component,
   props,
+  innerRef,
   children,
 }: {
   component: LoadingComponent;
   props: Props;
+  innerRef: ForwardedRef<unknown>;
   children?: ReactNode;
 }) {
   // Picked once, as switching would remount it: a component that has loaded
@@ -52,9 +68,12 @@ function Instance({
   // navigation, shows the tag's content until it has.
   const [loaded] = useState(() => component.loaded);
   const content = Children.count(children) ? children : undefined;
-  if (loaded) return createElement(loaded, props, content);
+  const withRef = innerRef ? { ...props, ref: innerRef } : props;
+  if (loaded) return createElement(loaded, withRef, content);
   return (
-    <Suspense fallback={<>{children}</>}>{createElement(component.lazy, props, content)}</Suspense>
+    <Suspense fallback={<>{children}</>}>
+      {createElement(component.lazy, withRef, content)}
+    </Suspense>
   );
 }
 
