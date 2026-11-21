@@ -65,12 +65,25 @@ export function repoDir(repo: RepoConfig): string {
 // what a docs repo can make the build read ends up on the site, so a link to
 // a file of the machine (`/proc/self/environ`, with the CI secrets) must not
 // be followed.
-export async function readSourceFile(repo: RepoConfig, path: string): Promise<string | null> {
+export function readSourceFile(repo: RepoConfig, path: string): Promise<string | null> {
+  return readSource(repo, path, (full) => readFile(full, "utf8"));
+}
+
+// The same, as bytes: an image or a font.
+export function readSourceBytes(repo: RepoConfig, path: string): Promise<Uint8Array | null> {
+  return readSource(repo, path, (full) => readFile(full));
+}
+
+async function readSource<T>(
+  repo: RepoConfig,
+  path: string,
+  read: (full: string) => Promise<T>,
+): Promise<T | null> {
   try {
     const root = await realpath(repoDir(repo));
     const full = await realpath(resolve(root, path));
     if (!isInside(root, full)) return null;
-    return await readFile(full, "utf8");
+    return await read(full);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") return null;

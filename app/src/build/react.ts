@@ -7,7 +7,8 @@
 // The build bundles all of a repo's components in one esbuild run, into
 // `/_vellum/react/{repo}/`: a module per component (`{Name}.js`), the chunks
 // they share (`chunk-{hash}.js`), so code that several components use loads
-// once, and a file per stylesheet they import (`{name}-{hash}.css`).
+// once, a file per stylesheet they import (`{name}-{hash}.css`), and the
+// images and fonts those point to.
 //
 // React, Griffel and Fluent UI v9 aren't in those: they come from the engine
 // (scripts/vite-engine.ts), the client build's modules of them, which the
@@ -53,7 +54,7 @@ import { reactFilePath } from "../shared/paths";
 import * as vellumModule from "../web/vellum";
 import { provideComponent } from "../web/repoComponents";
 import type { ClientAssets } from "./assets";
-import { APP_ROOT, docsRootPrefix, readSourceFile } from "./sources";
+import { APP_ROOT, docsRootPrefix, readSourceBytes, readSourceFile } from "./sources";
 import { memo } from "./memo";
 
 interface ReactComponentRef {
@@ -64,8 +65,8 @@ interface ReactComponentRef {
 
 export interface ReactBundle {
   // The files to publish in the repo's directory of them (reactDir), by
-  // name.
-  files: Map<string, string>;
+  // name: text, or the bytes of an image or a font.
+  files: Map<string, string | Uint8Array>;
   // What each component loads, by name, sorted.
   components: Record<string, ReactComponentFiles>;
   // The components for the build to render with: a CommonJS module whose
@@ -95,6 +96,26 @@ const LOADERS: Record<string, Loader> = {
 
 // Tried, in order, after an import without one.
 const EXTENSIONS = [".tsx", ".ts", ".jsx", ".js", ".json"];
+
+// The files a stylesheet's url() can point to, of the repo or its packages
+// (an image, a font): each is published beside the stylesheets.
+const ASSETS: Record<string, Loader> = Object.fromEntries(
+  [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".avif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+  ].map((ext) => [ext, "file"]),
+);
 
 // Where the build installs the packages of repos, a directory per
 // package.json and bun.lock. Kept between builds.
@@ -210,7 +231,13 @@ export function bundleReactComponents(
       for (const [key, output] of Object.entries(css.metafile.outputs)) {
         if (output.entryPoint) fileOf.set(output.entryPoint, url(key));
       }
-      for (const file of css.outputFiles) bundle.files.set(outName(file.path), file.text);
+      // The stylesheets, and the images and fonts their url()s point to.
+      for (const file of css.outputFiles) {
+        bundle.files.set(
+          outName(file.path),
+          file.path.endsWith(".css") ? file.text : file.contents,
+        );
+      }
       for (const c of components) {
         bundle.components[c.name]!.css = styles.get(c.name)!.map((sheet) => fileOf.get(sheet)!);
       }
@@ -246,6 +273,8 @@ async function run(
       jsx: "automatic",
       minify: true,
       define: { "process.env.NODE_ENV": '"production"' },
+      loader: ASSETS,
+      assetNames: "[name]-[hash]",
       // Not the app's tsconfig.json: the output depends on the repo alone.
       tsconfigRaw: {},
       logLevel: "silent",
@@ -310,6 +339,7 @@ function repoModules(
   const enginePackages = new Set([...engine.keys()].map(packageName));
   const engineUrls = new Set(engine.values());
   const files = new Map<string, string | null>();
+  const assetFiles = new Map<string, Uint8Array | null>();
   const read = async (path: string): Promise<string | null> => {
     if (!files.has(path)) files.set(path, await readSourceFile(repo, path));
     return files.get(path)!;
@@ -326,6 +356,13 @@ function repoModules(
               return { path: candidate, namespace: "repo" };
             }
           }
+        }
+        return { errors: [{ text: `can't find "${shown}" in the repo` }] };
+      };
+      const repoAsset = async (path: string, shown: string): Promise<OnResolveResult> => {
+        if (!outsideRepo(path)) {
+          if (!assetFiles.has(path)) assetFiles.set(path, await readSourceBytes(repo, path));
+          if (assetFiles.get(path)) return { path, namespace: "repo-asset" };
         }
         return { errors: [{ text: `can't find "${shown}" in the repo` }] };
       };
@@ -373,8 +410,22 @@ function repoModules(
           if (packages && (await inside(packages.real, full))) return { path: full };
           return { errors: [{ text: `can't find "${path}"` }] };
         }
-        // A url() in a stylesheet stays as written.
-        if (kind === "url-token") return { path, external: true };
+        // A url() in a stylesheet: a file of the repo or of a package, which
+        // is published, or anything else (data:, https:, /path, #id), which
+        // stays as written.
+        if (kind === "url-token") {
+          if (/^([a-z][\w+.-]*:|\/|#)/i.test(path)) return { path, external: true };
+          const file = path.replace(/[?#].*$/, "");
+          if (!ASSETS[posix.extname(file).toLowerCase()]) {
+            return {
+              errors: [{ text: `can't publish "${path}": url() can point to an image or a font` }],
+            };
+          }
+          if (namespace === "file") return installed({ ...args, path: file }, args.resolveDir);
+          if (namespace === "repo")
+            return repoAsset(posix.join(posix.dirname(importer), file), path);
+          return { path, external: true };
+        }
         // The server module's components.
         if (namespace === "server") {
           return { path: path.slice("component:".length), namespace: "component" };
@@ -447,6 +498,10 @@ function repoModules(
       b.onLoad({ filter: /.*/, namespace: "repo" }, ({ path }) => ({
         contents: files.get(path)!,
         loader: loaderFor(path),
+      }));
+      b.onLoad({ filter: /.*/, namespace: "repo-asset" }, ({ path }) => ({
+        contents: assetFiles.get(path)!,
+        loader: "file",
       }));
       b.onLoad({ filter: /.*/, namespace: "engine-require" }, ({ path }) => {
         const url = JSON.stringify(engine.get(path)!);

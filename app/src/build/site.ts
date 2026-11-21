@@ -409,7 +409,11 @@ function outPath(path: string, root = SITE_DIR): string {
   return join(root, path.replace(/^\/+/, ""));
 }
 
-async function writeOut(path: string, content: string, root = SITE_DIR): Promise<void> {
+async function writeOut(
+  path: string,
+  content: string | Uint8Array,
+  root = SITE_DIR,
+): Promise<void> {
   const full = outPath(path, root);
   await mkdir(dirname(full), { recursive: true });
   await writeFile(full, content);
