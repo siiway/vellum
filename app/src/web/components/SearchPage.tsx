@@ -31,6 +31,7 @@ import {
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { isComposing } from "../keys";
 import { SearchField } from "./SearchField";
 import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
 import {
@@ -559,14 +560,17 @@ export function SearchPage() {
   const [focused, setFocused] = useState(false);
   // Escape hides the suggestions until the query is edited.
   const [dismissed, setDismissed] = useState(false);
+  // While an input method composes (pinyin `ti` on its way to 题), the text
+  // isn't the reader's word yet.
+  const [composing, setComposing] = useState(false);
   // -1 while none is picked: Enter then still opens the top result.
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const suggestions = useMemo(() => {
-    if (!focused || dismissed) return [];
+    if (!focused || dismissed || composing) return [];
     const qualifiers: Qualifier[] = [{ key: "title", detail: t("ui.search.tip.title") }];
     if (!scope) qualifiers.push({ key: "repo", detail: t("ui.search.tip.repo") });
     return suggestQuery(q, caret ?? q.length, qualifiers, scope ? [] : searchable);
-  }, [focused, q, dismissed, caret, scope, searchable, t]);
+  }, [focused, q, dismissed, composing, caret, scope, searchable, t]);
   useEffect(() => setActiveSuggestion(-1), [q, caret]);
 
   // Sets the query from code (the URL, a recent search, the clear button):
@@ -591,6 +595,7 @@ export function SearchPage() {
   // result navigation below.
   const onFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (suggestions.length === 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isComposing(e.nativeEvent)) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
@@ -722,8 +727,8 @@ export function SearchPage() {
   // to be the sole "carrier" of keyboard navigation on a full-page list.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // Taken already, e.g. by the field's suggestions.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      // Taken already, e.g. by the field's suggestions, or an input method's.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isComposing(e)) return;
       // Don't fight global shortcuts the Layout owns (Ctrl/Cmd+K, "/").
       if (e.key === "ArrowDown") {
         if (flat.length === 0) return;
@@ -791,6 +796,8 @@ export function SearchPage() {
             setDismissed(false);
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={onFieldKeyDown}

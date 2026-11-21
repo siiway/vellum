@@ -31,6 +31,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { isComposing } from "../keys";
 import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
 
 interface ExcerptOut {
@@ -394,6 +395,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   // Keyboard navigation.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // An input method's keys: Enter commits its text, not a result.
+      if (isComposing(e.nativeEvent)) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setActiveIdx((i) => Math.min(flat.length - 1, i + 1));
