@@ -423,7 +423,7 @@ function HeroSection({
   hero: Hero | undefined;
   styles: ReturnType<typeof useStyles>;
 }) {
-  const { navigate, data } = useVellum();
+  const { navigate, data, t } = useVellum();
   const [q, setQ] = useState("");
 
   // Submit → /search?q=…, locale-prefixed so a zh visitor stays in zh.
@@ -453,7 +453,7 @@ function HeroSection({
         )}
         <SearchField
           className={styles.heroSearch}
-          placeholder={hero?.searchPlaceholder ?? "Search the docs"}
+          placeholder={hero?.searchPlaceholder ?? t("ui.search.placeholder")}
           value={q}
           onChange={(_, d) => setQ(d.value)}
           onKeyDown={(e) => {
@@ -461,7 +461,7 @@ function HeroSection({
           }}
         >
           <Button appearance="primary" onClick={onSubmit}>
-            Search
+            {t("ui.search")}
           </Button>
         </SearchField>
         {hero?.actions && hero.actions.length > 0 && (

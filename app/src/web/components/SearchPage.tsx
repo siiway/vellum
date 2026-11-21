@@ -549,7 +549,10 @@ export function SearchPage() {
     [t("ui.search.tip.phraseExample"), t("ui.search.tip.phrase")],
     [`-${word}`, t("ui.search.tip.exclude")],
     [`title:${word}`, t("ui.search.tip.title")],
-    [`repo:${(searchable[0] ?? repos[0])?.slug ?? "slug"}`, t("ui.search.tip.repo")],
+    [
+      `repo:${(searchable[0] ?? repos[0])?.slug ?? t("ui.search.tip.slug")}`,
+      t("ui.search.tip.repo"),
+    ],
   ];
 
   // Completions for the word at the caret (querySuggestions.ts), shown under
@@ -868,7 +871,7 @@ export function SearchPage() {
                 <span className={styles.suggestDetail}>{s.detail}</span>
                 {i === Math.max(0, activeSuggestion) && (
                   <span className={mergeClasses(styles.kbd, styles.suggestKbd)} aria-hidden="true">
-                    Tab
+                    {t("ui.search.tabKey")}
                   </span>
                 )}
               </div>
