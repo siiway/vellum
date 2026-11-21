@@ -115,6 +115,9 @@ export function ErrorPage({ error }: { error: ErrorState }) {
   const styles = useStyles();
   const { data, t } = useVellum();
   const site = data.config.site;
+  // A 404 belongs to no repo, so search goes to the locale's cross-repo page.
+  const localePrefix = site.locales.find((l) => l.code === data.route.localeCode)?.prefix;
+  const searchUrl = localePrefix ? `/${localePrefix}/search` : "/search";
 
   return (
     <main className={styles.root}>
@@ -140,12 +143,7 @@ export function ErrorPage({ error }: { error: ErrorState }) {
           <Button icon={<ArrowLeft20Regular />} onClick={() => window.history.back()}>
             {t("ui.notFound.back")}
           </Button>
-          <Button
-            icon={<Search20Regular />}
-            onClick={() =>
-              window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))
-            }
-          >
+          <Button icon={<Search20Regular />} as="a" href={searchUrl}>
             {t("ui.notFound.search")}
           </Button>
           <Button appearance="primary" icon={<Home20Regular />} as="a" href="/">
