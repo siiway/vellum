@@ -301,7 +301,7 @@ export function VellumProvider({
     let frame = 0;
     const maxFrames = 12;
     const tick = () => {
-      const el = document.getElementById(slug);
+      const el = fragmentTarget(slug);
       if (el) {
         // Instant (not smooth): a cross-page jump should behave like the browser's
         // native hash navigation. Smooth scroll also locks its target Y at start,
@@ -417,10 +417,24 @@ function routableLink(target: EventTarget | null): URL | null {
   return url;
 }
 
-function scrollToHash(slug: string) {
-  const target = document.getElementById(slug);
+function scrollToHash(fragment: string) {
+  const target = fragmentTarget(fragment);
   if (target) {
     target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+// The element a URL's fragment points to, found as the browser finds it: by
+// the fragment as written, then decoded. URL.hash keeps anything but ASCII
+// encoded, so the heading `安全` is `#%E5%AE%89%E5%85%A8` there.
+function fragmentTarget(fragment: string): HTMLElement | null {
+  const target = document.getElementById(fragment);
+  if (target) return target;
+  try {
+    return document.getElementById(decodeURIComponent(fragment));
+  } catch {
+    // Not valid percent-encoding.
+    return null;
   }
 }
 
