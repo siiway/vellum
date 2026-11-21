@@ -45,15 +45,14 @@
     {
       "slug": "nextbridge",
       "owner": "siiway",
-      "repo": "nb-docs",
+      "repo": "nextbridge",
       "branch": "main",
-      "docsRoot": "/",
+      "docsRoot": "docs",
       "displayName": "NextBridge",
       "description": "The chat bridge that links up all the major chat platforms!",
       "logo": "https://icons.siiway.org/nextbridge/icon.svg",
-      "editLinkPattern": "https://github.com/siiway/nb-docs/edit/main/:path",
+      "editLinkPattern": "https://github.com/siiway/nextbridge/edit/main/docs/:path",
       "localeDirs": { "en": "en", "zh": "zh" },
-      "landingPage": "v0.4",
       "versions": [{ "label": "main", "branch": "main", "default": true }]
     },
     {
