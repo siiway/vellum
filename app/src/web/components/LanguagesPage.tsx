@@ -240,8 +240,10 @@ export function LanguagesPage() {
 
   function urlFor(locale: LocaleConfig): string {
     const prefix = locale.prefix ? `/${locale.prefix}` : "";
-    if (!target || target === "/") return prefix || "/";
-    return `${prefix}${target}`.replace(/\/+/g, "/").replace(/\/$/, "") || prefix || "/";
+    // The page's query (the search page's ?q=) is kept as it is.
+    const { path, query } = splitTarget(target);
+    if (!path || path === "/") return (prefix || "/") + query;
+    return (`${prefix}${path}`.replace(/\/+/g, "/").replace(/\/$/, "") || prefix || "/") + query;
   }
 
   function onChoose(e: React.MouseEvent<HTMLAnchorElement>, locale: LocaleConfig) {
@@ -362,7 +364,15 @@ function readTargetFromUrl(): string {
   const raw = params.get("page") ?? "";
   if (!raw) return "";
   if (!raw.startsWith("/")) return "";
-  if (raw.includes("..")) return "";
+  if (splitTarget(raw).path.includes("..")) return "";
   if (/^\/\//.test(raw)) return "";
   return raw;
+}
+
+// A target page's path, and its query from the `?` on.
+function splitTarget(target: string): { path: string; query: string } {
+  const cut = target.indexOf("?");
+  return cut < 0
+    ? { path: target, query: "" }
+    : { path: target.slice(0, cut), query: target.slice(cut) };
 }

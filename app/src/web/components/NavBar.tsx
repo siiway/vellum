@@ -559,10 +559,15 @@ function LocalePicker() {
         : ""
       : `${repoSlug ? `/${repoSlug}` : ""}/${pagePath}`;
 
+  // A page of no repo keeps its state in its query (the search page's ?q=
+  // and ?repo=, the languages page's ?page=), so the query goes along. Read
+  // on click: the search page rewrites it as the reader types.
+  const carried = () => (repoSlug ? "" : window.location.search);
+
   function linkFor(localeCode: string): string {
     const locale = data.config.site.locales.find((l) => l.code === localeCode)!;
     const prefix = locale.prefix ? `/${locale.prefix}` : "";
-    return `${prefix}${page}` || "/";
+    return (`${prefix}${page}` || "/") + carried();
   }
 
   // Link to /{currentPrefix}/languages, threading the current page through
@@ -571,7 +576,7 @@ function LocalePicker() {
   function languagesPageUrl(): string {
     const prefix = data.config.site.locales.find((l) => l.code === currentLocale)?.prefix;
     const base = prefix ? `/${prefix}/languages` : "/languages";
-    return `${base}?page=${encodeURIComponent(page || "/")}`;
+    return `${base}?page=${encodeURIComponent((page || "/") + carried())}`;
   }
 
   function chooseLocale(localeCode: string) {
