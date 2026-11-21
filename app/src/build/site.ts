@@ -256,9 +256,12 @@ async function renderRepo(
     }
     if (!build.found) return false;
     await writePage(build.payload, opts, root, build.markdown);
-    indexes
-      .get(locale.code)!
-      .push({ url: route.canonicalUrl, path: build.sourcePath, raw: build.source });
+    indexes.get(locale.code)!.push({
+      url: route.canonicalUrl,
+      path: build.sourcePath,
+      raw: build.source,
+      fallback: source !== undefined,
+    });
     return true;
   };
 
@@ -306,7 +309,8 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
   const removals: string[] = [vueDir(repo.slug), reactDir(repo.slug)];
   for (const locale of SITE.site.locales) {
     removals.push(searchIndexPath(locale.code, repo.slug));
-    const paths = [...(last.pages[locale.code] ?? []), ...(last.fallbacks[locale.code] ?? [])];
+    // A state from before fallback pages has none.
+    const paths = [...(last.pages[locale.code] ?? []), ...(last.fallbacks?.[locale.code] ?? [])];
     for (const pagePath of paths) {
       const { canonicalUrl } = pageRoute(SITE, repo, locale, pagePath);
       removals.push(

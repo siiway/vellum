@@ -57,7 +57,16 @@ const useStyles = makeStyles({
   },
 });
 
-export function Outline({ nodes, label }: { nodes: OutlineNode[]; label: string }) {
+// `lang`: the headings' language, when it isn't the page's.
+export function Outline({
+  nodes,
+  label,
+  lang,
+}: {
+  nodes: OutlineNode[];
+  label: string;
+  lang?: string;
+}) {
   const styles = useStyles();
   const containerRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
@@ -102,7 +111,7 @@ export function Outline({ nodes, label }: { nodes: OutlineNode[]; label: string 
       <Text className={styles.header} as="h2">
         {label}
       </Text>
-      <ul className={styles.list}>
+      <ul className={styles.list} lang={lang}>
         {flat.map((n) => {
           const isActive = active === n.slug;
           return (

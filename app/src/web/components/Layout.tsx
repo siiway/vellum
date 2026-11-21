@@ -180,7 +180,7 @@ export function Layout() {
               <PageFooter meta={page.meta} siteFooter={config.site.footer} />
             </article>
           </main>
-          <Outline nodes={page.meta.outline} label={outlineLabel} />
+          <Outline nodes={page.meta.outline} label={outlineLabel} lang={lang} />
         </div>
       )}
       {searchOpen && (

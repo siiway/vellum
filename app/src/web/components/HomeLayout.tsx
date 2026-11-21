@@ -268,8 +268,10 @@ export function HomeLayout() {
   const hero = front.hero ?? {};
   const features = front.features ?? [];
   const hasBody = data.page.ast.blocks.length > 0;
-  // Set when the page shows another locale's page (FallbackNotice).
+  // Set when the page shows another locale's page (FallbackNotice). Inside
+  // it, Vellum's own text is still in the reader's language.
   const { fallbackLocale } = data.page.meta;
+  const uiLang = fallbackLocale ? canonicalLocaleCode(data.route.localeCode) : undefined;
 
   return (
     <main
@@ -334,7 +336,7 @@ export function HomeLayout() {
       {features.length > 0 && (
         <section className={styles.featuresSection}>
           <Caption1 className={styles.featuresHeader} as="h2">
-            <span>{t("ui.home.features")}</span>
+            <span lang={uiLang}>{t("ui.home.features")}</span>
             <span className={styles.featuresHeaderRule} aria-hidden="true" />
           </Caption1>
           <div className={styles.features}>
@@ -368,7 +370,7 @@ export function HomeLayout() {
                     iconPosition="after"
                     className={styles.featureLinkBtn}
                   >
-                    {feat.linkText ?? t("ui.home.actions.getStarted")}
+                    {feat.linkText ?? <span lang={uiLang}>{t("ui.home.actions.getStarted")}</span>}
                   </Button>
                 )}
               </Card>

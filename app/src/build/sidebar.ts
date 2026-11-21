@@ -19,6 +19,7 @@ import type {
 import { localeSourcePrefix, sourceLocale } from "../shared/types";
 import { fetchFirstSourceFile, readSourceFile, listSourceFiles, docsRootPrefix } from "./sources";
 import { memo } from "./memo";
+import { isPagePath } from "./routes";
 import { isRecord, readVitePressConfig, themeConfigField } from "./vitepress-config";
 
 // Bundles the URL-side prefix and source-side prefix for a locale into one
@@ -241,16 +242,22 @@ async function buildFromTree(
 
   // The pages, as paths inside a locale's source directory, without `.md`:
   // every locale's, as a locale shows another's page where it has no
-  // translation of its own (site.ts).
+  // translation of its own (site.ts). This locale's go first, so where
+  // another lays out the same page differently (`x.md`, `x/index.md`),
+  // this locale's file places it.
+  const owned = tree
+    .filter((path) => path.startsWith(prefix) && path.endsWith(".md"))
+    .flatMap((path) => {
+      const rel = path.slice(prefix.length).replace(/\.md$/, "");
+      const owner = isPagePath(rel) && sourceLocale(rel, locales, defaultLocaleCode, repo);
+      return owner ? [owner] : [];
+    });
   const files = [
     ...new Set(
-      tree
-        .filter((path) => path.startsWith(prefix) && path.endsWith(".md"))
-        .flatMap((path) => {
-          const rel = path.slice(prefix.length).replace(/\.md$/, "");
-          const owner = sourceLocale(rel, locales, defaultLocaleCode, repo);
-          return owner ? [owner.path] : [];
-        }),
+      [
+        ...owned.filter((o) => o.code === resolved.code),
+        ...owned.filter((o) => o.code !== resolved.code),
+      ].map((o) => o.path),
     ),
   ];
 

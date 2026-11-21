@@ -284,6 +284,8 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
       ? swapLocalePrefix(route.canonicalUrl, currentLocale, sourceLocale)
       : route.canonicalUrl;
   const canonicalAbsolute = error ? null : `${origin}${canonicalPath}`;
+  // The language of the page's content: that page's, too.
+  const contentLocale = sourceLocale ?? currentLocale;
 
   // OG image: page frontmatter wins, then repo logo, then site logo. The
   // value can be absolute (https://…), origin-relative (/…), or repo-
@@ -399,12 +401,12 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
   if (canonicalAbsolute && siteOrigin) {
     lines.push(`  <meta property="og:url" content="${escapeAttr(canonicalAbsolute)}">`);
   }
-  if (currentLocale) {
+  if (contentLocale) {
     lines.push(
-      `  <meta property="og:locale" content="${escapeAttr(toBcp47Underscore(currentLocale.code, config))}">`,
+      `  <meta property="og:locale" content="${escapeAttr(toBcp47Underscore(contentLocale.code, config))}">`,
     );
     for (const loc of site.locales) {
-      if (loc.code === currentLocale.code) continue;
+      if (loc.code === contentLocale.code) continue;
       lines.push(
         `  <meta property="og:locale:alternate" content="${escapeAttr(toBcp47Underscore(loc.code, config))}">`,
       );
@@ -503,7 +505,7 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
       ...(publishedTime ? { datePublished: publishedTime } : {}),
       ...(modifiedTime ? { dateModified: modifiedTime } : {}),
       ...(author ? { author: { "@type": "Person", name: author } } : {}),
-      ...(currentLocale ? { inLanguage: toBcp47(currentLocale.code, config) } : {}),
+      ...(contentLocale ? { inLanguage: toBcp47(contentLocale.code, config) } : {}),
       publisher: {
         "@type": "Organization",
         name: site.title,
