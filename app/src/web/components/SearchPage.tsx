@@ -113,6 +113,11 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase300,
     color: tokens.colorNeutralForeground2,
     cursor: "pointer",
+    // Hover only highlights: what Enter takes is the keyboard's pick.
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      color: tokens.colorNeutralForeground1,
+    },
   },
   suggestRowActive: {
     backgroundColor: tokens.colorNeutralBackground1Hover,
@@ -821,7 +826,6 @@ export function SearchPage() {
                   styles.suggestRow,
                   i === activeSuggestion && styles.suggestRowActive,
                 )}
-                onMouseEnter={() => setActiveSuggestion(i)}
                 onClick={() => acceptSuggestion(s)}
               >
                 <code className={styles.suggestLabel}>{s.label}</code>
