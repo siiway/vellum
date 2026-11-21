@@ -362,8 +362,13 @@ the site.
 
 The build runs a repo's React components too, to render them: their code
 runs on the build machine, with the build's environment (its
-`VELLUM_GITHUB_TOKEN`) and files. Only list repos with components whose
-authors you trust with those as well.
+`VELLUM_GITHUB_TOKEN`) and files, and can change what the build writes. The
+workflows keep the Cloudflare token out of its reach: they build in a job
+without it, and deploy from another that runs none of the build's code (see
+[GitHub Actions](./build-and-deployment#github-actions)). A build on your
+own machine runs as you, so its components can read what you can, wrangler's
+login included. Only list repos with components whose authors you trust with
+those as well.
 
 If you need a brand-new interactive primitive, add it to the registry or
 to the repo's components: a `<script>` in markdown doesn't run.

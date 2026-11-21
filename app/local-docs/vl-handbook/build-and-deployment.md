@@ -140,6 +140,11 @@ has none of them. Its Markdown is at the `.md` URLs instead.
 bun run deploy
 ```
 
+That builds and deploys from your machine, as you: the build runs the docs
+repos' React components with your access, wrangler's login included (see
+[Safety](./react-in-markdown#safety)). Leave repos whose authors you don't
+trust with that to the workflows below.
+
 To deploy somewhere other than production, use the `preview` environment in
 `wrangler.jsonc` (`workers.dev`, no custom domain):
 
@@ -156,8 +161,17 @@ Two workflows deploy production:
 | **Deploy**         | Push to `main`, or a manual run (redeploy) | Checks, full build, deploy.                                 |
 | **Update content** | Hourly, `repository_dispatch`, manual run  | Re-renders the docs repos that changed; deploys if any did. |
 
-Both need `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, plus Workers
-Routes:Edit and Zone:Read for custom domains), and `VELLUM_GITHUB_TOKEN`
-for private docs repos. Update content skips itself while a Deploy is
-running or queued, so the two never overlap. See
-[Updating content](./updating-content) for how it works.
+Each runs in two jobs. The build renders the docs repos' React components,
+so it runs their code (see [Safety](./react-in-markdown#safety)): its job
+gets no Cloudflare token, and its checkout keeps no GitHub token. A second
+job deploys: it installs Vellum afresh, takes the build's output as files,
+refusing symbolic links, and uploads it with wrangler, running none of the
+build's code.
+
+`CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, plus Workers Routes:Edit and
+Zone:Read for custom domains) is a secret of the `production` Environment,
+which only the deploy jobs use. Private docs repos also need
+`VELLUM_GITHUB_TOKEN`, as a repository secret: the build jobs have no
+Environment. Update content skips itself while a Deploy is running or
+queued, so the two never overlap. See [Updating content](./updating-content)
+for how it works.

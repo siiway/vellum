@@ -122,6 +122,8 @@ Cloudflare 对静态资源的默认设置：浏览器会重新验证，文件未
 bun run deploy
 ```
 
+它在你的机器上以你的身份构建并部署：构建会用你的权限运行文档仓库的 React 组件，包括 wrangler 的登录信息（见[安全](./react-in-markdown#安全)）。你不放心交出这些的仓库，交给下面的工作流去部署。
+
 要部署到生产环境以外的地方，使用 `wrangler.jsonc` 中的 `preview` 环境
 （`workers.dev`，不绑定自定义域名）：
 
@@ -138,7 +140,6 @@ bun run build && bunx wrangler deploy --env preview
 | **Deploy**         | 推送到 `main`，或手动运行（重新部署）   | 检查、完整构建、部署。                     |
 | **Update content** | 每小时、`repository_dispatch`、手动运行 | 重新渲染有变更的文档仓库；有变更时才部署。 |
 
-两者都需要 `CLOUDFLARE_API_TOKEN`（Workers Scripts:Edit，自定义域名还需要
-Workers Routes:Edit 与 Zone:Read），私有文档仓库还需要 `VELLUM_GITHUB_TOKEN`。
-有 Deploy 正在运行或排队时，Update content 会跳过自己，因此两者不会重叠。它的原理见
-[更新内容](./updating-content)。
+两者都分成两个作业运行。构建会渲染文档仓库的 React 组件，也就会运行它们的代码（见[安全](./react-in-markdown#安全)）：它的作业拿不到 Cloudflare 令牌，检出的代码里也不保留 GitHub 令牌。部署由另一个作业完成：它重新安装 Vellum，把构建的输出当作文件接收（拒绝符号链接），再用 wrangler 上传，不运行构建中的任何代码。
+
+`CLOUDFLARE_API_TOKEN`（Workers Scripts:Edit，自定义域名还需要 Workers Routes:Edit 与 Zone:Read）是 `production` Environment 的 secret，只有部署作业会用到。私有文档仓库还需要 `VELLUM_GITHUB_TOKEN`，它要设为仓库 secret：构建作业没有 Environment。有 Deploy 正在运行或排队时，Update content 会跳过自己，因此两者不会重叠。它的原理见[更新内容](./updating-content)。
