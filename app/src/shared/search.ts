@@ -253,6 +253,9 @@ function parseQuery(raw: string, aliases: Record<string, string[]>): ParsedQuery
         out.repoFilter = value;
         continue;
       }
+      // A qualifier still being typed (`title:`) is no term yet, so the
+      // rest of the query keeps its results.
+      if ((key === "title" || key === "repo") && !value) continue;
       // Unknown qualifier — fall through and treat as a plain term.
     }
 

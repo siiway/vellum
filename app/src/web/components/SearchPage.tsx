@@ -28,11 +28,12 @@ import {
   History16Regular,
   Dismiss12Regular,
 } from "@fluentui/react-icons";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { SearchField } from "./SearchField";
 import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
+import { suggestQuery, type Qualifier, type QuerySuggestion } from "../querySuggestions";
 
 interface ExcerptOut {
   html: string;
@@ -83,6 +84,58 @@ const useStyles = makeStyles({
     display: "block",
     marginTop: tokens.spacingVerticalS,
     color: tokens.colorNeutralForeground2,
+  },
+  fieldWrap: { position: "relative" },
+  // The suggestions float over the page below the field, so the results
+  // don't shift as they come and go.
+  suggest: {
+    position: "absolute",
+    top: "calc(100% + 6px)",
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    display: "flex",
+    flexDirection: "column",
+    padding: "4px",
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    boxShadow: tokens.shadow16,
+  },
+  suggestRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    minHeight: "34px",
+    paddingLeft: "10px",
+    paddingRight: "10px",
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground2,
+    cursor: "pointer",
+  },
+  suggestRowActive: {
+    backgroundColor: tokens.colorNeutralBackground1Hover,
+    color: tokens.colorNeutralForeground1,
+  },
+  suggestLabel: {
+    flexShrink: 0,
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: "0.92em",
+    padding: "1px 6px",
+    borderRadius: tokens.borderRadiusSmall,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground1,
+  },
+  // A touch screen has no Tab key.
+  suggestKbd: { "@media (hover: none)": { display: "none" } },
+  suggestDetail: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: tokens.colorNeutralForeground3,
   },
   filters: {
     display: "flex",
@@ -488,6 +541,54 @@ export function SearchPage() {
     [`repo:${(searchable[0] ?? repos[0])?.slug ?? "slug"}`, t("ui.search.tip.repo")],
   ];
 
+  // Completions for the word at the caret (querySuggestions.ts), shown under
+  // the field while it has focus. `repo:` only narrows a cross-repo search,
+  // so a scoped one isn't offered it.
+  const suggestId = useId();
+  const [caret, setCaret] = useState<number | null>(null);
+  const [focused, setFocused] = useState(false);
+  // The query Escape hid the suggestions for; they come back when it changes.
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  // -1 while none is picked: Enter then still opens the top result.
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const suggestions = useMemo(() => {
+    if (!focused || q === dismissed) return [];
+    const qualifiers: Qualifier[] = [{ key: "title", detail: t("ui.search.tip.title") }];
+    if (!scope) qualifiers.push({ key: "repo", detail: t("ui.search.tip.repo") });
+    return suggestQuery(q, caret ?? q.length, qualifiers, scope ? [] : searchable);
+  }, [focused, q, dismissed, caret, scope, searchable, t]);
+  useEffect(() => setActiveSuggestion(-1), [q, caret]);
+
+  const acceptSuggestion = useCallback((s: QuerySuggestion) => {
+    setQ(s.query);
+    setCaret(s.caret);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(s.caret, s.caret);
+    });
+  }, []);
+
+  // Tab takes the picked suggestion, or the first; ↑/↓ pick one and Enter
+  // takes it; Escape hides them. With none shown, keys go on to the page's
+  // result navigation below.
+  const onFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length === 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActiveSuggestion((i) => Math.max(-1, Math.min(suggestions.length - 1, i + step)));
+    } else if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      acceptSuggestion(suggestions[Math.max(0, activeSuggestion)]!);
+    } else if (e.key === "Enter" && activeSuggestion >= 0) {
+      e.preventDefault();
+      acceptSuggestion(suggestions[activeSuggestion]!);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setDismissed(q);
+    }
+  };
+
   // After mount: pull ?q= and ?repo= out of the URL, then load recent searches
   // and focus the input. Runs once.
   useEffect(() => {
@@ -603,7 +704,8 @@ export function SearchPage() {
   // to be the sole "carrier" of keyboard navigation on a full-page list.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Taken already, e.g. by the field's suggestions.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
       // Don't fight global shortcuts the Layout owns (Ctrl/Cmd+K, "/").
       if (e.key === "ArrowDown") {
         if (flat.length === 0) return;
@@ -659,31 +761,81 @@ export function SearchPage() {
         </Body1>
       </header>
 
-      <SearchField
-        ref={inputRef}
-        size="large"
-        placeholder={t("ui.search.placeholder")}
-        value={q}
-        onChange={(_, d) => setQ(d.value)}
-        aria-label={t("ui.search")}
-        autoComplete="off"
-        spellCheck={false}
-      >
-        {loading && <Spinner size="extra-tiny" />}
-        {q && (
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={<Dismiss20Regular />}
-            onClick={() => {
-              setQ("");
-              inputRef.current?.focus();
-            }}
-            aria-label={t("ui.search.clear")}
-            className={styles.clearBtn}
-          />
+      <div className={styles.fieldWrap}>
+        <SearchField
+          ref={inputRef}
+          size="large"
+          placeholder={t("ui.search.placeholder")}
+          value={q}
+          onChange={(e, d) => {
+            setQ(d.value);
+            setCaret(e.target.selectionStart);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={onFieldKeyDown}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggestions.length > 0}
+          aria-controls={suggestions.length > 0 ? suggestId : undefined}
+          aria-activedescendant={
+            activeSuggestion >= 0 ? `${suggestId}-${activeSuggestion}` : undefined
+          }
+          aria-label={t("ui.search")}
+          autoComplete="off"
+          spellCheck={false}
+        >
+          {loading && <Spinner size="extra-tiny" />}
+          {q && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<Dismiss20Regular />}
+              onClick={() => {
+                setQ("");
+                inputRef.current?.focus();
+              }}
+              aria-label={t("ui.search.clear")}
+              className={styles.clearBtn}
+            />
+          )}
+        </SearchField>
+
+        {suggestions.length > 0 && (
+          <div
+            id={suggestId}
+            role="listbox"
+            aria-label={t("ui.search.suggestions")}
+            className={styles.suggest}
+            // Keep focus in the field when a suggestion is clicked.
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {suggestions.map((s, i) => (
+              <div
+                key={s.label}
+                id={`${suggestId}-${i}`}
+                role="option"
+                aria-selected={i === activeSuggestion}
+                className={mergeClasses(
+                  styles.suggestRow,
+                  i === activeSuggestion && styles.suggestRowActive,
+                )}
+                onMouseEnter={() => setActiveSuggestion(i)}
+                onClick={() => acceptSuggestion(s)}
+              >
+                <code className={styles.suggestLabel}>{s.label}</code>
+                <span className={styles.suggestDetail}>{s.detail}</span>
+                {i === Math.max(0, activeSuggestion) && (
+                  <span className={mergeClasses(styles.kbd, styles.suggestKbd)} aria-hidden="true">
+                    Tab
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         )}
-      </SearchField>
+      </div>
 
       {/* FluentUI TabList for the repo scope filter, once there's a query or
           a scope: the start screen's repo cards stand in for it before.
@@ -827,7 +979,8 @@ export function SearchPage() {
       )}
 
       <div ref={listRef} className={styles.results}>
-        {started && !loading && hits.length === 0 && (
+        {/* Not while suggestions show: the reader is mid-word. */}
+        {started && !loading && hits.length === 0 && suggestions.length === 0 && (
           <div className={styles.empty}>
             <Search24Regular fontSize={48} />
             <Body1Strong>

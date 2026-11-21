@@ -50,6 +50,13 @@ A word in the title scores 5 and in the body 1; a phrase scores 8 and 3; a
 `title:` term scores 10. Results are sorted by score: the dialog shows the
 top 10, the full-page search the top 30.
 
+The full-page search completes qualifiers as you type. A word that starts
+to spell one (`ti`, `re`) offers `title:` or `repo:`, and after `repo:` it
+offers the slugs of the repos a cross-repo search covers. Tab takes the
+suggestion, ↓ then Enter picks another, and Esc hides them. A qualifier
+with nothing after it is ignored, so the rest of the query keeps its
+results while you finish typing.
+
 ## Synonyms
 
 Each word also matches its synonyms, so a search for `latex` finds pages
