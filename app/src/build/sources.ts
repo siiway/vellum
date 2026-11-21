@@ -12,7 +12,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { readFile, readdir, realpath } from "node:fs/promises";
+import { readFile, readdir, realpath, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import type { RepoConfig, RepoVersion } from "../shared/types";
 import { memo } from "./memo";
@@ -165,10 +165,11 @@ export async function syncRepo(repo: RepoConfig): Promise<void> {
   if (!isGitHub(repo)) return;
   const dir = repoDir(repo);
   const ref = repoRef(repo, defaultVersion(repo));
-  if (existsSync(join(dir, ".git"))) {
+  if (await isClone(dir)) {
     await git(["fetch", "--quiet", "--filter=blob:none", "origin", ref], dir);
     await git(["reset", "--quiet", "--hard", "FETCH_HEAD"], dir);
   } else {
+    await rm(dir, { recursive: true, force: true });
     await git([
       "clone",
       "--quiet",
@@ -179,6 +180,19 @@ export async function syncRepo(repo: RepoConfig): Promise<void> {
       remoteUrl(repo),
       dir,
     ]);
+  }
+}
+
+// Whether `dir` holds a clone git can use. A broken one (its refs lost, say)
+// isn't one to git, which would take the repository above it, Vellum's, for
+// it instead.
+async function isClone(dir: string): Promise<boolean> {
+  if (!existsSync(join(dir, ".git"))) return false;
+  try {
+    const top = (await git(["rev-parse", "--show-toplevel"], dir)).trim();
+    return (await realpath(top)) === (await realpath(dir));
+  } catch {
+    return false;
   }
 }
 
