@@ -55,6 +55,7 @@ export async function readClientAssets(clientDir: string): Promise<ClientAssets>
         Object.entries(engine.modules).map(([spec, files]) => [spec, own(files)]),
       ),
       loaders: own(engine.loaders),
+      defaults: engine.defaults,
     },
     id,
   };

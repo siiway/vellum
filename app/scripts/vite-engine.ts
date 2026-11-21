@@ -53,6 +53,9 @@ export interface EngineManifest {
   modules: Record<string, string[]>;
   // The loaders' file and the files it imports.
   loaders: string[];
+  // The specifiers of the modules with a default export: the CommonJS
+  // packages', which a CommonJS require() gets (src/build/react.ts).
+  defaults: string[];
 }
 
 // The specifiers of the engine's modules.
@@ -214,16 +217,20 @@ export function enginePlugin(): Plugin {
         return files;
       };
       const modules: Record<string, string[]> = {};
+      const defaults: string[] = [];
       let loaders: string[] = [];
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== "chunk" || !chunk.facadeModuleId) continue;
         if (chunk.facadeModuleId === `\0${TABLE}`) loaders = loading(chunk.fileName);
         const spec = specs.get(chunk.facadeModuleId);
-        if (spec) modules[spec] = loading(chunk.fileName);
+        if (!spec) continue;
+        modules[spec] = loading(chunk.fileName);
+        if (chunk.exports.includes("default")) defaults.push(spec);
       }
       const manifest: EngineManifest = {
         modules: Object.fromEntries(Object.entries(modules).sort(([a], [b]) => (a < b ? -1 : 1))),
         loaders,
+        defaults: defaults.sort(),
       };
       this.emitFile({
         type: "asset",

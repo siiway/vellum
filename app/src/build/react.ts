@@ -148,7 +148,8 @@ export function bundleReactComponents(
       Object.entries(assets.engine.modules).map(([spec, files]) => [spec, files[0]!]),
     );
     const specOf = new Map([...engine].map(([spec, url]) => [url, spec]));
-    const browser = repoModules(repo, components, packages, engine, false);
+    const defaults = new Set(assets.engine.defaults);
+    const browser = repoModules(repo, components, packages, engine, defaults, false);
 
     const js = await run(repo, {
       entryPoints: components.map((c) => ({ in: `component:${c.name}`, out: c.name })),
@@ -220,7 +221,7 @@ export function bundleReactComponents(
     const server = await run(repo, {
       entryPoints: [{ in: "server:", out: "server" }],
       format: "cjs",
-      plugins: [repoModules(repo, components, packages, engine, true)],
+      plugins: [repoModules(repo, components, packages, engine, defaults, true)],
     });
     bundle.server = server.outputFiles.find((f) => f.path.endsWith(".js"))!.text;
     return bundle;
@@ -301,10 +302,13 @@ function repoModules(
   components: ReactComponentRef[],
   packages: Packages | null,
   engine: Map<string, string>,
+  // The specifiers of the engine modules with a default export: React's.
+  engineDefaults: ReadonlySet<string>,
   server: boolean,
 ): Plugin {
   const paths = new Map(components.map((c) => [c.name, c.path]));
   const enginePackages = new Set([...engine.keys()].map(packageName));
+  const engineUrls = new Set(engine.values());
   const files = new Map<string, string | null>();
   const read = async (path: string): Promise<string | null> => {
     if (!files.has(path)) files.set(path, await readSourceFile(repo, path));
@@ -375,11 +379,20 @@ function repoModules(
         if (namespace === "server") {
           return { path: path.slice("component:".length), namespace: "component" };
         }
+        // An engine module's URL, which an engine-require module imports.
+        if (engineUrls.has(path)) return { path, external: true, sideEffects: false };
 
         if (engine.has(path) || packageName(path) === FLUENT) {
           const error = path === "vellum" ? null : await checkVersion(args);
           if (error) return { errors: [{ text: error }] };
           if (server) return { path, external: true };
+          // A CommonJS require() of one (use-sync-external-store's of
+          // react): esbuild can't require() an ES module it doesn't bundle,
+          // and would leave a require() that throws in the browser. It gets
+          // a module that imports the engine's, which esbuild can.
+          if (engine.has(path) && kind === "require-call") {
+            return { path, namespace: "engine-require" };
+          }
           // Engine modules have no side effects: an import of one that the
           // component doesn't use, which Fluent's re-exports are, goes.
           if (engine.has(path)) {
@@ -434,6 +447,12 @@ function repoModules(
         contents: files.get(path)!,
         loader: loaderFor(path),
       }));
+      b.onLoad({ filter: /.*/, namespace: "engine-require" }, ({ path }) => {
+        const url = JSON.stringify(engine.get(path)!);
+        const contents = [`export * from ${url};`];
+        if (engineDefaults.has(path)) contents.push(`export { default } from ${url};`);
+        return { contents: contents.join("\n"), loader: "js" };
+      });
       // A statement for each name it re-exports, where it has one for each
       // package: esbuild keeps every name of a statement it keeps.
       b.onLoad({ filter: /.*/, namespace: "fluent" }, async ({ path }) => {
