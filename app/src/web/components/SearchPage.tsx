@@ -33,7 +33,12 @@ import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { SearchField } from "./SearchField";
 import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
-import { suggestQuery, type Qualifier, type QuerySuggestion } from "../querySuggestions";
+import {
+  endsInBareQualifier,
+  suggestQuery,
+  type Qualifier,
+  type QuerySuggestion,
+} from "../querySuggestions";
 
 interface ExcerptOut {
   html: string;
@@ -983,8 +988,9 @@ export function SearchPage() {
       )}
 
       <div ref={listRef} className={styles.results}>
-        {/* Not while suggestions show: the reader is mid-word. */}
-        {started && !loading && hits.length === 0 && suggestions.length === 0 && (
+        {/* Not while the query ends in a bare `repo:`: the reader is
+            mid-word. */}
+        {started && !loading && hits.length === 0 && !endsInBareQualifier(q) && (
           <div className={styles.empty}>
             <Search24Regular fontSize={48} />
             <Body1Strong>

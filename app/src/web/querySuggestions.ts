@@ -43,19 +43,27 @@ export function suggestQuery(
   const lower = word.toLowerCase();
   const colon = lower.indexOf(":");
   if (colon < 0) {
-    // One letter would match too many words on their way to being typed.
+    // One letter would match too many words on their way to being typed,
+    // and a whole key (`repo`) may be the word the reader means.
     if (lower.length < 2) return [];
     return qualifiers
-      .filter((k) => k.key.startsWith(lower))
+      .filter((k) => k.key.startsWith(lower) && k.key !== lower)
       .map((k) => make(`${k.key}:`, k.detail, false));
   }
   if (lower.slice(0, colon) !== "repo" || !qualifiers.some((k) => k.key === "repo")) return [];
   const value = lower.slice(colon + 1);
-  return repos
-    .filter((r) => {
-      const slug = r.slug.toLowerCase();
-      return slug.startsWith(value) && slug !== value;
-    })
-    .slice(0, MAX)
-    .map((r) => make(`repo:${r.slug}`, r.displayName, true));
+  const matches = repos.filter((r) => r.slug.toLowerCase().startsWith(value));
+  // A finished slug needs nothing, unless longer slugs start with it: then
+  // it comes first, so Tab keeps it.
+  const exact = matches.findIndex((r) => r.slug.toLowerCase() === value);
+  if (exact >= 0 && matches.length === 1) return [];
+  if (exact > 0) matches.unshift(...matches.splice(exact, 1));
+  return matches.slice(0, MAX).map((r) => make(`repo:${r.slug}`, r.displayName, true));
+}
+
+// Whether the query ends in a qualifier with nothing after it yet (`repo:`).
+// The search ignores it (src/shared/search.ts): the reader is mid-word.
+export function endsInBareQualifier(q: string): boolean {
+  const last = /\S*$/.exec(q.trimEnd())![0].toLowerCase();
+  return last === "title:" || last === "repo:";
 }
