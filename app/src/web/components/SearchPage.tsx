@@ -26,11 +26,13 @@ import {
   Document24Regular,
   Search24Regular,
   History16Regular,
+  Dismiss12Regular,
 } from "@fluentui/react-icons";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { SearchField } from "./SearchField";
+import { addRecent, clearRecent, loadRecent, removeRecent } from "../recentSearches";
 
 interface ExcerptOut {
   html: string;
@@ -56,9 +58,6 @@ interface SearchHit {
   repo: string;
   repoDisplayName?: string;
 }
-
-const RECENT_KEY = "vellum.search.recent";
-const RECENT_MAX = 8;
 
 const useStyles = makeStyles({
   root: {
@@ -293,31 +292,57 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
   },
   chips: { display: "flex", flexWrap: "wrap", gap: "8px" },
+  // A recent search: the query, which searches it again, and a button that
+  // removes it.
   chip: {
     display: "inline-flex",
     alignItems: "center",
-    gap: "6px",
     maxWidth: "100%",
     height: "30px",
-    paddingLeft: "10px",
-    paddingRight: "12px",
     boxSizing: "border-box",
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusCircular,
     backgroundColor: tokens.colorNeutralBackground1,
+    "&:hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
+  chipMain: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+    height: "100%",
+    paddingLeft: "10px",
+    paddingRight: "4px",
+    border: 0,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: "transparent",
     color: tokens.colorNeutralForeground2,
     fontFamily: "inherit",
     fontSize: tokens.fontSizeBase300,
     cursor: "pointer",
     "& svg": { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+    "&:hover": { color: tokens.colorNeutralForeground1 },
+    "&:focus-visible": { outline: `2px solid ${tokens.colorStrokeFocus2}` },
+  },
+  chipRemove: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    width: "22px",
+    height: "22px",
+    marginRight: "4px",
+    padding: 0,
+    border: 0,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: "transparent",
+    color: tokens.colorNeutralForeground3,
+    cursor: "pointer",
     "&:hover": {
-      backgroundColor: tokens.colorNeutralBackground1Hover,
+      backgroundColor: tokens.colorNeutralBackground3Hover,
       color: tokens.colorNeutralForeground1,
     },
-    "&:focus-visible": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: "1px",
-    },
+    "&:focus-visible": { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
   chipText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   repoGrid: {
@@ -472,10 +497,7 @@ export function SearchPage() {
     if (initialScope) setScope(initialScope);
     setUrlHydrated(true);
     inputRef.current?.focus();
-    try {
-      const stored = localStorage.getItem(RECENT_KEY);
-      if (stored) setRecent(JSON.parse(stored));
-    } catch {}
+    setRecent(loadRecent());
     // Effect intentionally runs only once. repos is stable for a given config.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -561,17 +583,7 @@ export function SearchPage() {
   // Flat list mirrors the visual order so arrow-key navigation matches what the user sees.
   const flat = useMemo(() => grouped.flatMap(([, g]) => g.hits), [grouped]);
 
-  const persistRecent = useCallback(
-    (query: string) => {
-      if (!query.trim()) return;
-      try {
-        const next = [query, ...recent.filter((r) => r !== query)].slice(0, RECENT_MAX);
-        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-        setRecent(next);
-      } catch {}
-    },
-    [recent],
-  );
+  const persistRecent = useCallback((query: string) => setRecent(addRecent(query)), []);
 
   // Navigate to a hit, optionally jumping to a specific section anchor inside
   // the page. Passing `sectionSlug` lets each excerpt link to the exact
@@ -708,21 +720,38 @@ export function SearchPage() {
             <section className={styles.section}>
               <div className={styles.sectionHeader}>
                 <h2 className={styles.sectionLabel}>{t("ui.search.recent")}</h2>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  onClick={() => setRecent(clearRecent())}
+                  aria-label={t("ui.search.clearRecent")}
+                >
+                  {t("ui.search.clear")}
+                </Button>
               </div>
               <div className={styles.chips}>
                 {recent.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    className={styles.chip}
-                    onClick={() => {
-                      setQ(r);
-                      inputRef.current?.focus();
-                    }}
-                  >
-                    <History16Regular />
-                    <span className={styles.chipText}>{r}</span>
-                  </button>
+                  <span key={r} className={styles.chip}>
+                    <button
+                      type="button"
+                      className={styles.chipMain}
+                      onClick={() => {
+                        setQ(r);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      <History16Regular />
+                      <span className={styles.chipText}>{r}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.chipRemove}
+                      onClick={() => setRecent(removeRecent(r))}
+                      aria-label={`${t("ui.search.removeRecent")}: ${r}`}
+                    >
+                      <Dismiss12Regular />
+                    </button>
+                  </span>
                 ))}
               </div>
             </section>

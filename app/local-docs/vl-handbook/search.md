@@ -75,7 +75,8 @@ Features:
 
 - Debounced (180 ms): the search runs when typing pauses.
 - Keyboard navigation (↑ / ↓ / Enter / Esc).
-- Recent searches persisted in localStorage.
+- Recent searches persisted in localStorage, up to 8. Clear empties the
+  list, and × removes one.
 - "Search all repos for …" escalation link to the full-page search.
 
 ## The full-page search
@@ -102,7 +103,8 @@ Behaviour:
   scope.
 - URL stays in sync via `history.replaceState` so refresh / share keeps
   the query.
-- Recent searches are shared with the dialog.
+- Recent searches are shared with the dialog, and cleared or removed the
+  same way.
 
 ## Index files
 
