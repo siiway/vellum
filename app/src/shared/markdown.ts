@@ -174,7 +174,7 @@ export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
 }
 
 // The names of the PascalCase tags in an AST, inline or in HTML blocks: the
-// components its page may render.
+// components its page may render. Not those commented out.
 export function componentNames(ast: MarkdownAst): Set<string> {
   const names = new Set<string>();
   const inline = (nodes: Inline[]) => {
@@ -185,7 +185,8 @@ export function componentNames(ast: MarkdownAst): Set<string> {
   };
   walkBlocks(ast.blocks, (b) => {
     if (b.type === "html") {
-      for (const m of b.value.matchAll(/<([A-Z][A-Za-z0-9]*)/g)) names.add(m[1]!);
+      const html = b.value.replace(/<!--[\s\S]*?-->/g, "");
+      for (const m of html.matchAll(/<([A-Z][A-Za-z0-9]*)/g)) names.add(m[1]!);
     } else if (b.type === "paragraph" || b.type === "heading") {
       inline(b.children);
     } else if (b.type === "callout") {
