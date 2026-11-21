@@ -712,6 +712,18 @@ export function SearchPage() {
 
   const persistRecent = useCallback((query: string) => setRecent(addRecent(query)), []);
 
+  // Removing a recent search unmounts the focused ×, so focus moves on to
+  // the next one (the previous, after the last), or to the field when none
+  // is left.
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const removeRecentAt = useCallback((query: string, index: number) => {
+    setRecent(removeRecent(query));
+    requestAnimationFrame(() => {
+      const left = chipsRef.current?.querySelectorAll<HTMLElement>("[data-remove-recent]") ?? [];
+      (left[Math.min(index, left.length - 1)] ?? inputRef.current)?.focus();
+    });
+  }, []);
+
   // Navigate to a hit, optionally jumping to a specific section anchor inside
   // the page. Passing `sectionSlug` lets each excerpt link to the exact
   // heading the match was under.
@@ -909,14 +921,17 @@ export function SearchPage() {
                 <Button
                   appearance="subtle"
                   size="small"
-                  onClick={() => setRecent(clearRecent())}
+                  onClick={() => {
+                    setRecent(clearRecent());
+                    inputRef.current?.focus();
+                  }}
                   aria-label={t("ui.search.clearRecent")}
                 >
                   {t("ui.search.clear")}
                 </Button>
               </div>
-              <div className={styles.chips}>
-                {recent.map((r) => (
+              <div ref={chipsRef} className={styles.chips}>
+                {recent.map((r, i) => (
                   <span key={r} className={styles.chip}>
                     <button
                       type="button"
@@ -932,7 +947,8 @@ export function SearchPage() {
                     <button
                       type="button"
                       className={styles.chipRemove}
-                      onClick={() => setRecent(removeRecent(r))}
+                      data-remove-recent
+                      onClick={() => removeRecentAt(r, i)}
                       aria-label={`${t("ui.search.removeRecent")}: ${r}`}
                     >
                       <Dismiss12Regular />
