@@ -9,7 +9,6 @@ import {
   Button,
   Caption1,
   Image,
-  Input,
   mergeClasses,
   Spinner,
   Tab,
@@ -31,6 +30,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
+import { SearchField } from "./SearchField";
 
 interface ExcerptOut {
   html: string;
@@ -84,43 +84,6 @@ const useStyles = makeStyles({
     display: "block",
     marginTop: tokens.spacingVerticalS,
     color: tokens.colorNeutralForeground2,
-  },
-  searchBar: {
-    position: "relative",
-    display: "flex",
-    alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusLarge,
-    paddingInline: "12px",
-    paddingBlock: "4px",
-    transition: "border-color 120ms ease",
-    "&:hover": {
-      borderTopColor: tokens.colorNeutralStroke1Hover,
-      borderRightColor: tokens.colorNeutralStroke1Hover,
-      borderBottomColor: tokens.colorNeutralStroke1Hover,
-      borderLeftColor: tokens.colorNeutralStroke1Hover,
-    },
-    "&:focus-within": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: "1px",
-    },
-  },
-  searchIcon: {
-    color: tokens.colorNeutralForeground3,
-    flexShrink: 0,
-  },
-  input: {
-    flex: 1,
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    borderTop: "0 !important" as any,
-    borderLeft: "0 !important" as any,
-    borderRight: "0 !important" as any,
-    borderBottom: "0 !important" as any,
-    backgroundColor: "transparent !important" as any,
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    "& input": { fontSize: tokens.fontSizeBase400 },
   },
   filters: {
     display: "flex",
@@ -568,20 +531,16 @@ export function SearchPage() {
         </Body1>
       </header>
 
-      <div className={styles.searchBar}>
-        <Search24Regular className={styles.searchIcon} />
-        <Input
-          ref={inputRef}
-          className={styles.input}
-          size="large"
-          appearance="filled-lighter"
-          placeholder={t("ui.search.placeholder")}
-          value={q}
-          onChange={(_, d) => setQ(d.value)}
-          aria-label={t("ui.search")}
-          autoComplete="off"
-          spellCheck={false}
-        />
+      <SearchField
+        ref={inputRef}
+        size="large"
+        placeholder={t("ui.search.placeholder")}
+        value={q}
+        onChange={(_, d) => setQ(d.value)}
+        aria-label={t("ui.search")}
+        autoComplete="off"
+        spellCheck={false}
+      >
         {loading && <Spinner size="extra-tiny" />}
         {q && (
           <Button
@@ -596,7 +555,7 @@ export function SearchPage() {
             className={styles.clearBtn}
           />
         )}
-      </div>
+      </SearchField>
 
       {/* FluentUI TabList for the repo scope filter. Tab values are strings
           (FluentUI's TabValue is `string | number`), so we map the null

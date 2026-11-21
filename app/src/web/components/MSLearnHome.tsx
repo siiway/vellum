@@ -24,7 +24,6 @@ import {
   Card,
   CardHeader,
   Image,
-  Input,
   Link,
   Text,
   Title1,
@@ -43,7 +42,6 @@ import {
   Rocket24Regular,
   ArrowRight20Regular,
   Open20Regular,
-  Search20Regular,
   Server24Regular,
   TagMultiple24Regular,
 } from "@fluentui/react-icons";
@@ -52,6 +50,7 @@ import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
 import { FallbackNotice } from "./FallbackNotice";
+import { SearchField } from "./SearchField";
 import { canonicalLocaleCode } from "../../shared/types";
 
 // --- Types ---------------------------------------------------------------
@@ -159,44 +158,11 @@ const useStyles = makeStyles({
     lineHeight: tokens.lineHeightBase400,
     color: tokens.colorNeutralForeground3,
   },
-  // Field-style search: hairline border that darkens on hover, focus ring
-  // from Fluent's own stroke token. No shadow.
   heroSearch: {
     width: "min(560px, 100%)",
     marginTop: "12px",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    backgroundColor: tokens.colorNeutralBackground1,
-    paddingInline: "12px",
-    minHeight: "44px",
-    boxSizing: "border-box",
-    borderRadius: tokens.borderRadiusLarge,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    transition: "border-color 120ms ease",
-    "&:hover": {
-      borderTopColor: tokens.colorNeutralStroke1Hover,
-      borderRightColor: tokens.colorNeutralStroke1Hover,
-      borderBottomColor: tokens.colorNeutralStroke1Hover,
-      borderLeftColor: tokens.colorNeutralStroke1Hover,
-    },
-    "&:focus-within": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: "1px",
-    },
-  },
-  heroSearchIcon: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
-  heroSearchInput: {
-    flex: 1,
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    borderTop: "0 !important" as any,
-    borderLeft: "0 !important" as any,
-    borderRight: "0 !important" as any,
-    borderBottom: "0 !important" as any,
-    backgroundColor: "transparent !important" as any,
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    "&::after": { display: "none" },
-    "& input": { fontSize: tokens.fontSizeBase300, paddingLeft: 0 },
+    // The submit button sits inside the field, close to its right edge.
+    paddingRight: "4px",
   },
   heroActions: {
     display: "flex",
@@ -485,22 +451,19 @@ function HeroSection({
             <span dangerouslySetInnerHTML={{ __html: hero.tagline }} />
           </Body1>
         )}
-        <div className={styles.heroSearch}>
-          <Search20Regular className={styles.heroSearchIcon} />
-          <Input
-            className={styles.heroSearchInput}
-            appearance="filled-lighter"
-            placeholder={hero?.searchPlaceholder ?? "Search the docs"}
-            value={q}
-            onChange={(_, d) => setQ(d.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onSubmit();
-            }}
-          />
+        <SearchField
+          className={styles.heroSearch}
+          placeholder={hero?.searchPlaceholder ?? "Search the docs"}
+          value={q}
+          onChange={(_, d) => setQ(d.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSubmit();
+          }}
+        >
           <Button appearance="primary" onClick={onSubmit}>
             Search
           </Button>
-        </div>
+        </SearchField>
         {hero?.actions && hero.actions.length > 0 && (
           <div className={styles.heroActions}>
             {hero.actions.map((a, i) => {
