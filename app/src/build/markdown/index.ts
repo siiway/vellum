@@ -182,6 +182,20 @@ export function normalizeInternal(href: string, c: LinkContext): string {
     if (path === repoBase || path.startsWith(`${repoBase}/`)) {
       return served(path);
     }
+    // Into another locale's source directory: that locale's page. The
+    // deepest directory wins, the page's own included.
+    const inDir = (dir: string) => !!dir && (path === `/${dir}` || path.startsWith(`/${dir}/`));
+    const own = c.localeSrcDir ?? "";
+    let other: { srcDir: string; repoUrlBase: string } | undefined;
+    for (const l of c.otherLocales ?? []) {
+      if (!inDir(l.srcDir) || (inDir(own) && own.length >= l.srcDir.length)) continue;
+      if (!other || l.srcDir.length > other.srcDir.length) other = l;
+    }
+    if (other) {
+      const rest = path.slice(other.srcDir.length + 1);
+      // A locale root's README is its index page.
+      return served(`${other.repoUrlBase}${rest === "/README" ? "" : rest}`);
+    }
     // Locale-prefixed absolute path on a page whose repoBase already encodes
     // the same locale (e.g. /zh/getting-started written in docs/zh/index.md).
     // Strip the leading /<locale> so we don't end up with /zh/zh/repo/...

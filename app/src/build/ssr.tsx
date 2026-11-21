@@ -273,9 +273,17 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
   const description = (page.meta.description ?? site.tagline ?? "").toString().trim();
 
   // Canonical URL. Errors get no canonical (the URL is fictitious — pointing
-  // search engines at it would propagate the bad link). Everything else
-  // absolutizes the route's canonical path against the site origin.
-  const canonicalAbsolute = error ? null : `${origin}${route.canonicalUrl}`;
+  // search engines at it would propagate the bad link). A page that shows
+  // another locale's page, which it has no translation of, has that page's.
+  // Everything else absolutizes the route's canonical path against the site
+  // origin.
+  const currentLocale = site.locales.find((l) => l.code === route.localeCode);
+  const sourceLocale = site.locales.find((l) => l.code === page.meta.fallbackLocale);
+  const canonicalPath =
+    currentLocale && sourceLocale
+      ? swapLocalePrefix(route.canonicalUrl, currentLocale, sourceLocale)
+      : route.canonicalUrl;
+  const canonicalAbsolute = error ? null : `${origin}${canonicalPath}`;
 
   // OG image: page frontmatter wins, then repo logo, then site logo. The
   // value can be absolute (https://…), origin-relative (/…), or repo-
@@ -323,10 +331,9 @@ function buildSeoHead(payload: BootstrapPayload, siteOrigin: string | null): str
 
   // Locale + i18n alternates. We emit a hreflang per configured locale so
   // search engines can return the right translation to the right reader.
-  // Alternates are emitted for every configured locale, translated or not,
-  // and some may 404; this matches what MS Learn does and what Google
-  // tolerates.
-  const currentLocale = site.locales.find((l) => l.code === route.localeCode);
+  // Alternates are emitted for every configured locale, translated or not:
+  // a locale without a translation shows another locale's page, whose
+  // canonical URL is that page's, and Google ignores the alternate.
   const alternates =
     !error && currentLocale
       ? site.locales.map((loc) => ({

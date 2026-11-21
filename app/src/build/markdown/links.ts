@@ -24,6 +24,10 @@ export interface LinkContext {
   // Absolute links into it (`/en/guide`, the VitePress form) resolve inside
   // the repo.
   localeSrcDir?: string;
+  // The other locales with a source directory of their own, and the repo's
+  // URL base in each. An absolute link into one (`/zh/guide` on an English
+  // page) leads to that locale's page.
+  otherLocales?: Array<{ srcDir: string; repoUrlBase: string }>;
   // True when the current page renders an index file (its URL is a
   // directory in URL space — e.g. "/vl-handbook" maps to
   // vl-handbook/index.md). Relative links from an index resolve INSIDE

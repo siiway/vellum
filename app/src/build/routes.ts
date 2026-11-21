@@ -87,6 +87,19 @@ export async function listRepoPages(
   return out;
 }
 
+// The locale a page is shown in where it isn't translated: the default
+// locale when it has the page, else the first locale that does, in config
+// order. Undefined when no locale has it.
+export function fallbackLocale(
+  site: VellumConfig,
+  has: (localeCode: string) => boolean,
+): LocaleConfig | undefined {
+  const { locales, defaultLocale } = site.site;
+  const preferred = locales.find((l) => l.code === defaultLocale);
+  if (preferred && has(preferred.code)) return preferred;
+  return locales.find((l) => has(l.code));
+}
+
 function pagePathOf(path: string): string {
   if (path === "index" || path === "README") return "index";
   if (path.endsWith("/index")) return path.slice(0, -"/index".length);

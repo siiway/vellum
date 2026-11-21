@@ -51,6 +51,8 @@ import { useCallback, useState, type ComponentType, type ReactNode } from "react
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
+import { FallbackNotice } from "./FallbackNotice";
+import { canonicalLocaleCode } from "../../shared/types";
 
 // --- Types ---------------------------------------------------------------
 
@@ -398,9 +400,15 @@ export function MSLearnHome() {
   // registered React component (`<Button>`, `<Card>`, …) the author drops in
   // is mounted as the real FluentUI primitive — same registry as docs pages.
   const hasBody = data.page.ast.blocks.length > 0;
+  // Set when the page shows another locale's page (FallbackNotice).
+  const { fallbackLocale } = data.page.meta;
 
   return (
-    <main className={styles.root}>
+    <main
+      className={styles.root}
+      lang={fallbackLocale ? canonicalLocaleCode(fallbackLocale) : undefined}
+    >
+      <FallbackNotice />
       <HeroSection hero={front.hero} styles={styles} />
       {hasItems(front.getStarted) && (
         <CardGridSection section={front.getStarted} variant="iconChip" styles={styles} />

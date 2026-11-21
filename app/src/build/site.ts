@@ -30,7 +30,15 @@ import { t } from "../shared/i18n";
 import { readClientAssets } from "./assets";
 import { buildPagePayload } from "./page";
 import { renderPage, type Hydration, type RenderOptions } from "./ssr";
-import { htmlFile, listRepoPages, localeBase, markdownUrl, pageRoute, stubRoute } from "./routes";
+import {
+  fallbackLocale,
+  htmlFile,
+  listRepoPages,
+  localeBase,
+  markdownUrl,
+  pageRoute,
+  stubRoute,
+} from "./routes";
 import { buildSearchIndex, type IndexPage } from "./search-index";
 import { loadVueComponents } from "./vue";
 import { bundleReactComponents, importReactComponents } from "./react";
@@ -66,6 +74,9 @@ interface RepoState {
   sha: string;
   // Page paths per locale code.
   pages: Record<string, string[]>;
+  // The paths of the pages each locale shows another locale's page at, as it
+  // has no translation of them, per locale code.
+  fallbacks: Record<string, string[]>;
 }
 
 // What the last build rendered. Not deployed.
@@ -219,6 +230,9 @@ async function renderRepo(
 ): Promise<RepoState> {
   const pages = await listRepoPages(SITE, repo);
   const rendered: Record<string, string[]> = {};
+  const fallbacks: Record<string, string[]> = {};
+  // The pages each locale's search index holds, by locale code.
+  const indexes = new Map<string, IndexPage[]>(SITE.site.locales.map((l) => [l.code, []]));
   // First: the pages render the components, and the head of a page that
   // uses one links its files. One that doesn't build fails the repo, like a
   // page that doesn't render.
@@ -228,29 +242,50 @@ async function renderRepo(
   }
   importReactComponents(repo, react);
 
+  // Renders a page in `locale`, from `source`'s page when that's another
+  // locale. False for an empty file, which has no page.
+  const render = async (locale: LocaleConfig, pagePath: string, source?: string) => {
+    const route = pageRoute(SITE, repo, locale, pagePath);
+    let build;
+    try {
+      build = await buildPagePayload(SITE, route, react, source);
+    } catch (e) {
+      throw new Error(`Rendering ${route.canonicalUrl} failed: ${(e as Error).message}`, {
+        cause: e,
+      });
+    }
+    if (!build.found) return false;
+    await writePage(build.payload, opts, root, build.markdown);
+    indexes
+      .get(locale.code)!
+      .push({ url: route.canonicalUrl, path: build.sourcePath, raw: build.source });
+    return true;
+  };
+
   for (const locale of SITE.site.locales) {
     const done: string[] = [];
-    const index: IndexPage[] = [];
     await pool(pages[locale.code] ?? [], async (pagePath) => {
-      const route = pageRoute(SITE, repo, locale, pagePath);
-      let build;
-      try {
-        build = await buildPagePayload(SITE, route, react);
-      } catch (e) {
-        throw new Error(`Rendering ${route.canonicalUrl} failed: ${(e as Error).message}`, {
-          cause: e,
-        });
-      }
-      // An empty file.
-      if (!build.found) return;
-      await writePage(build.payload, opts, root, build.markdown);
-      done.push(pagePath);
-      index.push({ url: route.canonicalUrl, path: build.sourcePath, raw: build.source });
+      if (await render(locale, pagePath)) done.push(pagePath);
     });
     rendered[locale.code] = done.sort();
+  }
+
+  // A page a locale has no translation of is still at its URL there, showing
+  // another locale's page (fallbackLocale), so a link to it or a switch to
+  // that locale doesn't end in a 404.
+  const own = new Map(SITE.site.locales.map((l) => [l.code, new Set(rendered[l.code])]));
+  const every = [...new Set(Object.values(rendered).flat())].sort();
+  for (const locale of SITE.site.locales) {
+    const done: string[] = [];
+    const missing = every.filter((pagePath) => !own.get(locale.code)!.has(pagePath));
+    await pool(missing, async (pagePath) => {
+      const source = fallbackLocale(SITE, (code) => own.get(code)!.has(pagePath))!;
+      if (await render(locale, pagePath, source.code)) done.push(pagePath);
+    });
+    fallbacks[locale.code] = done.sort();
     await writeJson(
       searchIndexPath(locale.code, repo.slug),
-      buildSearchIndex(index, repo.displayName),
+      buildSearchIndex(indexes.get(locale.code)!, repo.displayName),
       root,
     );
   }
@@ -263,7 +298,7 @@ async function renderRepo(
     }
   }
 
-  return { sha: await headSha(repo), pages: rendered };
+  return { sha: await headSha(repo), pages: rendered, fallbacks };
 }
 
 // Deletes what `renderRepo` wrote for the repo last time.
@@ -271,7 +306,8 @@ async function removeRepo(repo: RepoConfig, last: RepoState): Promise<void> {
   const removals: string[] = [vueDir(repo.slug), reactDir(repo.slug)];
   for (const locale of SITE.site.locales) {
     removals.push(searchIndexPath(locale.code, repo.slug));
-    for (const pagePath of last.pages[locale.code] ?? []) {
+    const paths = [...(last.pages[locale.code] ?? []), ...(last.fallbacks[locale.code] ?? [])];
+    for (const pagePath of paths) {
       const { canonicalUrl } = pageRoute(SITE, repo, locale, pagePath);
       removals.push(
         htmlFile(canonicalUrl),

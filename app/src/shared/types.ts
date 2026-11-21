@@ -301,6 +301,10 @@ export interface PageMeta {
   // Where a docs page's Markdown is published: its URL plus `.md`. The head
   // links it.
   markdownUrl?: string;
+  // Set when the page isn't translated into the route's locale: the locale
+  // whose page it shows instead (fallbackLocale in src/build/routes.ts). The
+  // page says so, and its canonical URL is that locale's.
+  fallbackLocale?: string;
 }
 
 // Forward declaration so types.ts doesn't have to import the markdown module.

@@ -27,7 +27,7 @@ import { loadRepoNav, loadRepoSocialLinks, loadSidebar, neighbors } from "./side
 import { loadVueComponents } from "./vue";
 import type { ReactBundle } from "./react";
 import { pageMarkdown } from "./page-markdown";
-import { markdownUrl } from "./routes";
+import { localeBase, markdownUrl } from "./routes";
 
 export type PageBuild =
   | {
@@ -41,11 +41,15 @@ export type PageBuild =
   // `candidates` are the source paths that were tried.
   | { found: false; candidates: string[] };
 
-// `react`: the repo's React components (react.ts).
+// `react`: the repo's React components (react.ts). `sourceLocale`: the
+// locale whose page to show, when the route's locale has no translation of
+// it (fallbackLocale in routes.ts). The page is then that locale's, in the
+// route locale's chrome, and its links stay in the route's locale.
 export async function buildPagePayload(
   site: VellumConfig,
   route: RouteContext,
   react: ReactBundle,
+  sourceLocale?: string,
 ): Promise<PageBuild> {
   const defaultLocale = site.site.defaultLocale;
 
@@ -60,8 +64,10 @@ export async function buildPagePayload(
     prefix: "",
   };
   const localeUrlPath = localeConfig?.prefix ?? "";
-  const localeSrcPath = localeConfig
-    ? localeSourcePrefix(localeConfig, defaultLocale, route.repo)
+  const sourceCode = sourceLocale ?? route.localeCode;
+  const sourceConfig = site.site.locales.find((l) => l.code === sourceCode);
+  const localeSrcPath = sourceConfig
+    ? localeSourcePrefix(sourceConfig, defaultLocale, route.repo)
     : "";
   const candidates = pageCandidates(route.repo, localeSrcPath, route.pagePath);
 
@@ -108,6 +114,13 @@ export async function buildPagePayload(
     localeCode: route.localeCode,
     // The directory the page was read from.
     localeSrcDir: localeSrcPath,
+    otherLocales: site.site.locales
+      .filter((l) => l.code !== sourceCode)
+      .map((l) => ({
+        srcDir: localeSourcePrefix(l, defaultLocale, route.repo),
+        repoUrlBase: `${localeBase(l)}/${route.repoSlug}`,
+      }))
+      .filter((l) => l.srcDir),
     // `drivers/index.md` served at `/repo/drivers` is a directory page too.
     pageIsIndex: route.pagePath === "index" || matchedPath.endsWith("/index.md"),
     resolveXref: (slug, rest) => {
@@ -216,6 +229,7 @@ export async function buildPagePayload(
           prev,
           next,
           markdownUrl: markdownUrl(route.canonicalUrl),
+          fallbackLocale: sourceCode === route.localeCode ? undefined : sourceCode,
         },
       },
     },

@@ -7,6 +7,8 @@ import { ArrowRight20Regular, Open20Regular } from "@fluentui/react-icons";
 import { makeStyles } from "../css";
 import { useVellum } from "../context";
 import { MarkdownAst } from "./MarkdownAst";
+import { FallbackNotice } from "./FallbackNotice";
+import { canonicalLocaleCode } from "../../shared/types";
 
 type Theme = "brand" | "alt" | "sponsor";
 interface HeroAction {
@@ -266,9 +268,15 @@ export function HomeLayout() {
   const hero = front.hero ?? {};
   const features = front.features ?? [];
   const hasBody = data.page.ast.blocks.length > 0;
+  // Set when the page shows another locale's page (FallbackNotice).
+  const { fallbackLocale } = data.page.meta;
 
   return (
-    <main className={styles.root}>
+    <main
+      className={styles.root}
+      lang={fallbackLocale ? canonicalLocaleCode(fallbackLocale) : undefined}
+    >
+      <FallbackNotice />
       <section className={styles.hero}>
         <div className={styles.heroTextCol}>
           {(hero.name || hero.text) && (

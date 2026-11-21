@@ -23,6 +23,8 @@ import { SearchPage } from "./SearchPage";
 import { HomeLayout } from "./HomeLayout";
 import { MSLearnHome } from "./MSLearnHome";
 import { LanguagesPage } from "./LanguagesPage";
+import { FallbackNotice } from "./FallbackNotice";
+import { canonicalLocaleCode } from "../../shared/types";
 
 // SearchDialog stays lazy because it's only mounted after the user opens search
 // (Ctrl+K / "/"), so its chunk is never SSRed and the Suspense boundary lives
@@ -124,6 +126,9 @@ export function Layout() {
   const isSearch = layoutKind === "search";
   const isMsLearn = layoutKind === "ms-learn";
   const isLanguages = layoutKind === "languages";
+  // The language of a page shown from another locale's.
+  const { fallbackLocale } = page.meta;
+  const lang = fallbackLocale ? canonicalLocaleCode(fallbackLocale) : undefined;
 
   return (
     <div className={styles.shell}>
@@ -158,8 +163,9 @@ export function Layout() {
           <Sidebar groups={sidebar} />
           <main className={styles.main}>
             <article className={styles.article}>
+              <FallbackNotice />
               {page.meta.title && (
-                <header className={styles.hero}>
+                <header className={styles.hero} lang={lang}>
                   <Title1 as="h1" className={styles.title}>
                     {page.meta.title}
                   </Title1>
@@ -170,7 +176,7 @@ export function Layout() {
                   )}
                 </header>
               )}
-              <MarkdownAst ast={page.ast} />
+              <MarkdownAst ast={page.ast} lang={lang} />
               <PageFooter meta={page.meta} siteFooter={config.site.footer} />
             </article>
           </main>

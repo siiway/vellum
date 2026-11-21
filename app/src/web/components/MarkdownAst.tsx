@@ -478,11 +478,12 @@ const useStyles = makeStyles({
   },
 });
 
-export function MarkdownAst({ ast }: { ast: MarkdownAst }) {
+// `lang`: the content's language, when it isn't the page's.
+export function MarkdownAst({ ast, lang }: { ast: MarkdownAst; lang?: string }) {
   const styles = useStyles();
   const groups = useMemo(() => groupBlocks(ast.blocks), [ast]);
   return (
-    <div className={mergeClasses(styles.root, MARKDOWN_ROOT)}>
+    <div className={mergeClasses(styles.root, MARKDOWN_ROOT)} lang={lang}>
       {groups.map((group, i) =>
         Array.isArray(group) ? (
           <div key={`run-${i}`} className={STATIC_RUN}>
