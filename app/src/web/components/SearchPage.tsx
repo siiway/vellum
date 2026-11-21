@@ -569,6 +569,14 @@ export function SearchPage() {
   }, [focused, q, dismissed, caret, scope, searchable, t]);
   useEffect(() => setActiveSuggestion(-1), [q, caret]);
 
+  // Sets the query from code (the URL, a recent search, the clear button):
+  // the caret goes to its end, and Esc's dismissal ends.
+  const setQuery = useCallback((next: string) => {
+    setQ(next);
+    setCaret(null);
+    setDismissed(false);
+  }, []);
+
   const acceptSuggestion = useCallback((s: QuerySuggestion) => {
     setQ(s.query);
     setCaret(s.caret);
@@ -604,7 +612,7 @@ export function SearchPage() {
   useEffect(() => {
     const initialQ = readQueryParam();
     const initialScope = readScopeParam(repos.map((r) => r.slug));
-    if (initialQ) setQ(initialQ);
+    if (initialQ) setQuery(initialQ);
     if (initialScope) setScope(initialScope);
     setUrlHydrated(true);
     inputRef.current?.focus();
@@ -804,7 +812,7 @@ export function SearchPage() {
               size="small"
               icon={<Dismiss20Regular />}
               onClick={() => {
-                setQ("");
+                setQuery("");
                 inputRef.current?.focus();
               }}
               aria-label={t("ui.search.clear")}
@@ -904,7 +912,7 @@ export function SearchPage() {
                       type="button"
                       className={styles.chipMain}
                       onClick={() => {
-                        setQ(r);
+                        setQuery(r);
                         inputRef.current?.focus();
                       }}
                     >
