@@ -634,8 +634,12 @@ function HtmlBlock({ value }: { value: string }) {
 
 // `<Name />` closes the component, as in JSX. Parsed as HTML it would stay
 // open, and what follows it in the block would become its children.
+// Attribute values may hold `>` and `/>`: `<Counter label="x > y" />`.
 function closeComponentTags(html: string): string {
-  return html.replace(/<([A-Z][A-Za-z0-9]*)(\s[^<>]*?)?\s*\/>/g, "<$1$2></$1>");
+  return html.replace(
+    /<([A-Z][A-Za-z0-9]*)(\s(?:[^<>"']|"[^"]*"|'[^']*')*?)?\s*\/>/g,
+    "<$1$2></$1>",
+  );
 }
 
 // `repoComponents`: the names of the repo's own React components on the page.
