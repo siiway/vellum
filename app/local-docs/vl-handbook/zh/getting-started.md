@@ -49,7 +49,7 @@ bun run dev
 | 本地文档、配置或渲染器               | `bun run build:pages --no-fetch` |
 | 什么都没改，只想拿到文档仓库的新提交 | `bun run update`                 |
 
-`--no-fetch` 复用已经克隆到 `.sources/` 下的仓库，不再重新拉取。
+`--no-fetch` 复用已经克隆到 `.sources/` 下的仓库，不再重新拉取。还没有克隆的仓库，或因为改了 `owner` 或 `repo` 而留着另一个仓库克隆的，仍会被克隆。
 
 ## 3. 配置你的仓库
 

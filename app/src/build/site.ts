@@ -42,11 +42,11 @@ import { buildRobots, buildSitemap } from "./sitemap";
 import {
   APP_ROOT,
   appSha,
+  hasClone,
   headSha,
   isGitHub,
   readSourceFile,
   remoteSha,
-  repoDir,
   syncRepo,
 } from "./sources";
 
@@ -92,12 +92,12 @@ export async function buildSite({ fetch }: { fetch: boolean }): Promise<void> {
   // The Vite manifest is only for the build.
   await cp(CLIENT_DIR, SITE_DIR, { recursive: true, filter: (src) => basename(src) !== ".vite" });
 
+  // Without `fetch`, a repo is still cloned when it has no clone of the
+  // repository the config names.
   await Promise.all(
-    SITE.repos.map((repo) =>
-      fetch || (isGitHub(repo) && !existsSync(join(repoDir(repo), ".git")))
-        ? syncRepo(repo)
-        : undefined,
-    ),
+    SITE.repos.map(async (repo) => {
+      if (fetch || (isGitHub(repo) && !(await hasClone(repo)))) await syncRepo(repo);
+    }),
   );
 
   const repos: Record<string, RepoState> = {};
