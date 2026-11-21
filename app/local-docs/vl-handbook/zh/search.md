@@ -118,9 +118,7 @@ URL：`/{prefix}/search`（`/search` 会重定向到默认语言的搜索页）�
 - 把它放进以 `_` 开头的目录（或以 `_` 开头命名）。构建把这些视为 partial：
   既不渲染，也不索引。
 
-要让整个仓库不参与跨仓库搜索，在它上面设置 `excludeFromSearch`，自带配置
-对主页仓库就是这么做的。针对单个页面的正式 `frontmatter.noindex: true`
-标志已在路线图上。
+要让整个仓库不参与跨仓库搜索，在它上面设置 `excludeFromSearch`，自带配置对主页仓库就是这么做的。搜索页也不再为它显示卡片或标签页，但 `?repo=<slug>` 仍然能搜索它。针对单个页面的正式 `frontmatter.noindex: true` 标志已在路线图上。
 
 ## 调优
 

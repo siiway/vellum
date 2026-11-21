@@ -700,17 +700,23 @@ export function SearchPage() {
           size="medium"
         >
           <Tab value="__all__">{t("ui.search.allRepos")}</Tab>
-          {repos.map((r) => (
-            <Tab
-              key={r.slug}
-              value={r.slug}
-              icon={
-                r.logo ? <Image src={r.logo} alt="" className={styles.filterChipIcon} /> : undefined
-              }
-            >
-              {r.displayName}
-            </Tab>
-          ))}
+          {/* The repos a cross-repo search covers, and an excluded one
+              when the URL scopes the search to it (?repo=). */}
+          {repos
+            .filter((r) => !r.excludeFromSearch || r.slug === scope)
+            .map((r) => (
+              <Tab
+                key={r.slug}
+                value={r.slug}
+                icon={
+                  r.logo ? (
+                    <Image src={r.logo} alt="" className={styles.filterChipIcon} />
+                  ) : undefined
+                }
+              >
+                {r.displayName}
+              </Tab>
+            ))}
         </TabList>
       )}
 

@@ -135,8 +135,9 @@ either:
   treats those as partials: it neither renders nor indexes them.
 
 To leave a whole repo out of cross-repo search, set `excludeFromSearch` on
-it, as the bundled config does for the homepage repo. A real
-`frontmatter.noindex: true` flag for single pages is on the roadmap.
+it, as the bundled config does for the homepage repo. The search page then
+offers no card or tab for it, though `?repo=<slug>` still searches it. A
+real `frontmatter.noindex: true` flag for single pages is on the roadmap.
 
 ## Tuning
 
