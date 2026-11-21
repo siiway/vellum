@@ -218,15 +218,25 @@ function parseQuery(raw: string, aliases: Record<string, string[]>): ParsedQuery
     } else if (/\s/.test(c)) {
       i++;
     } else {
+      // A word runs to whitespace, but not inside quotes, so a qualifier or
+      // an exclusion can take a phrase: title:"getting started", -"beta".
       let end = i;
-      while (end < raw.length && !/\s/.test(raw[end]!)) end++;
+      while (end < raw.length && !/\s/.test(raw[end]!)) {
+        if (raw[end] === '"') {
+          const close = raw.indexOf('"', end + 1);
+          end = close < 0 ? raw.length : close + 1;
+        } else {
+          end++;
+        }
+      }
       tokens.push(raw.slice(i, end));
       i = end;
     }
   }
 
+  // A quoted value's text, also while its closing quote is still to come.
   const unquote = (s: string) =>
-    s.startsWith('"') && s.endsWith('"') && s.length >= 2 ? s.slice(1, -1) : s;
+    s.startsWith('"') ? s.slice(1, s.length >= 2 && s.endsWith('"') ? -1 : undefined) : s;
 
   for (const tokRaw of tokens) {
     if (!tokRaw) continue;
@@ -259,9 +269,9 @@ function parseQuery(raw: string, aliases: Record<string, string[]>): ParsedQuery
       // Unknown qualifier — fall through and treat as a plain term.
     }
 
-    // Quoted phrase.
-    if (tokRaw.startsWith('"') && tokRaw.endsWith('"') && tokRaw.length >= 2) {
-      const phrase = tokRaw.slice(1, -1).toLowerCase();
+    // Quoted phrase, closed or still being typed.
+    if (tokRaw.startsWith('"')) {
+      const phrase = unquote(tokRaw).toLowerCase();
       if (phrase) {
         out.phrases.push(phrase);
         out.highlights.push(phrase);

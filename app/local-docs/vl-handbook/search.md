@@ -47,6 +47,9 @@ the code bigger.
 | `title:foo`    | pages whose title contains `foo`                |
 | `repo:slug`    | only that repo (useful in the full-page search) |
 
+`title:` and `-` take a quoted phrase too: `title:"getting started"`,
+`-"beta feature"`.
+
 A word in the title scores 5 and in the body 1; a phrase scores 8 and 3; a
 `title:` term scores 10. Results are sorted by score: the dialog shows the
 top 10, the full-page search the top 30.
