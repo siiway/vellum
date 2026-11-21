@@ -29,6 +29,10 @@ interface VellumContextValue {
   // Client-side navigation. Returns a promise that resolves once the page swap is complete.
   navigate: (href: string, opts?: { replace?: boolean; scrollTo?: string | null }) => Promise<void>;
   isNavigating: boolean;
+  // How many client-side navigations have landed. A page that keeps its
+  // state in the URL (the search page's ?q=) reads it again when one lands
+  // on it without changing the page.
+  navigations: number;
   // Translate a UI string using the current route's locale.
   t: (key: MessageKey, fallback?: string) => string;
 }
@@ -84,6 +88,7 @@ export function VellumProvider({
     if (t === "light" || t === "dark") setThemeState(t);
   }, []);
   const [isNavigating, setNavigating] = useState(false);
+  const [navigations, setNavigations] = useState(0);
   const lastFetch = useRef<AbortController | null>(null);
   // The page on screen, for callbacks that outlive a render.
   const dataRef = useRef(initial);
@@ -204,6 +209,7 @@ export function VellumProvider({
           history[opts.replace ? "replaceState" : "pushState"](null, "", url.toString());
         }
         if (url.hash) scrollToHash(url.hash.slice(1));
+        setNavigations((n) => n + 1);
         return;
       }
 
@@ -258,6 +264,7 @@ export function VellumProvider({
           ? `${payload.page.meta.title} · ${payload.config.site.title}`
           : payload.config.site.title;
         setMarkdownLink(payload.page.meta.markdownUrl);
+        setNavigations((n) => n + 1);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           window.location.href = url.toString();
@@ -373,8 +380,8 @@ export function VellumProvider({
   );
 
   const value = useMemo<VellumContextValue>(
-    () => ({ data, theme, themeMode, setThemeMode, navigate, isNavigating, t: tFn }),
-    [data, theme, themeMode, setThemeMode, navigate, isNavigating, tFn],
+    () => ({ data, theme, themeMode, setThemeMode, navigate, isNavigating, navigations, t: tFn }),
+    [data, theme, themeMode, setThemeMode, navigate, isNavigating, navigations, tFn],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

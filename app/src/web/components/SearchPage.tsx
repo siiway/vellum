@@ -514,7 +514,7 @@ const useStyles = makeStyles({
 
 export function SearchPage() {
   const styles = useStyles();
-  const { data, navigate, t } = useVellum();
+  const { data, navigate, navigations, t } = useVellum();
   const repos = data.config.repos;
 
   // Initial state is intentionally empty so SSR and the first client render
@@ -615,21 +615,24 @@ export function SearchPage() {
     }
   };
 
-  // After mount: pull ?q= and ?repo= out of the URL, then load recent searches
-  // and focus the input. Runs once.
+  // Pull ?q= and ?repo= out of the URL: after mount, and again when a
+  // navigation lands here with another query (the dialog's "Search all repos
+  // for …" on this page), which keeps this component mounted.
   useEffect(() => {
-    const initialQ = readQueryParam();
-    const initialScope = readScopeParam(repos.map((r) => r.slug));
-    if (initialQ) setQuery(initialQ);
-    if (initialScope) setScope(initialScope);
+    setQuery(readQueryParam());
+    setScope(readScopeParam(repos.map((r) => r.slug)));
     setUrlHydrated(true);
+    // repos is stable for a given config.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigations]);
+
+  // After mount: load recent searches and focus the input. Runs once.
+  useEffect(() => {
     inputRef.current?.focus();
     // A reader who clicked into the field before the page hydrated focused it
     // already; focus() then fires no focus event.
     setFocused(document.activeElement === inputRef.current);
     setRecent(loadRecent());
-    // Effect intentionally runs only once. repos is stable for a given config.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Debounced search. The same search that powers the dialog, but with
