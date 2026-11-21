@@ -621,6 +621,9 @@ export function SearchPage() {
     if (initialScope) setScope(initialScope);
     setUrlHydrated(true);
     inputRef.current?.focus();
+    // A reader who clicked into the field before the page hydrated focused it
+    // already; focus() then fires no focus event.
+    setFocused(document.activeElement === inputRef.current);
     setRecent(loadRecent());
     // Effect intentionally runs only once. repos is stable for a given config.
     // eslint-disable-next-line react-hooks/exhaustive-deps
