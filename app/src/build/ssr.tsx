@@ -118,6 +118,12 @@ html{box-sizing:border-box;-webkit-text-size-adjust:100%;-webkit-font-smoothing:
 *,*::before,*::after{box-sizing:inherit;}
 body{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";}
 #vellum-root{min-height:100vh;}
+/* While a Fluent dialog or drawer is open it locks scrolling with
+   overflow-y on <html> and on <body>. The one on <html> is enough, since it
+   applies to the viewport. The one on <body> makes it a scroll container,
+   so the sticky header (NavBar.tsx) sticks to the top of the body, off
+   screen on a scrolled page, instead of the viewport. */
+body{overflow-y:visible !important;}
 img,svg{vertical-align:middle;}
 ::selection{background:color-mix(in srgb,var(--colorBrandBackground,#0078d4) 22%,transparent);}
 
